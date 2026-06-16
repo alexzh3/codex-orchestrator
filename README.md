@@ -8,7 +8,7 @@ The core workflow is:
 
 This creates a practical heterogeneous coding-agent ensemble: Claude acts as the long-context orchestrator and reviewer, while Codex handles scoped implementation, backend work, refactors, test repair, and second-pass review.
 
-The actual operational playbook lives in [`SKILL.md`](./SKILL.md). This README only explains the motivation, setup, and intended workflow.
+The actual operational playbook lives in [`skills/codex-orchestrator/SKILL.md`](./skills/codex-orchestrator/SKILL.md). This README only explains the motivation, setup, and intended workflow.
 
 ---
 
@@ -72,14 +72,21 @@ This skill does not try to wrap Codex through a generic interface. It lets Codex
 
 ## Installation
 
-Clone or copy this skill into your Claude Code skills directory:
+From inside Claude Code:
 
-```bash
-mkdir -p ~/.claude/skills/claude-codex-orchestrator
-cp SKILL.md ~/.claude/skills/claude-codex-orchestrator/SKILL.md
+```text
+/plugin marketplace add alexzh3/codex-orchestrator
+/plugin install codex-orchestrator@codex-orchestrator
+/reload-plugins
 ```
 
-Requirements:
+Then invoke:
+
+```text
+/codex-orchestrator:codex-orchestrator
+```
+
+## Requirements
 
 * [Claude Code](https://code.claude.com/docs/en/overview) installed in your IDE or terminal.
 * [OpenAI Codex](https://developers.openai.com/codex/cli/reference) installed in your IDE, or available through the Codex CLI.
@@ -101,7 +108,7 @@ codex://threads/<thread-uuid>
 Then ask Claude:
 
 ```text
-Use the claude-codex-orchestrator skill.
+/codex-orchestrator:codex-orchestrator
 
 Monitor this Codex session:
 codex://threads/<thread-uuid>
@@ -112,7 +119,7 @@ Review what Codex is doing, detect when it finishes or blocks, verify the diff a
 For a headless handoff:
 
 ```text
-Use the claude-codex-orchestrator skill.
+/codex-orchestrator:codex-orchestrator
 
 Ask Codex to implement the next scoped task using codex exec.
 Run Codex in workspace-write mode with approval_policy=never.
@@ -156,13 +163,15 @@ Code / tests / manifests / logs / git history
 
 ## Security model
 
-This skill is designed for **bounded autonomy**.
+This skill is designed for **bounded autonomy**, not unrestricted agent execution; the author is not responsible for any damage caused.
 
 Default assumptions:
 
-* Codex runs in `workspace-write`.
-* Claude gates dangerous actions.
-* Network, Docker, GPU, deployments, secrets, and out-of-workspace writes require explicit authorization.
-* Codex should not get full host access just to avoid approval friction.
-* All claims must be verified against artifacts.
-* All consensus decisions should be recorded.
+* Codex runs in `workspace-write` for normal executor tasks.
+* Claude gates dangerous or expensive actions before they run.
+* Network access, out-of-workspace writes, Docker socket access, deployments, credentials, and GPU-heavy rollouts are treated as elevated operations that require explicit user authorization or a deliberately configured permission profile.
+* Codex should not receive `danger-full-access` just to avoid approval friction.
+* If broad access is required, run Codex only inside a trusted, externally hardened environment such as a dedicated container or VM.
+* Secrets should not be assumed safe just because Codex is sandboxed. Keep secrets out of the workspace where possible, deny `.env` files in custom permission profiles, and avoid exposing unnecessary credentials to agent-run commands.
+* All agent claims must be verified against artifacts: diffs, tests, logs, manifests, build output, or benchmark results.
+* Consensus decisions should be recorded when Claude and Codex disagree about a bug, fix, or implementation direction.

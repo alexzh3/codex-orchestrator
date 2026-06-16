@@ -1,6 +1,10 @@
 ---
-name: claude-codex-orchestrator
-description: Orchestrate, monitor, review, and coordinate GPT Codex IDE-extension sessions from Claude Code — including VS Code or Cursor extension sessions — detect goal completion/idle, tail progress, preserve session history, drive sessions non-interactively via `codex exec`, run Codex as a headless executor, and gate compute before rollouts. Use when the user runs Codex on a task in parallel and asks you to watch it, review its work, drive/execute through it, or coordinate several Codex sessions sequentially or in parallel without file/compute conflicts.
+name: codex-orchestrator
+description: >-
+  Orchestrate, monitor, review, and coordinate Codex IDE or CLI sessions from
+  Claude Code. Use when the user wants Claude to watch, review, drive, or
+  coordinate Codex sessions sequentially or in parallel without file or compute
+  conflicts.
 ---
 
 # Claude-Codex orchestration

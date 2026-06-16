@@ -1,0 +1,17 @@
+{
+  "name": "codex-orchestrator",
+  "description": "Coordinate OpenAI Codex IDE and CLI sessions from Claude Code.",
+  "version": "0.1.0",
+  "author": {
+    "name": "alexzh3"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/alexzh3/codex-orchestrator",
+  "keywords": [
+    "codex",
+    "orchestration",
+    "claude-code",
+    "code-review",
+    "workflow"
+  ]
+}
