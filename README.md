@@ -4,7 +4,7 @@ A Claude Code skill for coordinating **OpenAI Codex** sessions from **Claude Cod
 
 The core workflow is:
 
-> **Claude plans, monitors, reviews, and gates. Codex executes scoped implementation work in its own native harness. Both agents must converge before changes are accepted.**
+> **Claude plans, monitors, reviews, and gates. Codex executes scoped implementation work in its own native harness. When Claude finds a suspected issue, Claude shares it back with Codex and records the evidence-based resolution before accepting the work.**
 
 This creates a practical heterogeneous coding-agent ensemble: Claude acts as the long-context orchestrator and reviewer, while Codex handles scoped implementation, backend work, refactors, test repair, and second-pass review.
 
@@ -26,7 +26,7 @@ It can:
 * ask Codex to review uncommitted changes,
 * coordinate multiple Codex sessions sequentially or in parallel,
 * gate shared compute before expensive rollouts,
-* and produce a final evidence-based report.
+* and record evidence, verification results, and any Claude/Codex disagreement resolutions in the final report.
 
 ---
 ## Hypothetical Architecture
@@ -104,7 +104,7 @@ Then ask Claude:
 Monitor this Codex session:
 codex://threads/<thread-uuid>
 
-Review what Codex is doing, detect when it finishes or blocks, verify the diff against the repository, and do not accept the result until Claude and Codex agree on the final fix.
+Review what Codex is doing, detect when it finishes or blocks, verify the diff against the repository, and share any suspected mistakes back with Codex before accepting the result.
 ```
 
 For a headless handoff:
@@ -134,9 +134,9 @@ That is why this skill uses **evidence-based consensus** instead of majority vot
 * Claude proposes or validates the plan.
 * Codex executes a scoped implementation.
 * Claude verifies the diff, tests, logs, and artifacts.
-* Codex reviews Claude’s objections or its own uncommitted diff.
+* When Claude finds a suspected issue, Codex reviews Claude’s objection or the uncommitted diff.
 * Disagreements are resolved using evidence, not vibes.
-* The final report records the issue, root cause, fix, and verification result.
+* The final report records each disagreement or mistake, its root cause when known, the agreed resolution, and the verification evidence.
 
 ### 2. Claude is a strong default long-context orchestrator compared to GPT
 Claude is also a strong fit for long-context coordination. Anthropic’s [1M context release](https://claude.com/blog/1m-context-ga) reports strong long-context benchmark results for Claude Opus 4.6, making Claude a sensible default for maintaining broader task state while Codex handles narrower execution loops.
@@ -171,3 +171,13 @@ Default assumptions:
 * Secrets should not be assumed safe just because Codex is sandboxed. Keep secrets out of the workspace where possible, deny `.env` files in custom permission profiles, and avoid exposing unnecessary credentials to agent-run commands.
 * All agent claims must be verified against artifacts: diffs, tests, logs, manifests, build output, or benchmark results.
 * Consensus decisions should be recorded when Claude and Codex disagree about a bug, fix, or implementation direction.
+
+---
+
+## Privacy
+
+This plugin does not collect, store, sell, or transmit user data on its own. It provides Claude Code with instructions for coordinating local OpenAI Codex sessions.
+
+When you use the plugin, Claude Code and Codex may inspect local repository files, Codex rollout logs, command output, diffs, tests, generated artifacts, and other context you ask them to review. Treat those inputs as data shared with the Claude Code and Codex environments you run.
+
+Do not expose secrets, credentials, private keys, `.env` files, or sensitive production data to Claude Code or Codex unless you have intentionally configured your environment and permissions for that use.
