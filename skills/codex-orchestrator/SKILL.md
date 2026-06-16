@@ -157,6 +157,10 @@ CODEX=$(
 - **Always preserve history. Never use `--ephemeral`** in this workflow. Stored session/rollout
   history is required so the same thread/agent can be resumed when context matters and so the user
   has durable logs for audit, debugging, and thesis/research handoff.
+- **Visibility:** If the user wants the session visible in the Codex IDE sidebar, start it in the IDE
+  and pass Claude the `codex://threads/<thread-uuid>` URL. Use `codex exec` only for headless runs:
+  those sessions use source kind `exec`, are CLI-resumable with
+  `codex resume --all --include-non-interactive`, and do not appear in the IDE sidebar. Spoof session rollout metadata with `source: vscode` when the user explicitly asks for visibility, but warn them it might have future implications.
 
 ### Run modes (sandbox × approval) — verified
 

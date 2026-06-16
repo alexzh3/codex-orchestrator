@@ -96,6 +96,10 @@ Copy the Codex session URL:
 codex://threads/<thread-uuid>
 ```
 
+For IDE sidebar visibility, start the session in VS Code or Cursor first. Headless `codex exec`
+sessions use source kind `exec`; if you explicitly ask the skill for IDE visibility, it will use a
+local metadata workaround which might have future compatibility implications.
+
 Then ask Claude:
 
 ```text
