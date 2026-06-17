@@ -19,6 +19,9 @@ A live IDE-extension session is identified by a `codex://threads/<thread-uuid>` 
 everything below keys off that `<thread-uuid>`. A session you start yourself with `codex exec`
 (no `resume`) creates a fresh thread instead.
 
+Parser split: headless `codex exec --json` sessions use the documented JSON stream; live IDE
+sessions use rollout JSONL tailing because the `--json` stream is not available there.
+
 ## Run ledger
 
 Use a durable run ledger as the default place for orchestration state, review notes, verification
@@ -47,6 +50,12 @@ python scripts/codex_orch_append_event.py .codex-orchestrator/runs/<run-id> '{"t
 Codex writes a JSONL rollout (full event log) per session:
 
 ```bash
+python scripts/codex_orch_parse.py find <thread-uuid> --source ide --json
+```
+
+Fallback (manual):
+
+```bash
 find ~/.codex/sessions -name "*<thread-uuid>*" -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1
 ```
 
@@ -61,8 +70,19 @@ Each line is a JSON event. Useful `payload.type` (or top-level `type`) values:
 `message` (role user/assistant), `agent_message` (Codex's narration), `function_call` /
 `function_call_output` (its tool calls + output), `thread_goal_updated`, `token_count`.
 
+Default:
+
+```bash
+python scripts/codex_orch_parse.py state <thread-uuid> --source ide --json
+python scripts/codex_orch_parse.py state <thread-uuid> --source exec --file <exec-jsonl> --json
+```
+
+Run `--dump-event-types` if parse confidence is low or status cannot be trusted.
+
 **Goal status** — goal-mode sessions emit `thread_goal_updated` whose `payload.goal.status` is
 `active` while running; anything else (`complete`, …) means that goal ended:
+
+Fallback (manual):
 
 ```bash
 python3 - "$ROLLOUT" <<'EOF'
@@ -79,6 +99,8 @@ EOF
 ```
 
 **Latest narration** — seek the last ~500KB (these logs reach tens of MB; never read whole):
+
+Fallback (manual):
 
 ```bash
 python3 - "$ROLLOUT" <<'EOF'
@@ -123,7 +145,14 @@ Hard-won rules:
 - Poll 90–120s; a self-started `codex exec` in Bash background already pings you on exit, so a
   Monitor there is only for **progress + stall** detection, not the exit itself.
 
-Skeleton (adapt `state()`/grep to the task):
+Default parser calls inside a monitor:
+
+```bash
+python scripts/codex_orch_parse.py tail <thread-uuid> --source ide --since-offset "$OFF" --json
+python scripts/codex_orch_parse.py tail <thread-uuid> --source exec --file <exec-jsonl> --since-offset "$OFF" --json
+```
+
+Fallback (manual skeleton; adapt `state()`/grep to the task):
 
 ```bash
 F=<rollout>; REPO=<repo>; OFF=$(stat -c%s "$F"); HEAD0=$(git -C "$REPO" rev-parse HEAD); EMITS=0
@@ -260,6 +289,12 @@ When sequential coordination is required:
 4. Trigger via `codex exec resume` with a tightly-scoped go-ahead, then re-arm a monitor.
 
 ## 6. "Awaiting approval" detection
+
+Default:
+
+```bash
+python scripts/codex_orch_parse.py state <thread-uuid> --source ide --json
+```
 
 If the rollout goes idle mid-goal and the last `agent_message` says e.g. "I'll request … outside
 the sandbox" / "needs Docker socket access", the session is **blocked on an IDE approval**, not

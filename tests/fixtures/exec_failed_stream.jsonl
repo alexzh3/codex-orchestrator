@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"exec-failed-001"}
+{"type":"turn.started","thread_id":"exec-failed-001","turn_id":"turn-1"}
+{"type":"item.completed","item":{"type":"command_execution","status":"failed"}}
+{"type":"turn.failed","thread_id":"exec-failed-001","turn_id":"turn-1","error":{"message":"pytest failed"}}
