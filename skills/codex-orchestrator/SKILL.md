@@ -19,6 +19,29 @@ A live IDE-extension session is identified by a `codex://threads/<thread-uuid>` 
 everything below keys off that `<thread-uuid>`. A session you start yourself with `codex exec`
 (no `resume`) creates a fresh thread instead.
 
+## Run ledger
+
+Use a durable run ledger as the default place for orchestration state, review notes, verification
+evidence, and consensus decisions. Initialize it from the target repository:
+
+```bash
+python scripts/codex_orch_init_run.py --repo <repo> --run-id <run-id>
+```
+
+Runtime layout (gitignored):
+
+```text
+.codex-orchestrator/runs/<run-id>/
+  state.json  events.jsonl  tasks.json  verification.jsonl
+  review.md   consensus.md  final-report.md
+```
+
+Append material events with:
+
+```bash
+python scripts/codex_orch_append_event.py .codex-orchestrator/runs/<run-id> '{"type":"note"}'
+```
+
 ## 1. Locate the session's rollout file
 
 Codex writes a JSONL rollout (full event log) per session:
@@ -130,7 +153,13 @@ TaskStop when done or before re-arming.
   `git show` / generated manifests / test output — "it passes" is a claim until you read the JSON.
 - Watch for **failure spirals**: answering every validation failure by shrinking ranges / deleting
   test inputs may be masking a root cause. Flag the *pattern*, not just the edit.
-- Keep a timestamped running review in **memory** so the drift history survives compaction.
+- Append the timestamped running review to `review.md`, append material events to `events.jsonl`,
+  and update `state.json` so review state survives compaction.
+- Deterministic checks (`pytest`, diff review, manifest path assertions) are necessary but
+  insufficient for training/RL changes. For nondeterministic rollouts, require seeded determinism
+  where applicable, metric-threshold checks on eval rollouts, and regression bands on reward/return
+  rather than equality assertions. Do not accept a training-affecting change on a single stochastic
+  pass.
 - You usually can't safely interrupt a live Codex turn. Spot a mistake mid-run → record it + give
   the user a paste-ready steer; only inject (§5) when the session is idle.
 
@@ -260,7 +289,8 @@ When Claude (orchestrator) finds and debugs an error/mistake during review, **sh
 Codex to reach consensus on the fix before implementing** — it may not actually be a mistake, or
 Codex may have context Claude lacks. Mechanism: `codex exec review --uncommitted` to have Codex
 critique the diff, or `codex exec resume <id> "<the specific finding + proposed fix>"` to discuss.
-**Record each such mistake (what, root cause, agreed resolution) in the final report.**
+**Record each such mistake (what, root cause, agreed resolution) in `consensus.md` and the final
+report, and update `state.json` when the run status or session status changes.**
 
 ## Gotchas
 
