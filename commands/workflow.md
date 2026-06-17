@@ -1,6 +1,16 @@
+---
+description: Run the full Claude-Codex orchestration workflow from setup through review, verification, consensus, and report.
+---
+
 # Workflow
 
 Use this command when Claude should run the full Codex orchestration workflow end to end.
+
+Use when: you want one coordinated run that initializes durable state, supervises or drives Codex,
+reviews the result, records evidence, resolves disagreements, and writes the final report.
+
+Do not use when: you only need to create the run ledger. Use `/codex-orchestrator:start-run` for
+setup-only initialization.
 
 Scope: full run. This command should initialize or reuse a run ledger, inspect session/repo state,
 monitor or drive Codex as needed, review diffs, record verification evidence, resolve consensus when

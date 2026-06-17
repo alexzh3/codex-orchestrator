@@ -1,6 +1,16 @@
+---
+description: Prepare a safe scoped handoff to another Codex session, including worktree separation when needed.
+---
+
 # Handoff
 
 Use this command to prepare a safe handoff to another Codex session.
+
+Use when: you are starting or resuming Codex with a scoped prompt, especially for parallel work that
+should happen in a separate worktree.
+
+Do not use when: shared GPU, Docker, Isaac, Kit, or training resources may still be busy. Run
+`/codex-orchestrator:gate-compute` first.
 
 For parallel work, create a separate worktree first:
 

@@ -1,6 +1,16 @@
+---
+description: Generate or update report.md from state and ledger evidence after review work is complete.
+---
+
 # Report
 
 Use this command to close a run with durable evidence.
+
+Use when: verification evidence and any consensus decisions have already been recorded and you want
+a human-readable `report.md` for handoff or approval.
+
+Do not use when: you still need to monitor Codex or review the diff. Use `/codex-orchestrator:workflow`
+for the whole run or `/codex-orchestrator:review` for the review step.
 
 Scope: report generation. This command assumes review and verification evidence have already been
 recorded in `ledger.jsonl`; it should not perform the full orchestration workflow by itself.

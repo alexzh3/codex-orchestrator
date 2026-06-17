@@ -1,6 +1,16 @@
+---
+description: Inspect a Codex IDE or CLI session using compact status and tail reads instead of full log loading.
+---
+
 # Monitor
 
 Use this command to inspect a Codex IDE or exec session without loading full rollout logs.
+
+Use when: you have a `codex://threads/<thread-id>` URL or a captured `codex exec --json` stream and
+need to know whether Codex is active, idle, complete, failed, or blocked on approval.
+
+Do not use when: you need acceptance review or verification evidence. Use `/codex-orchestrator:review`
+after monitoring shows the Codex turn is ready to inspect.
 
 Default path:
 

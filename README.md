@@ -88,14 +88,14 @@ Use the workflow command when you want Claude to run the whole orchestration wor
 Use the step commands when you want to drive one stage explicitly:
 
 ```text
-/codex-orchestrator:workflow       # full end-to-end orchestration run
-/codex-orchestrator:start-run      # create state.json, ledger.jsonl, report.md only
-/codex-orchestrator:monitor        # inspect a Codex IDE or exec session
-/codex-orchestrator:review         # review output and record verification evidence
-/codex-orchestrator:consensus      # resolve a suspected bug or disagreement
-/codex-orchestrator:report         # generate/update report.md
-/codex-orchestrator:handoff        # prepare a safe Codex handoff
-/codex-orchestrator:gate-compute   # check shared GPU/Docker/Isaac resources
+/codex-orchestrator:workflow       # run setup, monitoring, review, verification, consensus, and report
+/codex-orchestrator:start-run      # create state.json, ledger.jsonl, and report.md only
+/codex-orchestrator:monitor        # inspect Codex IDE or exec status without loading full logs
+/codex-orchestrator:review         # review Codex output and record verification evidence
+/codex-orchestrator:consensus      # resolve a suspected bug or disagreement with evidence
+/codex-orchestrator:report         # generate or update report.md after evidence is recorded
+/codex-orchestrator:handoff        # prepare a scoped Codex handoff, using worktrees when needed
+/codex-orchestrator:gate-compute   # check shared GPU/Docker/Isaac resources before expensive work
 ```
 
 `start-run` is intentionally setup-only. It does not run tests, review diffs, reach consensus, or

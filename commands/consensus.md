@@ -1,6 +1,16 @@
+---
+description: Resolve a Claude-Codex disagreement about a suspected bug, fix, or implementation direction using evidence.
+---
+
 # Consensus
 
 Use this command when Claude and Codex disagree about a suspected bug, fix, or implementation direction.
+
+Use when: Claude finds a concrete issue in Codex output, Codex challenges Claude's finding, or the
+fix direction is ambiguous enough to require a recorded evidence-based decision.
+
+Do not use when: there is no disagreement or suspected mistake. Record ordinary checks with
+`/codex-orchestrator:review` instead.
 
 Default paths:
 
