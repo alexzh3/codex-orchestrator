@@ -30,7 +30,10 @@
       "enum": [
         "active",
         "blocked",
-        "complete"
+        "complete",
+        "needs_review",
+        "accepted",
+        "rejected"
       ]
     },
     "sessions": {
@@ -98,7 +101,8 @@
             "idle",
             "complete",
             "failed",
-            "awaiting-approval"
+            "awaiting-approval",
+            "unknown"
           ]
         },
         "last_seen_at": {

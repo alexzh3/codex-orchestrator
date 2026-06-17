@@ -360,7 +360,7 @@ def command_state(args: argparse.Namespace) -> int:
             "thread_id": args.thread_id,
             "source": source,
             "path": str(path) if path else None,
-            "status": "failed",
+            "status": "unknown",
             "compatibility": compat,
             "offset": start,
             "next_offset": end,

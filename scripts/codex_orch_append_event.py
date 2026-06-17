@@ -10,9 +10,9 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Append one JSON object to a codex-orchestrator events.jsonl file."
+        description="Append one JSON object to a codex-orchestrator ledger.jsonl file."
     )
-    parser.add_argument("run_dir", help="Run directory containing events.jsonl.")
+    parser.add_argument("run_dir", help="Run directory containing ledger.jsonl.")
     parser.add_argument(
         "event_json",
         nargs="?",
@@ -64,9 +64,10 @@ def main() -> int:
         raise SystemExit(f"ERROR: run directory does not exist: {run_dir}")
 
     event = load_event(raw_event)
-    events_path = run_dir / "events.jsonl"
-    append_jsonl(events_path, event)
-    print(events_path)
+    event.setdefault("type", "event")
+    ledger_path = run_dir / "ledger.jsonl"
+    append_jsonl(ledger_path, event)
+    print(ledger_path)
     return 0
 
 

@@ -11,8 +11,8 @@ from pathlib import Path
 DEFAULT_VERIFICATION_POLICY = {
     "required": [
         "git diff review",
-        "pytest",
-        "artifact manifest check",
+        "test command",
+        "artifact manifest check when artifacts are produced",
     ],
     "forbidden": [
         "delete tests to pass",
@@ -90,12 +90,12 @@ def main() -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     write_json(run_dir / "state.json", build_state(repo, args.run_id), force=args.force)
-    write_text(run_dir / "events.jsonl", "", force=args.force)
-    write_json(run_dir / "tasks.json", {"tasks": []}, force=args.force)
-    write_text(run_dir / "verification.jsonl", "", force=args.force)
-    write_text(run_dir / "review.md", "# Review\n\n", force=args.force)
-    write_text(run_dir / "consensus.md", "# Consensus\n\n", force=args.force)
-    write_text(run_dir / "final-report.md", "# Final Report\n\n", force=args.force)
+    write_text(run_dir / "ledger.jsonl", "", force=args.force)
+    write_text(
+        run_dir / "report.md",
+        "# Report\n\n## Review\n\n## Consensus\n\n## Final Report\n\n",
+        force=args.force,
+    )
 
     print(run_dir)
     return 0

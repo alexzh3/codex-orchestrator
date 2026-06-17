@@ -28,21 +28,30 @@ Use a durable run ledger as the default place for orchestration state, review no
 evidence, and consensus decisions. Initialize it from the target repository:
 
 ```bash
-python scripts/codex_orch_init_run.py --repo <repo> --run-id <run-id>
+python3 scripts/codex_orch.py init --repo <repo> --run-id <run-id>
 ```
 
 Runtime layout (gitignored):
 
 ```text
 .codex-orchestrator/runs/<run-id>/
-  state.json  events.jsonl  tasks.json  verification.jsonl
-  review.md   consensus.md  final-report.md
+  state.json    # compact mutable run/session state
+  ledger.jsonl  # append-only events, verification, task updates, consensus records
+  report.md     # human-readable review, consensus, and final report sections
 ```
 
 Append material events with:
 
 ```bash
-python scripts/codex_orch_append_event.py .codex-orchestrator/runs/<run-id> '{"type":"note"}'
+python3 scripts/codex_orch_append_event.py .codex-orchestrator/runs/<run-id> '{"type":"note"}'
+```
+
+Inspect compact status, record verification evidence, and close the run with:
+
+```bash
+python3 scripts/codex_orch.py status --run-id <run-id>
+python3 scripts/codex_orch.py add-verification --run-id <run-id> --kind test --command "<test command>" --exit-code 0 --result passed --summary "<what passed>"
+python3 scripts/codex_orch.py report --run-id <run-id>
 ```
 
 ## 1. Locate the session's rollout file
@@ -50,7 +59,7 @@ python scripts/codex_orch_append_event.py .codex-orchestrator/runs/<run-id> '{"t
 Codex writes a JSONL rollout (full event log) per session:
 
 ```bash
-python scripts/codex_orch_parse.py find <thread-uuid> --source ide --json
+python3 scripts/codex_orch_parse.py find <thread-uuid> --source ide --json
 ```
 
 Fallback (manual):
@@ -73,8 +82,8 @@ Each line is a JSON event. Useful `payload.type` (or top-level `type`) values:
 Default:
 
 ```bash
-python scripts/codex_orch_parse.py state <thread-uuid> --source ide --json
-python scripts/codex_orch_parse.py state <thread-uuid> --source exec --file <exec-jsonl> --json
+python3 scripts/codex_orch_parse.py state <thread-uuid> --source ide --json
+python3 scripts/codex_orch_parse.py state <thread-uuid> --source exec --file <exec-jsonl> --json
 ```
 
 Run `--dump-event-types` if parse confidence is low or status cannot be trusted.
@@ -148,8 +157,8 @@ Hard-won rules:
 Default parser calls inside a monitor:
 
 ```bash
-python scripts/codex_orch_parse.py tail <thread-uuid> --source ide --since-offset "$OFF" --json
-python scripts/codex_orch_parse.py tail <thread-uuid> --source exec --file <exec-jsonl> --since-offset "$OFF" --json
+python3 scripts/codex_orch_parse.py tail <thread-uuid> --source ide --since-offset "$OFF" --json
+python3 scripts/codex_orch_parse.py tail <thread-uuid> --source exec --file <exec-jsonl> --since-offset "$OFF" --json
 ```
 
 Fallback (manual skeleton; adapt `state()`/grep to the task):
@@ -182,8 +191,8 @@ TaskStop when done or before re-arming.
   `git show` / generated manifests / test output — "it passes" is a claim until you read the JSON.
 - Watch for **failure spirals**: answering every validation failure by shrinking ranges / deleting
   test inputs may be masking a root cause. Flag the *pattern*, not just the edit.
-- Append the timestamped running review to `review.md`, append material events to `events.jsonl`,
-  and update `state.json` so review state survives compaction.
+- Append timestamped running review notes to the `## Review` section in `report.md`, append material
+  events to `ledger.jsonl`, and update `state.json` so review state survives compaction.
 - Deterministic checks (`pytest`, diff review, manifest path assertions) are necessary but
   insufficient for training/RL changes. For nondeterministic rollouts, require seeded determinism
   where applicable, metric-threshold checks on eval rollouts, and regression bands on reward/return
@@ -275,7 +284,7 @@ git worktree add ../repo-codex-b -b codex/b main
 Helper:
 
 ```bash
-python scripts/codex_orch_worktree.py --name codex-a
+python3 scripts/codex_orch_worktree.py --name codex-a
 ```
 
 Parallel Codex sessions are fine when their work scopes do not conflict and they do not compete for
@@ -307,7 +316,7 @@ When sequential coordination is required:
 Default:
 
 ```bash
-python scripts/codex_orch_parse.py state <thread-uuid> --source ide --json
+python3 scripts/codex_orch_parse.py state <thread-uuid> --source ide --json
 ```
 
 If the rollout goes idle mid-goal and the last `agent_message` says e.g. "I'll request … outside
@@ -338,8 +347,9 @@ When Claude (orchestrator) finds and debugs an error/mistake during review, **sh
 Codex to reach consensus on the fix before implementing** — it may not actually be a mistake, or
 Codex may have context Claude lacks. Mechanism: `codex exec review --uncommitted` to have Codex
 critique the diff, or `codex exec resume <id> "<the specific finding + proposed fix>"` to discuss.
-**Record each such mistake (what, root cause, agreed resolution) in `consensus.md` and the final
-report, and update `state.json` when the run status or session status changes.**
+**Record each such mistake (what, root cause, agreed resolution) as a `consensus` record in
+`ledger.jsonl` and in the `## Consensus` section of `report.md`; update `state.json` when the run
+status or session status changes.**
 
 ## Gotchas
 

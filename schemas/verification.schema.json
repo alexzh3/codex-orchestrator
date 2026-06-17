@@ -4,29 +4,58 @@
   "title": "Codex Orchestrator Verification Record",
   "type": "object",
   "required": [
-    "check",
-    "status",
-    "recorded_at"
+    "type",
+    "kind",
+    "result",
+    "recorded_at",
+    "summary"
   ],
   "properties": {
-    "check": {
+    "type": {
       "type": "string",
-      "minLength": 1
+      "const": "verification"
     },
-    "status": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "git_diff",
+        "test",
+        "typecheck",
+        "lint",
+        "build",
+        "benchmark",
+        "screenshot",
+        "artifact_check",
+        "manual_review",
+        "custom"
+      ]
+    },
+    "result": {
       "type": "string",
       "enum": [
         "passed",
         "failed",
-        "skipped"
+        "skipped",
+        "inconclusive",
+        "needs_human_review"
       ]
     },
     "recorded_at": {
       "type": "string",
       "format": "date-time"
     },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
     "command": {
       "type": "string"
+    },
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
     },
     "artifacts": {
       "type": "array",

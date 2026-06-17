@@ -5,7 +5,7 @@ Use this command to prepare a safe handoff to another Codex session.
 For parallel work, create a separate worktree first:
 
 ```bash
-python scripts/codex_orch_worktree.py --name codex-a
+python3 scripts/codex_orch_worktree.py --name codex-a
 ```
 
 Then resume or start Codex with a scoped prompt:
