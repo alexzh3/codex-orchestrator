@@ -218,7 +218,7 @@ CODEX=$(
 - **Visibility:** If the user wants the session visible in the Codex IDE sidebar, start it in the IDE
   and pass Claude the `codex://threads/<thread-uuid>` URL. Use `codex exec` only for headless runs:
   those sessions use source kind `exec`, are CLI-resumable with
-  `codex resume --all --include-non-interactive`, and do not appear in the IDE sidebar. Spoof session rollout metadata with `source: vscode` when the user explicitly asks for visibility, but warn them it might have future implications.
+  `codex resume --all --include-non-interactive`, and do not appear in the IDE sidebar.
 
 ### Run modes (sandbox × approval) — verified
 
@@ -263,6 +263,20 @@ open in the IDE and approves escalations there while you coordinate.
 Use `--uncommitted` to have Codex review changes (its own or yours) before commit.
 
 ### Multi-session coordination
+
+Parallel sessions MUST use separate git worktrees unless the user explicitly chooses
+same-worktree coordination.
+
+```bash
+git worktree add ../repo-codex-a -b codex/a main
+git worktree add ../repo-codex-b -b codex/b main
+```
+
+Helper:
+
+```bash
+python scripts/codex_orch_worktree.py --name codex-a
+```
 
 Parallel Codex sessions are fine when their work scopes do not conflict and they do not compete for
 scarce compute. Prefer parallel coordination for independent code/research tasks with separate
@@ -335,3 +349,10 @@ report, and update `state.json` when the run status or session status changes.**
 - Don't trust "passed" narration — open the manifest/JSON/test output.
 - Re-find the rollout after every resume; the thread id is stable, the filename isn't.
 - Never use `--ephemeral`; preserve session history for resumable context and logs.
+
+## Appendix: experimental / unsupported
+
+Spoofing session rollout metadata with `source: vscode` when the user explicitly asks for IDE
+visibility is experimental and unsupported. Prefer starting the session in the IDE and passing
+Claude the `codex://threads/<thread-uuid>` URL. If you use the metadata spoof anyway, warn the user
+that it might have future implications.
