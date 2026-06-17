@@ -13,7 +13,8 @@ Do not use when: Claude and Codex disagree about a suspected bug or fix directio
 `/codex-orchestrator:consensus` for that resolution step.
 
 Scope: review and evidence recording. This command assumes a run ledger already exists; create one
-first with `/codex-orchestrator:start-run` or use `/codex-orchestrator:workflow` for the full run.
+first with `/codex-orchestrator:start-run` when driving steps manually, or use
+`/codex-orchestrator:workflow` for the full run.
 
 Checklist:
 
@@ -25,4 +26,7 @@ python3 scripts/codex_orch.py add-verification --run-id <run-id> --kind test --c
 python3 scripts/codex_orch_append_event.py .codex-orchestrator/runs/<run-id> '{"type":"review"}'
 ```
 
-Append the running review to the `## Review` section in `.codex-orchestrator/runs/<run-id>/report.md` and follow `skills/codex-orchestrator/SKILL.md` section 4.
+Append the running review to the `## Review` section in
+`.codex-orchestrator/runs/<run-id>/report.md`.
+
+Reference: `skills/codex-orchestrator/references/review-consensus.md`.

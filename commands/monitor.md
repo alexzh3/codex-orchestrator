@@ -26,4 +26,4 @@ For headless exec streams, pass the captured `codex exec --json` stream:
 python3 scripts/codex_orch_parse.py state <thread-id> --source exec --file <exec-jsonl> --json
 ```
 
-Use `skills/codex-orchestrator/SKILL.md` sections 1-3 and 6 for the full monitoring rules.
+Reference: `skills/codex-orchestrator/references/live-session-monitoring.md`.

@@ -8,7 +8,7 @@ The core workflow is:
 
 This creates a practical heterogeneous coding-agent ensemble: Claude acts as the long-context orchestrator and reviewer, while Codex handles scoped implementation, backend work, refactors, test repair, and second-pass review.
 
-The actual operational playbook lives in [`skills/codex-orchestrator/SKILL.md`](./skills/codex-orchestrator/SKILL.md). This README only explains the motivation, setup, and intended workflow.
+The actual operational playbook starts in [`skills/codex-orchestrator/SKILL.md`](./skills/codex-orchestrator/SKILL.md). That file is intentionally compact for token usage; detailed procedures live in [`skills/codex-orchestrator/references/`](./skills/codex-orchestrator/references/) and are opened only for the relevant command or step. This README only explains the motivation, setup, and intended workflow.
 
 ---
 
@@ -71,7 +71,7 @@ From inside Claude Code:
 /reload-plugins
 ```
 
-Then invoke:
+For the full orchestration workflow, invoke:
 
 ```text
 /codex-orchestrator:workflow
@@ -85,11 +85,28 @@ Use the workflow command when you want Claude to run the whole orchestration wor
 /codex-orchestrator:workflow
 ```
 
-Use the step commands when you want to drive one stage explicitly:
+Use `start-run` only when you want to open a tracked run ledger:
+
+```text
+/codex-orchestrator:start-run
+```
+
+That command only creates:
+
+```text
+.codex-orchestrator/runs/<run-id>/
+  state.json
+  ledger.jsonl
+  report.md
+```
+
+It does not run tests, review diffs, resolve consensus, or generate the final report.
+
+Available commands:
 
 ```text
 /codex-orchestrator:workflow       # run setup, monitoring, review, verification, consensus, and report
-/codex-orchestrator:start-run      # create state.json, ledger.jsonl, and report.md only
+/codex-orchestrator:start-run      # open state.json, ledger.jsonl, and report.md only
 /codex-orchestrator:monitor        # inspect Codex IDE or exec status without loading full logs
 /codex-orchestrator:review         # review Codex output and record verification evidence
 /codex-orchestrator:consensus      # resolve a suspected bug or disagreement with evidence
@@ -98,9 +115,18 @@ Use the step commands when you want to drive one stage explicitly:
 /codex-orchestrator:gate-compute   # check shared GPU/Docker/Isaac resources before expensive work
 ```
 
-`start-run` is intentionally setup-only. It does not run tests, review diffs, reach consensus, or
-generate the final report; use `workflow` for that full flow, or chain the step commands
-when you want manual control.
+Typical manual sequence:
+
+```text
+/codex-orchestrator:start-run
+/codex-orchestrator:monitor        # when supervising an active Codex session
+/codex-orchestrator:review
+/codex-orchestrator:consensus      # only for a suspected bug or disagreement
+/codex-orchestrator:report
+```
+
+Use `workflow` for the full flow in one command, or chain the step commands when you want manual
+control.
 
 ## Requirements
 
@@ -119,7 +145,8 @@ Create a run ledger before supervising or dispatching Codex:
 python3 scripts/codex_orch.py init --run-id example --repo .
 ```
 
-Inspect compact state, record verification evidence, and generate the handoff report:
+After later review work, inspect compact state, record verification evidence, and generate the
+handoff report:
 
 ```bash
 python3 scripts/codex_orch.py status --run-id example

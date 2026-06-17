@@ -23,4 +23,4 @@ free -g
 df -h /
 ```
 
-Follow `skills/codex-orchestrator/SKILL.md` section 7 for interpretation and handoff policy.
+Interpret the result using `skills/codex-orchestrator/references/multi-session-compute.md`.

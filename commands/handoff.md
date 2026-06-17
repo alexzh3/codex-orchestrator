@@ -25,4 +25,9 @@ Then resume or start Codex with a scoped prompt:
 "$CODEX" exec resume <thread-id> "<prompt>"
 ```
 
-Use `skills/codex-orchestrator/SKILL.md` section 5 for execution and the multi-session subsection for worktree and handoff rules.
+References:
+
+```text
+skills/codex-orchestrator/references/codex-exec.md
+skills/codex-orchestrator/references/multi-session-compute.md
+```

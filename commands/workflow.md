@@ -4,12 +4,13 @@ description: Run the full Claude-Codex orchestration workflow from setup through
 
 # Workflow
 
-Use this command when Claude should run the full Codex orchestration workflow end to end.
+Use this command when Claude should run the full Codex orchestration workflow end to end. This is
+the main full-run command.
 
 Use when: you want one coordinated run that initializes durable state, supervises or drives Codex,
 reviews the result, records evidence, resolves disagreements, and writes the final report.
 
-Do not use when: you only need to create the run ledger. Use `/codex-orchestrator:start-run` for
+Do not use when: you only need to open a run ledger. Use `/codex-orchestrator:start-run` for
 setup-only initialization.
 
 Scope: full run. This command should initialize or reuse a run ledger, inspect session/repo state,
@@ -30,5 +31,14 @@ Default workflow:
 9. Generate or update report.md.
 ```
 
-Use `commands/start-run.md` only for setup. Follow `skills/codex-orchestrator/SKILL.md` for the
-full operating rules.
+Use `commands/start-run.md` only for the setup step inside this workflow. Keep
+`skills/codex-orchestrator/SKILL.md` in context as the compact operating contract, and open only the
+reference files needed for the current step:
+
+```text
+skills/codex-orchestrator/references/run-ledger.md
+skills/codex-orchestrator/references/live-session-monitoring.md
+skills/codex-orchestrator/references/codex-exec.md
+skills/codex-orchestrator/references/review-consensus.md
+skills/codex-orchestrator/references/multi-session-compute.md
+```
