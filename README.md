@@ -1,6 +1,6 @@
 # Claude–Codex Orchestrator Skill
 
-A Claude Code skill for coordinating **OpenAI Codex** sessions from **Claude Code**, especially when both are used inside IDEs like **Cursor** or **VS Code**.
+A Claude Code skill for live-IDE Codex supervision, multi-session coordination, durable audit ledgers, and evidence-recorded consensus; it complements OpenAI's Codex plugin, does not replace it.
 
 The core workflow is:
 
@@ -123,15 +123,31 @@ After Codex finishes, review the diff, run verification, and ask Codex to review
 
 ---
 
+## When to use this instead of /codex:rescue
+
+Use this skill when:
+
+* an existing Codex IDE session needs supervision without discarding its live context,
+* multiple sessions may race on files, branches, artifacts, or shared GPU/compute,
+* a durable audit trail is needed for thesis, research, or handoff review,
+* artifacts, manifests, logs, and generated outputs must be verified before acceptance,
+* disagreements need to be resolved with recorded evidence rather than a one-shot rescue.
+
+## Why not just use OpenAI's Codex plugin?
+
+OpenAI's Codex plugin is the right default for standard review, rescue, background execution, and review-gated coding tasks. This skill is narrower: it is an orchestration manual plus small local scripts for supervising live IDE sessions, coordinating several Codex workers, gating scarce compute, and preserving review/consensus state outside model context.
+
+The tradeoff is that this reads local Codex session state and may need updates when Codex changes its rollout/event format.
+
+---
+
 ## Why this approach?
 
 ### 1. Heterogeneous LLM ensembles reduce single-model failure modes
 
 This skill is built around a **heterogeneous ensemble**, not just multiple sessions from the same model. Claude and Codex come from different model families, different training pipelines, different product harnesses, and often different failure modes.
 
-That diversity is useful because a second model only adds value when it can catch errors the first model is likely to miss. Research on LLM ensembles supports this direction: [LLM-Blender](https://arxiv.org/abs/2306.02561) shows that combining outputs from different LLMs can outperform individual models, [Mixture-of-Agents](https://arxiv.org/abs/2406.04692) explores layered collaboration across multiple LLMs, and [FrugalGPT](https://arxiv.org/abs/2305.05176) shows that routing across models can improve the cost/performance trade-off.
-
-For software engineering specifically, [*Wisdom and Delusion of LLM Ensembles for Code Generation and Repair*](https://arxiv.org/abs/2510.21513) evaluates ten LLMs from five model families and finds that cross-model complementarity can expose solutions missed by the best single model. It also warns that blind consensus can become a “popularity trap,” where multiple models converge on the same plausible but wrong answer.
+That diversity is useful because different model families and harnesses tend to catch largely non-overlapping issues: one may notice a planning gap, another may catch a test oracle problem, and another may spot an implementation edge case. Blind agreement is still not enough, because several agents can converge on the same plausible but wrong answer.
 
 That is why this skill uses **evidence-based consensus** instead of majority vote:
 
@@ -142,18 +158,11 @@ That is why this skill uses **evidence-based consensus** instead of majority vot
 * Disagreements are resolved using evidence, not vibes.
 * The final report records each disagreement or mistake, its root cause when known, the agreed resolution, and the verification evidence.
 
-### 2. Claude is a strong default long-context orchestrator compared to GPT
-Claude is also a strong fit for long-context coordination. Anthropic’s [1M context release](https://claude.com/blog/1m-context-ga) reports strong long-context benchmark results for Claude Opus 4.6, making Claude a sensible default for maintaining broader task state while Codex handles narrower execution loops.
+### 2. Role-based effort guidance
 
-At the same time, this skill does not rely on long context alone. Reports like [Context Rot](https://www.trychroma.com/research/context-rot) show that model reliability can degrade as context grows. The workflow therefore keeps important operational state external, auditable, and evidence-based: repository diffs, tests, logs, manifests, and explicit consensus records.
+Use higher reasoning effort for orchestration, planning, review, consensus, and ambiguous failure analysis. Use medium effort for mechanical executor tasks with clear acceptance criteria. Escalate effort only when the task is blocked, ambiguous, or failing verification.
 
-### 3. Cost-aware delegation
-
-Codex currently offers a substantially higher effective usage allowance for many coding workflows, especially on higher ChatGPT plans, whereas Claude is way more restrictive with their usage limits.
-
-This skill therefore routes repetitive implementation loops to Codex while preserving Claude’s budget for the work where it is most valuable: planning, long-context reasoning, review, orchestration, and final judgment.
-
-### 4. Native harnesses matter
+### 3. Native harnesses matter
 
 Agent quality is not only model quality. It also depends on the harness: IDE context, shell access, file editing, approvals, session history, logs, sandboxing, and model-specific prompting.
 
