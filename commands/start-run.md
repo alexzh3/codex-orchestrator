@@ -2,6 +2,10 @@
 
 Use this command to create the durable run ledger before dispatching or supervising Codex.
 
+Scope: setup only. This command should create the compact runtime files and stop; it should not run
+tests, review diffs, resolve consensus, or generate the final report. Use
+`/codex-orchestrator:workflow` for the full end-to-end workflow.
+
 Default path:
 
 ```bash

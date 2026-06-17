@@ -2,6 +2,9 @@
 
 Use this command to review Codex output before accepting it.
 
+Scope: review and evidence recording. This command assumes a run ledger already exists; create one
+first with `/codex-orchestrator:start-run` or use `/codex-orchestrator:workflow` for the full run.
+
 Checklist:
 
 ```bash

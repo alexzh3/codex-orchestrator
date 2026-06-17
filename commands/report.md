@@ -2,6 +2,9 @@
 
 Use this command to close a run with durable evidence.
 
+Scope: report generation. This command assumes review and verification evidence have already been
+recorded in `ledger.jsonl`; it should not perform the full orchestration workflow by itself.
+
 Update these files under `.codex-orchestrator/runs/<run-id>/`:
 
 ```text

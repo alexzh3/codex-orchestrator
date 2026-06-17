@@ -27,6 +27,10 @@ sessions use rollout JSONL tailing because the `--json` stream is not available 
 Use a durable run ledger as the default place for orchestration state, review notes, verification
 evidence, and consensus decisions. Initialize it from the target repository:
 
+`/codex-orchestrator:start-run` is a setup-only shortcut for this initialization step. For a full
+orchestration pass, use `/codex-orchestrator:workflow` and ask it to initialize, monitor, review,
+record evidence, resolve consensus when needed, and generate the report.
+
 ```bash
 python3 scripts/codex_orch.py init --repo <repo> --run-id <run-id>
 ```
