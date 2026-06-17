@@ -10,8 +10,8 @@ Use when: verification evidence and any consensus decisions have already been re
 a human-readable `report.md` for handoff or approval.
 
 Do not use when: you still need to monitor Codex or review the diff. Use
-`/codex-orchestrator:workflow` for the whole run or `/codex-orchestrator:review` for the review
-step.
+`/codex-orchestrator:workflow` for active orchestration phases, including monitoring, review,
+consensus, handoff, and compute gating.
 
 Scope: report generation. This command assumes review and verification evidence have already been
 recorded in `ledger.jsonl`; it should not perform the full orchestration workflow by itself.

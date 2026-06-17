@@ -34,18 +34,15 @@ only the reference that matches the current command or problem:
 ## Slash Commands
 
 - `/codex-orchestrator:workflow`: full run from setup through monitoring, review, verification,
-  consensus when needed, and report.
+  consensus when needed, and report. Also use this command with a scoped prompt for internal
+  workflow phases such as monitoring, review, handoff, consensus, or compute gating.
 - `/codex-orchestrator:start-run`: open a run ledger only; create `state.json`, `ledger.jsonl`, and
   `report.md`, then stop.
-- `/codex-orchestrator:monitor`: inspect IDE or exec session state without loading full logs.
-- `/codex-orchestrator:review`: review Codex output and record verification evidence.
-- `/codex-orchestrator:consensus`: resolve a suspected bug or disagreement with Codex.
 - `/codex-orchestrator:report`: generate or update `report.md` from recorded evidence.
-- `/codex-orchestrator:handoff`: prepare a scoped Codex handoff or resume.
-- `/codex-orchestrator:gate-compute`: check shared GPU, Docker, Isaac, Kit, and artifact resources.
 
 Use `workflow` when Claude should coordinate the whole run end to end. Use `start-run` only when the
-user wants to begin a tracked run and continue manually.
+user wants to begin a tracked run and continue manually. Monitoring, review, consensus, handoff, and
+compute gating are workflow phases, not separate slash commands.
 
 ## Runtime Contract
 
@@ -64,8 +61,8 @@ Opening a run ledger requires only:
 python3 scripts/codex_orch.py init --repo <repo> --run-id <run-id>
 ```
 
-Later workflow, review, consensus, or report commands may inspect status, append events, record
-verification, and generate the report:
+Later workflow phases or the report command may inspect status, append events, record verification,
+and generate the report:
 
 ```bash
 python3 scripts/codex_orch.py status --run-id <run-id>
@@ -85,8 +82,9 @@ python3 scripts/codex_orch.py report --run-id <run-id>
    as consensus before implementing or accepting the fix.
 7. Generate or update `report.md` for handoff or approval.
 
-Run this sequence for `/codex-orchestrator:workflow`, or manually through the step commands. Do not
-run these steps for `/codex-orchestrator:start-run`; that command only opens the ledger.
+Run this sequence for `/codex-orchestrator:workflow`, or ask `workflow` to perform a scoped phase
+when continuing a manually tracked run. Do not run these steps for `/codex-orchestrator:start-run`;
+that command only opens the ledger.
 
 ## Non-Negotiable Rules
 

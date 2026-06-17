@@ -102,31 +102,34 @@ That command only creates:
 
 It does not run tests, review diffs, resolve consensus, or generate the final report.
 
-Available commands:
+Public commands:
 
 ```text
 /codex-orchestrator:workflow       # run setup, monitoring, review, verification, consensus, and report
 /codex-orchestrator:start-run      # open state.json, ledger.jsonl, and report.md only
-/codex-orchestrator:monitor        # inspect Codex IDE or exec status without loading full logs
-/codex-orchestrator:review         # review Codex output and record verification evidence
-/codex-orchestrator:consensus      # resolve a suspected bug or disagreement with evidence
 /codex-orchestrator:report         # generate or update report.md after evidence is recorded
-/codex-orchestrator:handoff        # prepare a scoped Codex handoff, using worktrees when needed
-/codex-orchestrator:gate-compute   # check shared GPU/Docker/Isaac resources before expensive work
 ```
 
-Typical manual sequence:
+Monitoring, review, consensus, handoff, and compute-gating are internal workflow phases, not separate
+slash commands. Use `/codex-orchestrator:workflow` with a scoped prompt when you want Claude to run
+one of those phases explicitly.
+
+Typical full run:
+
+```text
+/codex-orchestrator:workflow
+```
+
+Typical tracked/manual run:
 
 ```text
 /codex-orchestrator:start-run
-/codex-orchestrator:monitor        # when supervising an active Codex session
-/codex-orchestrator:review
-/codex-orchestrator:consensus      # only for a suspected bug or disagreement
+/codex-orchestrator:workflow       # monitor/review/consensus/handoff as requested in the prompt
 /codex-orchestrator:report
 ```
 
-Use `workflow` for the full flow in one command, or chain the step commands when you want manual
-control.
+Use `workflow` for active orchestration. Use `start-run` only to open the ledger, and `report` only
+after evidence has already been recorded.
 
 ## Requirements
 
