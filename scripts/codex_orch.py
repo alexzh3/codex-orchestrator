@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -59,6 +61,12 @@ def print_json(payload: object) -> None:
 def run_id_type(value: str) -> str:
     if not value or value in {".", ".."} or "/" in value or "\\" in value:
         raise argparse.ArgumentTypeError("run id must be a single path segment")
+    return value
+
+
+def name_type(value: str) -> str:
+    if not value or value in {".", ".."} or "/" in value or "\\" in value:
+        raise argparse.ArgumentTypeError("name must be a single path segment")
     return value
 
 
@@ -129,8 +137,15 @@ def read_jsonl(path: Path) -> list[dict[str, object]]:
 
 def append_jsonl(path: Path, record: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
+    encoded = (json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    try:
+        written = os.write(fd, encoded)
+        if written != len(encoded):
+            raise OSError(f"short write to {path}: {written} of {len(encoded)} bytes")
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def initial_state(repo: Path, run_id: str) -> dict[str, object]:
@@ -154,6 +169,74 @@ def ledger_records(directory: Path, record_type: str | None = None) -> list[dict
 def latest_verification(directory: Path) -> dict[str, object] | None:
     records = ledger_records(directory, "verification")
     return records[-1] if records else None
+
+
+def load_event(raw: str) -> dict[str, object]:
+    try:
+        event = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"ERROR: event is not valid JSON: {exc}") from exc
+    if not isinstance(event, dict):
+        raise SystemExit("ERROR: event must be a JSON object")
+    return event
+
+
+def run_git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(repo), *args], check=True)
+
+
+def default_branch(name: str) -> str:
+    if name.startswith("codex-") and len(name) > len("codex-"):
+        return f"codex/{name[len('codex-'):]}"
+    return f"codex/{name}"
+
+
+def find_active_state(repo: Path) -> Path:
+    runs_dir = repo / ".codex-orchestrator" / "runs"
+    candidates: list[Path] = []
+    if runs_dir.exists():
+        for path in runs_dir.glob("*/state.json"):
+            try:
+                state = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(state, dict) and state.get("status") == "active":
+                candidates.append(path)
+    if not candidates:
+        raise SystemExit("ERROR: no active run state found under .codex-orchestrator/runs")
+    return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def upsert_session(
+    path: Path,
+    *,
+    name: str,
+    thread_id: str,
+    mode: str,
+    branch: str,
+    worktree: Path,
+) -> None:
+    state = load_json(path)
+    sessions = state.setdefault("sessions", [])
+    if not isinstance(sessions, list):
+        raise SystemExit(f"ERROR: sessions must be a list in {path}")
+    session = {
+        "name": name,
+        "thread_id": thread_id,
+        "mode": mode,
+        "rollout_path": None,
+        "branch": branch,
+        "worktree": str(worktree),
+        "status": "idle",
+        "last_seen_at": utc_now(),
+    }
+    for index, existing in enumerate(sessions):
+        if isinstance(existing, dict) and existing.get("name") == name:
+            sessions[index] = {**existing, **session}
+            break
+    else:
+        sessions.append(session)
+    write_json(path, state, force=True)
 
 
 def collect_warnings(state: dict[str, object]) -> list[str]:
@@ -224,6 +307,22 @@ def command_add_verification(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_append_event(args: argparse.Namespace) -> int:
+    directory = run_dir(args.repo, args.run_id)
+    load_json(state_path(directory))
+    raw_event = args.event_option if args.event_option is not None else args.event_json
+    if raw_event is None:
+        raw_event = sys.stdin.read()
+    raw_event = raw_event.strip()
+    if not raw_event:
+        raise SystemExit("ERROR: no event JSON provided")
+    event = load_event(raw_event)
+    event.setdefault("type", "event")
+    append_jsonl(ledger_path(directory), event)
+    print_json({"ok": True, "ledger_path": str(ledger_path(directory)), "event": event})
+    return 0
+
+
 def command_status(args: argparse.Namespace) -> int:
     directory = run_dir(args.repo, args.run_id)
     state = load_json(state_path(directory))
@@ -241,6 +340,32 @@ def command_status(args: argparse.Namespace) -> int:
         "recommended_next_action": recommended_next_action(state, verification),
     }
     print_json(payload)
+    return 0
+
+
+def command_worktree(args: argparse.Namespace) -> int:
+    repo = repo_root(args.repo)
+    if not repo.exists() or not repo.is_dir():
+        raise SystemExit(f"ERROR: repo does not exist or is not a directory: {repo}")
+    branch = args.branch or default_branch(args.name)
+    worktree = (
+        Path(args.worktree).expanduser()
+        if args.worktree
+        else repo.parent / f"repo-{args.name}"
+    ).resolve()
+    state_file = state_path(run_dir(args.repo, args.run_id)) if args.run_id else find_active_state(repo)
+    load_json(state_file)
+
+    run_git(repo, "worktree", "add", str(worktree), "-b", branch, args.base)
+    upsert_session(
+        state_file,
+        name=args.name,
+        thread_id=args.thread_id or f"pending:{args.name}",
+        mode=args.mode,
+        branch=branch,
+        worktree=worktree,
+    )
+    print_json({"ok": True, "branch": branch, "worktree": str(worktree), "state": str(state_file)})
     return 0
 
 
@@ -378,6 +503,24 @@ def build_parser() -> argparse.ArgumentParser:
     verification_parser.add_argument("--artifact", action="append", default=[])
     verification_parser.add_argument("--notes")
     verification_parser.set_defaults(func=command_add_verification)
+
+    append_parser = subparsers.add_parser("append-event", help="Append a JSON event to ledger.jsonl.")
+    append_parser.add_argument("--repo", default=".", help="Repository root.")
+    append_parser.add_argument("--run-id", required=True, type=run_id_type)
+    append_parser.add_argument("event_json", nargs="?", help="JSON object to append. If omitted, stdin is read.")
+    append_parser.add_argument("--event", dest="event_option", help="JSON object to append.")
+    append_parser.set_defaults(func=command_append_event)
+
+    worktree_parser = subparsers.add_parser("worktree", help="Create a Codex worktree and register it.")
+    worktree_parser.add_argument("--name", required=True, type=name_type, help="Session name, for example codex-a.")
+    worktree_parser.add_argument("--repo", default=".", help="Repository root.")
+    worktree_parser.add_argument("--run-id", type=run_id_type, help="Run id. Defaults to newest active run.")
+    worktree_parser.add_argument("--base", default="main", help="Base ref for the new branch.")
+    worktree_parser.add_argument("--branch", help="Branch name. Defaults to codex/<name suffix>.")
+    worktree_parser.add_argument("--worktree", help="Worktree path. Defaults to ../repo-<name>.")
+    worktree_parser.add_argument("--thread-id", help="Thread id if already known.")
+    worktree_parser.add_argument("--mode", choices=("ide", "exec"), default="exec")
+    worktree_parser.set_defaults(func=command_worktree)
 
     report_parser = subparsers.add_parser("report", help="Generate report.md.")
     report_parser.add_argument("--repo", default=".", help="Repository root.")

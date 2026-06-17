@@ -16,35 +16,20 @@ A live IDE session is identified by a pasted `codex://threads/<thread-uuid>` URL
 started with `codex exec` are source kind `exec`; they are resumable from the CLI but do not appear
 in the IDE sidebar. Start in the IDE when the user needs IDE visibility.
 
-## Progressive Disclosure
-
-Keep this file in context as the operating contract. Do not open every reference by default. Open
-only the reference that matches the current command or problem:
-
-- `references/run-ledger.md`: runtime files, ledger CLI, verification records, report generation.
-- `references/live-session-monitoring.md`: rollout discovery, compact state reads, tailing, idle and
-  approval detection.
-- `references/codex-exec.md`: locating the Codex binary, `codex exec`, resume, sandbox/approval
-  modes, peer review.
-- `references/review-consensus.md`: acceptance review, evidence rules, nondeterministic checks,
-  consensus protocol.
-- `references/multi-session-compute.md`: worktrees, parallel vs sequential coordination, handoff
-  gates, GPU/Docker/Isaac checks.
-
-## Slash Commands
+## Commands
 
 - `/codex-orchestrator:workflow`: full run from setup through monitoring, review, verification,
-  consensus when needed, and report. Also use this command with a scoped prompt for internal
-  workflow phases such as monitoring, review, handoff, consensus, or compute gating.
+  consensus when needed, and report. Also use this command with a scoped prompt for internal phases
+  such as monitoring, review, handoff, consensus, or compute gating.
 - `/codex-orchestrator:start-run`: open a run ledger only; create `state.json`, `ledger.jsonl`, and
   `report.md`, then stop.
 - `/codex-orchestrator:report`: generate or update `report.md` from recorded evidence.
 
-Use `workflow` when Claude should coordinate the whole run end to end. Use `start-run` only when the
-user wants to begin a tracked run and continue manually. Monitoring, review, consensus, handoff, and
-compute gating are workflow phases, not separate slash commands.
+Monitoring, review, consensus, handoff, and compute gating are workflow phases, not separate slash
+commands. Use `workflow` for active orchestration. Use `start-run` only to begin a tracked run and
+continue manually.
 
-## Runtime Contract
+## Durable Ledger
 
 Use a durable run ledger for all orchestration state:
 
@@ -55,74 +40,151 @@ Use a durable run ledger for all orchestration state:
   report.md     # human-readable review, consensus, and final report sections
 ```
 
-Opening a run ledger requires only:
+Open the ledger; this is all `start-run` should do:
 
 ```bash
 python3 scripts/codex_orch.py init --repo <repo> --run-id <run-id>
 ```
 
-Later workflow phases or the report command may inspect status, append events, record verification,
-and generate the report:
+Later workflow/report helpers:
 
 ```bash
 python3 scripts/codex_orch.py status --run-id <run-id>
-python3 scripts/codex_orch_append_event.py .codex-orchestrator/runs/<run-id> '{"type":"note"}'
-python3 scripts/codex_orch.py add-verification --run-id <run-id> --kind test --command "<cmd>" --exit-code 0 --result passed --summary "<what passed>"
+python3 scripts/codex_orch.py append-event --run-id <run-id> '{"type":"note"}'
+python3 scripts/codex_orch.py add-verification --run-id <run-id> --kind test --command "<cmd>" --exit-code <n> --result passed --summary "<summary>"
 python3 scripts/codex_orch.py report --run-id <run-id>
 ```
 
-## End-To-End Workflow
+Keep durable facts in these files, not only in model context. Update `state.json` when run or session
+status changes, append material facts to `ledger.jsonl`, and keep `report.md` readable for the user.
+
+## Workflow
 
 1. Create or reuse a run id and initialize the durable ledger if missing.
 2. Locate, start, or resume the relevant Codex session.
-3. Monitor using parser/state/tail commands; never load full rollout logs.
+3. Monitor using parser state/tail commands; never load full rollout logs.
 4. Review code, diffs, logs, manifests, generated artifacts, and test output before acceptance.
 5. Record verification evidence in `ledger.jsonl` and running notes in `report.md`.
 6. If Claude finds a suspected issue, share it with Codex and record the evidence-based resolution
    as consensus before implementing or accepting the fix.
 7. Generate or update `report.md` for handoff or approval.
 
-Run this sequence for `/codex-orchestrator:workflow`, or ask `workflow` to perform a scoped phase
-when continuing a manually tracked run. Do not run these steps for `/codex-orchestrator:start-run`;
-that command only opens the ledger.
+Do not run this sequence for `/codex-orchestrator:start-run`; that command only opens the ledger.
 
-## Non-Negotiable Rules
+## Monitoring Codex
 
-- Treat code, diffs, tests, logs, manifests, and generated artifacts as source of truth. Treat agent
-  narration as intent until verified.
-- Read Codex rollout logs through `scripts/codex_orch_parse.py` or bounded tails. Rollouts can be
-  large; never load the whole file into context.
-- If parser confidence is low or session status is ambiguous, inspect event types or bounded raw
-  tails before acting. Do not infer success from silence.
-- Re-find the rollout after every `codex exec resume`; the thread id is stable but a new file may be
-  appended for the resumed turn.
-- Do not race a live Codex turn. Resume or inject a prompt only when the session is idle or complete.
-- Preserve session history. Never use `--ephemeral`; resumability and audit logs are part of the
-  workflow.
-- Use `codex exec -s workspace-write -c approval_policy=never` as the default headless executor
-  mode. Use broad access only with explicit user authorization for that session.
-- Use separate git worktrees for parallel Codex sessions unless the user explicitly chooses
-  same-worktree coordination.
-- Gate scarce compute before handoff and whenever unsure whether GPU, Docker, Isaac, Kit, training,
-  or disk-heavy artifact generation is still busy.
-- Record suspected mistakes, root cause when known, agreed resolution, and verification evidence in
-  both `ledger.jsonl` and the `## Consensus` section of `report.md`.
-
-## Session Source Split
-
-IDE sessions use rollout JSONL tailing because `codex exec --json` is not available there:
+IDE sessions use `codex://threads/<thread-uuid>` and rollout JSONL. Exec sessions use captured
+`codex exec --json` streams.
 
 ```bash
 python3 scripts/codex_orch_parse.py find <thread-uuid> --source ide --json
 python3 scripts/codex_orch_parse.py state <thread-uuid> --source ide --json
 python3 scripts/codex_orch_parse.py tail <thread-uuid> --source ide --since-offset <offset> --json
-```
-
-Headless exec sessions should capture the documented JSON stream and parse that file:
-
-```bash
 python3 scripts/codex_orch_parse.py state <thread-uuid> --source exec --file <exec-jsonl> --json
 python3 scripts/codex_orch_parse.py tail <thread-uuid> --source exec --file <exec-jsonl> --since-offset <offset> --json
 ```
 
-Use `--dump-event-types` when parse confidence is low or the event shape changed.
+Rollout path form: `~/.codex/sessions/YYYY/MM/DD/rollout-<ISO-ts>-<thread-uuid>.jsonl`. The date
+is the session start day. Re-find after every resume because the same thread may append a new file.
+
+Completion signals: `thread_goal_updated.status != active`, stale rollout mtime around 10+ minutes,
+or self-started `codex exec` process exit. `codex app-server` liveness is not activity. If stale
+mid-goal and narration asks for Docker, network, outside-sandbox, or similar approval, ask the user
+to approve in VS Code/Cursor and watch for file growth.
+
+Never load full rollout logs. Use parser state/tail, bounded raw tails, or `--dump-event-types` when
+status confidence is low.
+
+## Codex Exec
+
+Locate the binary; IDE extension paths change:
+
+```bash
+CODEX=$(find ~/.cursor/extensions ~/.vscode/extensions ~/.vscode-server/extensions -maxdepth 4 -name codex -type f 2>/dev/null | head -1)
+```
+
+Default headless executor mode:
+
+```bash
+"$CODEX" exec -s workspace-write -c approval_policy=never "<prompt>"
+"$CODEX" exec resume <thread-uuid> "<prompt>"
+cat prompt.md | "$CODEX" exec -s workspace-write -c approval_policy=never
+```
+
+Resume only when idle or complete. Never use `--ephemeral`; history is required for audit and
+resume. Start in the IDE when the user needs IDE sidebar visibility; headless exec sessions do not
+appear there.
+
+Use broad access only with explicit user authorization:
+
+```bash
+"$CODEX" exec --dangerously-bypass-approvals-and-sandbox "<prompt>"
+```
+
+Peer review:
+
+```bash
+"$CODEX" exec review --uncommitted
+"$CODEX" exec review --base <branch>
+"$CODEX" exec review --commit <sha>
+```
+
+## Review And Consensus
+
+Treat code, diffs, tests, logs, manifests, and generated artifacts as source of truth. Treat agent
+narration as intent until verified. Watch for failure spirals: weakened assertions, deleted inputs,
+shrunk ranges, or special-cased validation failures.
+
+For deterministic changes, inspect diffs and run relevant tests, typecheck, lint, build, or manifest
+assertions. For nondeterministic rollout/training changes, require seeded determinism where possible,
+metric thresholds, and regression bands; do not accept one stochastic pass.
+
+When Claude finds a suspected Codex mistake, share the exact finding and evidence back before
+accepting or implementing:
+
+```bash
+"$CODEX" exec review --uncommitted
+"$CODEX" exec resume <thread-id> "<specific finding, evidence, and proposed fix>"
+```
+
+Record suspected issue, root cause when known, agreed resolution, and verification as `consensus`
+evidence in both `ledger.jsonl` and the `## Consensus` section of `report.md`.
+
+## Multi-Session And Compute
+
+Use separate worktrees for parallel sessions unless the user explicitly chooses same-worktree
+coordination:
+
+```bash
+python3 scripts/codex_orch.py worktree --name codex-a
+```
+
+Use sequential handoff when agents touch the same files/contracts or share scarce compute/artifact
+paths. Before handoff: finish review, verify the next plan, gate compute, send a scoped prompt, and
+re-arm monitoring.
+
+Compute checks:
+
+```bash
+nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv,noheader
+nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader
+pgrep -af 'isaac|kit|python.sh|pytest' | grep -v codex
+docker ps --format '{{.Names}} {{.Status}}'
+free -g
+df -h /
+```
+
+`docker ps` showing `Up` is not proof of activity; check VRAM, utilization, compute apps, and disk.
+
+## Non-Negotiable Rules
+
+- Treat artifacts as source of truth and narration as intent until verified.
+- Never load whole rollout logs.
+- Do not infer success from silence or low-confidence parser output.
+- Re-find the rollout after every resume.
+- Do not race a live Codex turn; resume or inject only when idle or complete.
+- Never use `--ephemeral`.
+- Default headless exec mode is `workspace-write` with `approval_policy=never`.
+- Use separate worktrees for parallel Codex sessions unless the user chooses otherwise.
+- Gate scarce compute before handoff.
+- Record consensus decisions and verification evidence durably.

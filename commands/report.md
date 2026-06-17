@@ -33,9 +33,8 @@ python3 scripts/codex_orch.py report --run-id <run-id>
 The final report should summarize accepted changes, verification evidence, unresolved risks, and
 every recorded consensus decision.
 
-References:
+Reference:
 
 ```text
-skills/codex-orchestrator/references/run-ledger.md
-skills/codex-orchestrator/references/review-consensus.md
+skills/codex-orchestrator/SKILL.md
 ```

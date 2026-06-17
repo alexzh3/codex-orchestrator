@@ -36,14 +36,5 @@ Default workflow:
 9. Generate or update report.md.
 ```
 
-Use `commands/start-run.md` only for the setup step inside this workflow. Keep
-`skills/codex-orchestrator/SKILL.md` in context as the compact operating contract, and open only the
-reference files needed for the current step:
-
-```text
-skills/codex-orchestrator/references/run-ledger.md
-skills/codex-orchestrator/references/live-session-monitoring.md
-skills/codex-orchestrator/references/codex-exec.md
-skills/codex-orchestrator/references/review-consensus.md
-skills/codex-orchestrator/references/multi-session-compute.md
-```
+Use `commands/start-run.md` only for the setup step inside this workflow. Follow
+`skills/codex-orchestrator/SKILL.md` for the full operating contract and concrete procedures.

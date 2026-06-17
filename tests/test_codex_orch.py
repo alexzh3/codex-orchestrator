@@ -10,7 +10,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch.py"
-APPEND_SCRIPT = ROOT / "scripts" / "codex_orch_append_event.py"
 
 
 class CodexOrchCliTests(unittest.TestCase):
@@ -90,8 +89,10 @@ class CodexOrchCliTests(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
-                str(APPEND_SCRIPT),
-                str(self.ledger_dir()),
+                str(SCRIPT),
+                "append-event",
+                "--run-id",
+                "run",
                 '{"summary":"smoke"}',
             ],
             check=False,
@@ -102,7 +103,9 @@ class CodexOrchCliTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(Path(result.stdout.strip()).name, "ledger.jsonl")
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(Path(payload["ledger_path"]).name, "ledger.jsonl")
         records = [
             json.loads(line)
             for line in (self.ledger_dir() / "ledger.jsonl").read_text(encoding="utf-8").splitlines()

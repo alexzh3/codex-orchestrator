@@ -8,7 +8,7 @@ The core workflow is:
 
 This creates a practical heterogeneous coding-agent ensemble: Claude acts as the long-context orchestrator and reviewer, while Codex handles scoped implementation, backend work, refactors, test repair, and second-pass review.
 
-The actual operational playbook starts in [`skills/codex-orchestrator/SKILL.md`](./skills/codex-orchestrator/SKILL.md). That file is intentionally compact for token usage; detailed procedures live in [`skills/codex-orchestrator/references/`](./skills/codex-orchestrator/references/) and are opened only for the relevant command or step. This README only explains the motivation, setup, and intended workflow.
+The actual operational playbook lives in [`skills/codex-orchestrator/SKILL.md`](./skills/codex-orchestrator/SKILL.md). This README only explains the motivation, setup, and intended workflow.
 
 ---
 
@@ -153,6 +153,7 @@ handoff report:
 
 ```bash
 python3 scripts/codex_orch.py status --run-id example
+python3 scripts/codex_orch.py append-event --run-id example '{"type":"note","summary":"Reviewed diff"}'
 python3 scripts/codex_orch.py add-verification --run-id example --kind test --command "python3 -m unittest discover -s tests -v" --exit-code 0 --result passed --summary "Unit tests passed"
 python3 scripts/codex_orch.py report --run-id example
 ```
@@ -160,6 +161,10 @@ python3 scripts/codex_orch.py report --run-id example
 Runtime ledgers live under `.codex-orchestrator/runs/<run-id>/` and are ignored by git. Each run uses
 `state.json` for compact mutable state, `ledger.jsonl` for append-only events and evidence, and
 `report.md` for human-readable review, consensus, and final report sections.
+
+The script surface is intentionally small: `scripts/codex_orch.py` handles durable ledger, events,
+verification, worktrees, and reports; `scripts/codex_orch_parse.py` handles Codex IDE rollout and
+`codex exec --json` stream parsing.
 
 ---
 

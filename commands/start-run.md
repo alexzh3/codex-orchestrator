@@ -31,5 +31,5 @@ python3 scripts/codex_orch.py init --repo . --run-id <run-id>
 Reference:
 
 ```text
-skills/codex-orchestrator/references/run-ledger.md
+skills/codex-orchestrator/SKILL.md
 ```
