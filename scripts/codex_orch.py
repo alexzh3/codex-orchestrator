@@ -33,7 +33,29 @@ ALLOWED_VERIFICATION_RESULTS = (
 
 CONSENSUS_PLACEHOLDER = "No consensus decisions recorded."
 REVIEW_PLACEHOLDER = "No review notes recorded."
+SUMMARY_PLACEHOLDER = "No authored summary recorded."
+CHANGES_PLACEHOLDER = "No authored changes recorded."
+EVIDENCE_PLACEHOLDER = "No evidence recorded."
+RISKS_PLACEHOLDER = "No unresolved risks or follow-ups recorded."
 REVIEW_KINDS = {"manual_review", "git_diff"}
+RUN_SUBDIRS = ("prompts", "logs", "artifacts")
+SUMMARY_OPEN_ITEM_LIMIT = 140
+TASK_STATUS_ORDER = ("complete", "active", "pending", "blocked", "failed")
+TASK_RISK_STATUSES = {"blocked", "failed"}
+UNRESOLVED_VERIFICATION_RESULTS = {"failed", "inconclusive", "needs_human_review"}
+UNRESOLVED_CONSENSUS_STATUSES = {"deferred", "rejected"}
+VERIFICATION_KIND_LABELS = {
+    "artifact_check": "Artifact check",
+    "benchmark": "Benchmark",
+    "build": "Build",
+    "custom": "Custom check",
+    "git_diff": "Git diff review",
+    "lint": "Lint",
+    "manual_review": "Manual / agent review",
+    "screenshot": "Screenshot check",
+    "test": "Test",
+    "typecheck": "Typecheck",
+}
 
 
 def utc_now() -> str:
@@ -74,6 +96,10 @@ def ledger_path(directory: Path) -> Path:
 
 def report_path(directory: Path) -> Path:
     return directory / "report.md"
+
+
+def run_subdir(directory: Path, name: str) -> Path:
+    return directory / name
 
 
 def atomic_write_text(path: Path, text: str) -> None:
@@ -261,10 +287,22 @@ def command_init(args: argparse.Namespace) -> int:
         "ledger.jsonl": write_text(ledger_path(directory), "", force=args.force),
         "report.md": write_text(
             report_path(directory),
-            "# Report\n\n## Review\n\n## Consensus\n\n## Final Report\n\n",
+            (
+                "# Report\n\n"
+                "## Summary\n\n"
+                "## Changes\n\n"
+                "## Evidence\n\n"
+                "## Consensus\n\n"
+                "## Risks / Follow-ups\n\n"
+            ),
             force=args.force,
         ),
     }
+    for name in RUN_SUBDIRS:
+        subdir = run_subdir(directory, name)
+        already_exists = subdir.exists()
+        subdir.mkdir(parents=True, exist_ok=True)
+        created[f"{name}/"] = not already_exists
     print_json({"ok": True, "run_id": args.run_id, "run_dir": str(directory), "created_or_replaced": created})
     return 0
 
@@ -356,12 +394,20 @@ def command_worktree(args: argparse.Namespace) -> int:
 
 def report_section(text: str, heading: str, default: str) -> str:
     marker = f"## {heading}"
-    start = text.find(marker)
-    if start == -1:
+    lines = text.splitlines()
+    start_index: int | None = None
+    for index, line in enumerate(lines):
+        if line.strip() == marker:
+            start_index = index + 1
+            break
+    if start_index is None:
         return default
-    start += len(marker)
-    next_heading = text.find("\n## ", start)
-    section = text[start: next_heading if next_heading != -1 else None].strip()
+    end_index = len(lines)
+    for index in range(start_index, len(lines)):
+        if lines[index].startswith("## "):
+            end_index = index
+            break
+    section = "\n".join(lines[start_index:end_index]).strip()
     if not section:
         return default
     return section
@@ -369,13 +415,62 @@ def report_section(text: str, heading: str, default: str) -> str:
 
 def manual_consensus_section(text: str) -> str:
     section = report_section(text, "Consensus", "")
-    generated_marker = "### Ledger Records"
-    if generated_marker in section:
-        section = section.split(generated_marker, 1)[0].strip()
+    for generated_marker in ("### Reviews", "### Decisions", "### Ledger Records"):
+        if generated_marker in section:
+            section = section.split(generated_marker, 1)[0].strip()
     manual_lines = [
         line
         for line in section.splitlines()
         if line.strip() != CONSENSUS_PLACEHOLDER
+    ]
+    return "\n".join(manual_lines).strip()
+
+
+def is_old_generated_summary(section: str) -> bool:
+    lines = [line.strip() for line in section.splitlines() if line.strip()]
+    if not lines:
+        return False
+    return lines[0].startswith("Run ID:") and any(line.startswith("- Acceptance:") for line in lines)
+
+
+def authored_summary_section(text: str) -> str:
+    section = report_section(text, "Summary", "")
+    if "### Generated Digest" in section:
+        section = section.split("### Generated Digest", 1)[0].strip()
+    if is_old_generated_summary(section):
+        return ""
+    manual_lines = [
+        line
+        for line in section.splitlines()
+        if line.strip() != SUMMARY_PLACEHOLDER
+    ]
+    return "\n".join(manual_lines).strip()
+
+
+def is_old_generated_changes(section: str) -> bool:
+    lines = [line.strip() for line in section.splitlines() if line.strip()]
+    if not lines:
+        return False
+    if lines == ["No changes recorded."]:
+        return True
+    return lines[0].startswith("- **") and all(
+        line.startswith("- **")
+        or line.startswith("- Owner:")
+        or line.startswith("- Notes:")
+        for line in lines
+    )
+
+
+def authored_changes_section(text: str) -> str:
+    section = report_section(text, "Changes", "")
+    if "### Ledger Records" in section:
+        section = section.split("### Ledger Records", 1)[0].strip()
+    if is_old_generated_changes(section):
+        return ""
+    manual_lines = [
+        line
+        for line in section.splitlines()
+        if line.strip() not in {CHANGES_PLACEHOLDER, "No changes recorded."}
     ]
     return "\n".join(manual_lines).strip()
 
@@ -401,16 +496,120 @@ def consensus_field(value: object) -> str:
     return str(value)
 
 
-def verification_bullet(record: dict[str, object]) -> str:
-    command = f" command={record.get('command')!r}" if record.get("command") else ""
-    exit_code = f" exit_code={record.get('exit_code')}" if record.get("exit_code") is not None else ""
-    return "- {kind}: {result}{command}{exit_code} - {summary}".format(
-        kind=record.get("kind"),
-        result=record.get("result"),
-        command=command,
-        exit_code=exit_code,
-        summary=record.get("summary") or "",
-    )
+def inline_code(value: object) -> str:
+    text = str(value).replace("`", "\\`")
+    return f"`{text}`"
+
+
+def verification_kind_label(kind: object) -> str:
+    if not isinstance(kind, str):
+        return "Verification"
+    return VERIFICATION_KIND_LABELS.get(kind, kind.replace("_", " ").title())
+
+
+def record_lines(record: dict[str, object]) -> list[str]:
+    result = consensus_field(record.get("result")) or "unknown"
+    lines = [f"- **{verification_kind_label(record.get('kind'))}** ({result})"]
+    summary = consensus_field(record.get("summary"))
+    if summary:
+        lines.append(f"  - Summary: {summary}")
+    command = consensus_field(record.get("command"))
+    if command:
+        lines.append(f"  - Command: {inline_code(command)}")
+    if record.get("exit_code") is not None:
+        lines.append(f"  - Exit Code: {inline_code(record.get('exit_code'))}")
+    notes = consensus_field(record.get("notes"))
+    if notes:
+        lines.append(f"  - Notes: {notes}")
+    artifacts = record.get("artifacts")
+    if isinstance(artifacts, list):
+        artifact_items = [consensus_field(item) for item in artifacts]
+        artifact_items = [item for item in artifact_items if item]
+        if artifact_items:
+            lines.append("  - Artifacts:")
+            lines.extend(f"    - {inline_code(item)}" for item in artifact_items)
+    return lines
+
+
+def verification_tally(records: list[dict[str, object]]) -> str:
+    if not records:
+        return "none recorded"
+    counts: dict[str, int] = {}
+    for record in records:
+        result = consensus_field(record.get("result")) or "unknown"
+        counts[result] = counts.get(result, 0) + 1
+    ordered_results = [result for result in ALLOWED_VERIFICATION_RESULTS if result in counts]
+    ordered_results.extend(sorted(result for result in counts if result not in ALLOWED_VERIFICATION_RESULTS))
+    return ", ".join(f"{counts[result]} {result}" for result in ordered_results)
+
+
+def consensus_status_tally(records: list[dict[str, object]]) -> str:
+    if not records:
+        return "none"
+    counts: dict[str, int] = {}
+    for record in records:
+        status = consensus_field(record.get("status")) or "unknown"
+        counts[status] = counts.get(status, 0) + 1
+    ordered_statuses = ("accepted", "rejected", "deferred")
+    parts = [f"{counts[status]} {status}" for status in ordered_statuses if status in counts]
+    return ", ".join(parts) if parts else "none"
+
+
+def task_status_tally(records: list[dict[str, object]]) -> str:
+    if not records:
+        return "none"
+    counts: dict[str, int] = {}
+    for record in records:
+        status = consensus_field(record.get("status")) or "unknown"
+        counts[status] = counts.get(status, 0) + 1
+    parts = [f"{counts[status]} {status}" for status in TASK_STATUS_ORDER if status in counts]
+    parts.extend(f"{counts[status]} {status}" for status in sorted(counts) if status not in TASK_STATUS_ORDER)
+    return ", ".join(parts) if parts else "none"
+
+
+def task_title(record: dict[str, object]) -> str:
+    return consensus_field(record.get("title")) or consensus_field(record.get("id")) or "Task record"
+
+
+def truncate_summary_item(text: str) -> str:
+    if len(text) <= SUMMARY_OPEN_ITEM_LIMIT:
+        return text
+    return text[: SUMMARY_OPEN_ITEM_LIMIT - 1].rstrip() + "…"
+
+
+def unresolved_items(
+    warnings: list[str],
+    verification_records: list[dict[str, object]],
+    consensus_records: list[dict[str, object]],
+    task_records: list[dict[str, object]],
+) -> list[str]:
+    items = list(warnings)
+    for record in verification_records:
+        result = consensus_field(record.get("result")) or "unknown"
+        if result in UNRESOLVED_VERIFICATION_RESULTS:
+            kind = verification_kind_label(record.get("kind"))
+            summary = consensus_field(record.get("summary")) or "No summary recorded."
+            items.append(f"{kind} ({result}): {summary}")
+    for record in consensus_records:
+        status = consensus_field(record.get("status")) or "unknown"
+        if status in UNRESOLVED_CONSENSUS_STATUSES:
+            finding = consensus_field(record.get("finding") or record.get("summary")) or "Consensus record"
+            items.append(f"{finding} ({status})")
+    for record in task_records:
+        status = consensus_field(record.get("status")) or "unknown"
+        if status in TASK_RISK_STATUSES:
+            items.append(f"{task_title(record)} ({status})")
+    return items
+
+
+def acceptance_decision(status: object, open_risks: list[str]) -> str:
+    if status == "accepted":
+        if open_risks:
+            return f"Accepted, but {len(open_risks)} unresolved item(s) remain — see Risks / Follow-ups."
+        return "Accepted based on recorded evidence."
+    if status == "rejected":
+        return "Rejected based on recorded evidence."
+    return "No acceptance decision recorded; this run needs review."
 
 
 def command_report(args: argparse.Namespace) -> int:
@@ -420,34 +619,103 @@ def command_report(args: argparse.Namespace) -> int:
     review_records = [record for record in verifications if record.get("kind") in REVIEW_KINDS]
     evidence_records = [record for record in verifications if record.get("kind") not in REVIEW_KINDS]
     consensus_records = ledger_records(directory, "consensus")
+    task_records = ledger_records(directory, "task")
     warnings = collect_warnings(state)
+    open_risks = unresolved_items(warnings, verifications, consensus_records, task_records)
+    decision = acceptance_decision(state.get("status"), open_risks)
+    sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
     existing_report = report_path(directory).read_text(encoding="utf-8") if report_path(directory).exists() else ""
+    authored_summary = authored_summary_section(existing_report)
+    authored_changes = authored_changes_section(existing_report)
     manual_review = manual_review_section(existing_report)
     manual_consensus = manual_consensus_section(existing_report)
     lines = [
         "# Report",
         "",
-        "## Review",
+        "## Summary",
         "",
     ]
+    if authored_summary:
+        lines.extend([authored_summary, ""])
+    else:
+        lines.extend([
+            SUMMARY_PLACEHOLDER,
+            "",
+            "### Generated Digest",
+            "",
+            f"- Run ID: {state.get('run_id')}",
+            f"- Status: {state.get('status')}",
+            f"- Generated at: {utc_now()}",
+            f"- Acceptance: {decision}",
+        ])
+        if task_records:
+            lines.append(f"- Changes: {len(task_records)} ({task_status_tally(task_records)})")
+            lines.extend(f"  - {truncate_summary_item(task_title(record))}" for record in task_records)
+        else:
+            lines.append("- Changes: none")
+        lines.extend([
+            f"- Evidence: {verification_tally(evidence_records)}",
+            f"- Reviews: {len(review_records)}",
+            f"- Consensus: {consensus_status_tally(consensus_records)}",
+        ])
+        if sessions:
+            lines.append(f"- Sessions: {len(sessions)}")
+        if open_risks:
+            lines.append(f"- Open items ({len(open_risks)}):")
+            lines.extend(f"  - {truncate_summary_item(item)}" for item in open_risks)
+        else:
+            lines.append("- Open items: none")
+        lines.append("")
+    lines.extend([
+        "## Changes",
+        "",
+    ])
+    if authored_changes:
+        lines.extend([authored_changes, ""])
+    elif task_records:
+        lines.extend([CHANGES_PLACEHOLDER, "", "### Ledger Records", ""])
+        for record in task_records:
+            title = task_title(record)
+            status = consensus_field(record.get("status")) or "unknown"
+            lines.append(f"- **{title}** ({status})")
+            owner = consensus_field(record.get("owner"))
+            if owner:
+                lines.append(f"  - Owner: {owner}")
+            notes = consensus_field(record.get("notes"))
+            if notes:
+                lines.append(f"  - Notes: {notes}")
+        lines.append("")
+    else:
+        lines.extend([CHANGES_PLACEHOLDER, ""])
+    lines.extend([
+        "## Evidence",
+        "",
+    ])
+    if evidence_records:
+        for record in evidence_records:
+            lines.extend(record_lines(record))
+    else:
+        lines.append(EVIDENCE_PLACEHOLDER)
+
+    lines.extend(["", "## Consensus", ""])
+    wrote_consensus_content = False
     if manual_review:
-        lines.extend([manual_review, ""])
-
-    if review_records:
-        lines.append("### Recorded Reviews")
-        lines.append("")
-        for record in review_records:
-            lines.append(verification_bullet(record))
-        lines.append("")
-    elif not manual_review:
-        lines.extend([REVIEW_PLACEHOLDER, ""])
-
-    lines.extend(["## Consensus", ""])
+        lines.extend(["### Review Notes", "", manual_review, ""])
+        wrote_consensus_content = True
     if manual_consensus:
         lines.extend([manual_consensus, ""])
+        wrote_consensus_content = True
+
+    if review_records:
+        lines.append("### Reviews")
+        lines.append("")
+        for record in review_records:
+            lines.extend(record_lines(record))
+        lines.append("")
+        wrote_consensus_content = True
 
     if consensus_records:
-        lines.append("### Ledger Records")
+        lines.append("### Decisions")
         lines.append("")
         for record in consensus_records:
             finding = consensus_field(record.get("finding") or record.get("summary")) or "Consensus record"
@@ -471,53 +739,15 @@ def command_report(args: argparse.Namespace) -> int:
                 if evidence_text:
                     lines.append(f"  - **Evidence:** {evidence_text}")
         lines.append("")
-    elif not manual_consensus:
+        wrote_consensus_content = True
+    if not wrote_consensus_content:
         lines.extend([CONSENSUS_PLACEHOLDER, ""])
 
-    lines.extend([
-        "## Final Report",
-        "",
-        f"Run ID: {state.get('run_id')}",
-        f"Status: {state.get('status')}",
-        f"Generated at: {utc_now()}",
-        "",
-        "### Sessions",
-        "",
-    ])
-    sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
-    if sessions:
-        for session in sessions:
-            if isinstance(session, dict):
-                lines.append(
-                    "- {name}: {status} ({mode})".format(
-                        name=session.get("name") or "codex",
-                        status=session.get("status") or "unknown",
-                        mode=session.get("mode") or session.get("event_source") or "unknown",
-                    )
-                )
+    lines.extend(["## Risks / Follow-ups", ""])
+    if open_risks:
+        lines.extend(f"- {item}" for item in open_risks)
     else:
-        lines.append("No sessions recorded.")
-
-    lines.extend(["", "### Verification Evidence", ""])
-    if evidence_records:
-        for record in evidence_records:
-            lines.append(verification_bullet(record))
-    else:
-        lines.append("No verification evidence recorded.")
-
-    lines.extend(["", "### Risks / Unresolved Items", ""])
-    if warnings:
-        lines.extend(f"- {warning}" for warning in warnings)
-    else:
-        lines.append("No parser warnings or unresolved items recorded.")
-
-    lines.extend(["", "### Acceptance Decision", ""])
-    if state.get("status") == "accepted":
-        lines.append("Accepted based on recorded evidence.")
-    elif state.get("status") == "rejected":
-        lines.append("Rejected based on recorded evidence.")
-    else:
-        lines.append("No acceptance decision recorded; this run needs review.")
+        lines.append(RISKS_PLACEHOLDER)
 
     path = report_path(directory)
     atomic_write_text(path, "\n".join(lines) + "\n")
