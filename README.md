@@ -167,6 +167,7 @@ Runtime files live under `.codex-orchestrator/runs/<run-id>/` and are ignored by
 the human-readable handoff. Codex prompts, JSONL streams, and generated artifacts are grouped under
 `prompts/`, `logs/`, and `artifacts/` using matching filename stems where possible. Runtime records
 are described by `schemas/codex-orchestrator.schema.json`.
+
 ---
 
 ## Why not just use OpenAI's Codex plugin?
