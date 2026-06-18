@@ -1,0 +1,3 @@
+.codex-orchestrator/
+__pycache__/
+*.pyc

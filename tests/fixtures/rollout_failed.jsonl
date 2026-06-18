@@ -1,0 +1,2 @@
+{"timestamp":"2026-06-17T09:00:00Z","payload":{"type":"thread_goal_updated","goal":{"status":"active","text":"Run verification."}}}
+{"timestamp":"2026-06-17T09:01:00Z","payload":{"type":"agent_message","message":"FAILED tests/test_parse.py::test_cli - AssertionError"}}

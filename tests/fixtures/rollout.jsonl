@@ -1,0 +1,5 @@
+{"timestamp":"2026-06-17T09:00:00Z","payload":{"type":"thread_goal_updated","goal":{"status":"active","text":"Implement a small parser."}}}
+{"timestamp":"2026-06-17T09:01:00Z","payload":{"type":"agent_message","message":"Reading the relevant files."}}
+{"timestamp":"2026-06-17T09:02:00Z","payload":{"type":"function_call","name":"shell","arguments":{"cmd":"pytest -q"}}}
+{"timestamp":"2026-06-17T09:03:00Z","payload":{"type":"function_call_output","output":"3 passed"}}
+{"timestamp":"2026-06-17T09:04:00Z","payload":{"type":"thread_goal_updated","goal":{"status":"idle","text":"Waiting for the next instruction."}}}
