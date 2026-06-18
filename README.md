@@ -5,13 +5,13 @@ ledgers, and evidence-recorded consensus; it complements OpenAI's Codex plugin, 
 
 The core workflow is:
 
-> **Claude plans, monitors, reviews, and gates. Codex executes scoped implementation work in its own native harness. When Claude finds a suspected issue, Claude shares it back with Codex and records the evidence-based resolution before accepting the work.**
+> **Claude plans, monitors, reviews, and gates. Codex reviews new Claude-created plans when needed, then executes scoped implementation work in its own native harness. When Claude finds a suspected issue, Claude shares it back with Codex and records the evidence-based resolution before accepting the work.**
 
 This creates a practical heterogeneous coding-agent ensemble: Claude acts as the long-context
 orchestrator and reviewer, while Codex handles scoped implementation, backend work, refactors, test
 repair, and second-pass review as reusable monitored `codex exec` agents by default.
 
-The actual operational playbook lives in [`skills/codex-orchestrator/SKILL.md`](./skills/codex-orchestrator/SKILL.md). This README only explains the motivation, setup, and intended workflow.
+The actual operational playbook lives in [`commands/orchestrate.md`](./commands/orchestrate.md). This README only explains the motivation, setup, and intended workflow.
 
 ---
 
@@ -28,41 +28,6 @@ It helps Claude:
 * coordinate sequential or parallel Codex work without file or compute conflicts,
 * gate shared compute before expensive rollouts,
 * record verification evidence and Claude/Codex consensus in a final report.
-
----
-
-## Architecture
-
-```text
-User goal
-   │
-   ▼
-Claude Code
-Planner / Orchestrator / Reviewer
-   │
-   ├── creates or validates plan
-   ├── scopes Codex exec subagent tasks
-   ├── reuses, launches, or resumes Codex exec agents
-   ├── monitors Codex JSONL / IDE event streams
-   ├── verifies code, tests, diffs, logs, and artifacts
-   ├── detects idle / blocked / complete states
-   └── records consensus decisions
-   │
-   ▼
-OpenAI Codex
-Executor / Implementer / Peer Reviewer
-   │
-   ├── runs as reusable codex exec agents by default
-   ├── can also run inside VS Code / Cursor
-   ├── edits files in its native harness
-   ├── performs scoped implementation work
-   ├── can be resumed via codex exec
-   └── can review uncommitted diffs
-   │
-   ▼
-Repository
-Code / tests / manifests / logs / git history
-```
 
 ---
 
@@ -89,13 +54,25 @@ From inside Claude Code:
 
 ## Basic usage
 
-Default to headless Codex exec agents for new work:
+Use `orchestrate` for prompt-directed Codex coordination:
+
+```text
+/codex-orchestrator:orchestrate
+
+Break this task into scoped Codex exec subagent prompts.
+
+If no usable plan exists, create a minimal orchestration plan for Codex executors and have Codex review it before execution. If plan disagreement remains, record it and make the final planning decision as orchestrator.
+
+Reuse any matching existing Codex agent whose context is relevant. If that session is almost full but still relevant, compact the useful state and continue in the same session. Start a new `codex exec --json` agent only when the task is contextually unrelated, isolation requires it, or I explicitly ask for a fresh session.
+
+Save each Codex prompt under `prompts/` and capture each exec JSONL stream under `logs/` with the same filename stem. Monitor each JSONL stream with parser state/tail offsets. Do not edit overlapping files while Codex owns them. Review the diffs and record verification after Codex yields or completes.
+```
+
+Use `workflow` only when you want the full end-to-end workflow: ledger setup, planning, Codex plan
+review when needed, dispatch, monitoring, review, verification, consensus, and final report.
 
 ```text
 /codex-orchestrator:workflow
-
-Break this task into scoped Codex exec subagent prompts.
-First reuse any matching existing Codex agent whose context is relevant. If that session is almost full but still relevant, compact the useful state and continue in the same session. Start a new codex exec --json agent only when the task is contextually unrelated, isolation requires it, or I explicitly ask for a fresh session. Monitor each JSONL stream with parser state/tail offsets, do not edit overlapping files while Codex owns them, then review the diffs and record verification after Codex yields or completes.
 ```
 
 Start a Codex task in VS Code or Cursor.
@@ -107,13 +84,12 @@ codex://threads/<thread-uuid>
 ```
 
 For IDE sidebar visibility, start the session in VS Code or Cursor first. Headless `codex exec`
-sessions use source kind `exec`; if you explicitly ask the skill for IDE visibility, it will use a
-local metadata workaround which might have future compatibility implications.
+sessions use source kind `exec`; they are CLI-resumable but do not appear in the IDE sidebar.
 
 Then ask Claude:
 
 ```text
-/codex-orchestrator:workflow
+/codex-orchestrator:orchestrate
 
 Monitor this Codex session:
 codex://threads/<thread-uuid>
@@ -129,16 +105,54 @@ Available slash commands:
 
 | Command | What it does |
 | --- | --- |
-| `/codex-orchestrator:workflow` | Reuse or dispatch Codex agents, monitor them, review diffs, record verification, resolve consensus, and report. |
-| `/codex-orchestrator:start-run` | Open a tracked run only by creating `state.json`, `ledger.jsonl`, and `report.md`. It does not run agents, tests, reviews, or consensus. |
+| `/codex-orchestrator:orchestrate` | Invoke the orchestration skill for prompt-directed Codex coordination, such as scoped dispatch, monitoring, review, handoff, consensus, or compute gating. |
+| `/codex-orchestrator:workflow` | Run the full end-to-end workflow: ledger, planning, Codex plan review when needed, dispatch, monitoring, review, verification, consensus, and report. |
 | `/codex-orchestrator:report` | Generate or update `report.md` from evidence already recorded in the run ledger. |
+
+---
+
+## Workflow Architecture
+
+```text
+User goal
+   │
+   ▼
+Claude Code
+Planner / Orchestrator / Reviewer
+   │
+   ├── creates or validates plan
+   ├── asks Codex to review new Claude-created plans
+   ├── scopes Codex exec subagent tasks
+   ├── reuses, launches, or resumes Codex exec agents
+   ├── monitors Codex JSONL / IDE event streams
+   ├── verifies code, tests, diffs, logs, and artifacts
+   ├── detects idle / blocked / complete states
+   └── records consensus decisions
+   │
+   ▼
+OpenAI Codex
+Executor / Implementer / Peer Reviewer
+   │
+   ├── runs as reusable codex exec agents by default
+   ├── can also run inside VS Code / Cursor
+   ├── edits files in its native harness
+   ├── performs scoped implementation work
+   ├── can be resumed via codex exec
+   ├── can review Claude-created plans
+   └── can review uncommitted diffs
+   │
+   ▼
+Repository
+Code / tests / manifests / logs / git history
+```
 
 ---
 
 ## Runtime Files And CLI
 
-Most users can use the slash commands and ignore the Python CLI. It exists for manual debugging,
-scripted runs, and inspecting the durable files the agent writes.
+Most users can use the slash commands and ignore the Python CLI. `orchestrate` and `workflow`
+initialize runtime files internally. The CLI exists for manual debugging, scripted runs, and
+inspecting the durable files the agent writes.
 
 ```bash
 python3 scripts/codex_orch.py init --run-id example --repo .
@@ -149,9 +163,9 @@ python3 scripts/codex_orch.py report --run-id example
 
 Runtime files live under `.codex-orchestrator/runs/<run-id>/` and are ignored by git:
 `state.json` is compact mutable state, `ledger.jsonl` is append-only evidence, and `report.md` is
-the human-readable handoff. Runtime records are described by
-`schemas/codex-orchestrator.schema.json`.
-
+the human-readable handoff. Codex prompts, JSONL streams, and generated artifacts are grouped under
+`prompts/`, `logs/`, and `artifacts/` using matching filename stems where possible. Runtime records
+are described by `schemas/codex-orchestrator.schema.json`.
 ---
 
 ## Why not just use OpenAI's Codex plugin?
@@ -174,7 +188,8 @@ For software engineering specifically, [*Wisdom and Delusion of LLM Ensembles fo
 
 That is why this skill uses **evidence-based consensus** instead of majority vote:
 
-* Claude proposes or validates the plan.
+* Claude proposes or validates the plan, and Codex reviews new Claude-created plans before execution.
+* If Claude and Codex disagree about the plan, Claude records the disagreement and makes the final planning decision.
 * Codex executes a scoped implementation.
 * Claude verifies the diff, tests, logs, and artifacts.
 * Codex independently reviews the diff before acceptance; when Claude finds a suspected issue, Codex also reviews Claude’s objection.

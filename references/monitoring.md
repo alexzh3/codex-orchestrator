@@ -7,6 +7,7 @@ Use these recipes only when running inside Claude Code and you need concrete nat
 Claude Code native Monitor / run_in_background = wake-up trigger
 codex_orch_parse.py                            = JSONL interpretation
 state.json / ledger.jsonl                      = durable state and evidence
+prompts/ and logs/                             = paired prompt and JSONL files by stem
 ```
 
 Do not treat these shell snippets as the source of truth. Parser output and recorded evidence are
@@ -20,7 +21,10 @@ cannot `wait` on a PID it did not spawn; if launched separately, persist the PID
 
 ```bash
 # one run_in_background command: launch, block until real exit, then report status
-"$CODEX" exec --json -s workspace-write -c approval_policy=never -C <worktree> "<prompt>" > "$EXEC_LOG" & PID=$!
+RUN_DIR=.codex-orchestrator/runs/<run>
+PROMPT_FILE="$RUN_DIR/prompts/<name>.md"
+EXEC_LOG="$RUN_DIR/logs/<name>.jsonl"
+"$CODEX" exec --json -s workspace-write -c approval_policy=never -C <worktree> < "$PROMPT_FILE" > "$EXEC_LOG" & PID=$!
 wait "$PID"; RC=$?   # rc!=0, or an empty/unterminated log, means the run failed, not idle
 python3 scripts/codex_orch_parse.py state <name> --source exec --file "$EXEC_LOG" --json
 if [ "$RC" -ne 0 ]; then echo "EXEC EXITED rc=$RC - treat empty/partial log as failed"; fi

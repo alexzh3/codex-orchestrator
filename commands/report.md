@@ -10,17 +10,25 @@ Use when: verification evidence and any consensus decisions have already been re
 a human-readable `report.md` for handoff or approval.
 
 Do not use when: you still need to start exec subagents, monitor Codex, or review the diff. Use
-`/codex-orchestrator:workflow` for active orchestration phases, including monitoring, review,
-consensus, handoff, and compute gating.
+`/codex-orchestrator:orchestrate` for prompt-directed orchestration phases, including monitoring,
+review, consensus, handoff, and compute gating. Use `/codex-orchestrator:workflow` only for the full
+end-to-end run.
 
 Scope: report generation. This command assumes review and verification evidence have already been
 recorded in `ledger.jsonl`; it should not perform the full orchestration workflow by itself.
+`Summary` and `Changes` are authored handoff sections and must be preserved when regenerating the
+report. `Evidence`, `Consensus`, and `Risks / Follow-ups` are generated from durable records.
 
-Update these files under `.codex-orchestrator/runs/<run-id>/`:
+Read these files under `.codex-orchestrator/runs/<run-id>/`:
 
 ```text
 state.json
 ledger.jsonl
+```
+
+Update this file:
+
+```text
 report.md
 ```
 
@@ -30,11 +38,11 @@ Default command:
 python3 scripts/codex_orch.py report --run-id <run-id>
 ```
 
-The final report should summarize accepted changes, verification evidence, unresolved risks, and
-every recorded consensus decision.
+The final report should stay compact: authored `Summary` and `Changes`, generated `Evidence`,
+generated `Consensus`, and generated `Risks / Follow-ups`.
 
 Reference:
 
 ```text
-skills/codex-orchestrator/SKILL.md
+commands/orchestrate.md
 ```
