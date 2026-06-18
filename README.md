@@ -27,12 +27,10 @@ It can:
 * locate a live Codex IDE session from a `codex://threads/<thread-uuid>` URL,
 * read Codex rollout logs without loading huge files into context,
 * detect whether Codex is active, complete, idle, or blocked on approval,
-* resume or drive Codex through [`codex exec`](https://developers.openai.com/codex/cli/reference),
-* run Codex as a headless executor,
 * ask Codex to review uncommitted changes,
 * coordinate multiple Codex sessions sequentially or in parallel,
 * gate shared compute before expensive rollouts,
-* and record evidence, verification results, and any Claude/Codex disagreement resolutions in the final report.
+* and record evidence, verification results, and any Claude/Codex disagreement resolutions in a final report.
 
 ---
 ## Hypothetical Architecture
@@ -67,77 +65,7 @@ Executor / Implementer / Peer Reviewer
 Repository
 Code / tests / manifests / logs / git history
 ```
-
 ---
-## Installation
-
-From inside Claude Code:
-
-```text
-/plugin marketplace add alexzh3/codex-orchestrator
-/plugin install codex-orchestrator@codex-orchestrator
-/reload-plugins
-```
-
-For the full orchestration workflow, invoke:
-
-```text
-/codex-orchestrator:workflow
-```
-
-## Slash commands
-
-Use the workflow command when you want Claude to run the whole orchestration workflow end to end:
-
-```text
-/codex-orchestrator:workflow
-```
-
-Use `start-run` only when you want to open a tracked run ledger:
-
-```text
-/codex-orchestrator:start-run
-```
-
-That command only creates:
-
-```text
-.codex-orchestrator/runs/<run-id>/
-  state.json
-  ledger.jsonl
-  report.md
-```
-
-It does not run tests, review diffs, resolve consensus, or generate the final report.
-
-Public commands:
-
-```text
-/codex-orchestrator:workflow       # reuse/dispatch Codex agents, monitor, review, verify, consensus, report
-/codex-orchestrator:start-run      # open state.json, ledger.jsonl, and report.md only
-/codex-orchestrator:report         # generate or update report.md after evidence is recorded
-```
-
-Monitoring, review, consensus, handoff, and compute-gating are internal workflow phases, not separate
-slash commands. Use `/codex-orchestrator:workflow` with a scoped prompt when you want Claude to run
-one of those phases explicitly.
-
-Typical full run:
-
-```text
-/codex-orchestrator:workflow
-```
-
-Typical tracked/manual run:
-
-```text
-/codex-orchestrator:start-run
-/codex-orchestrator:workflow       # monitor/review/consensus/handoff as requested in the prompt
-/codex-orchestrator:report
-```
-
-Use `workflow` for active orchestration. Use `start-run` only to open the ledger, and `report` only
-after evidence has already been recorded.
 
 ## Requirements
 
@@ -148,32 +76,15 @@ after evidence has already been recorded.
 
 ---
 
-## Durable ledger CLI
+## Installation
 
-Create a run ledger before supervising or dispatching Codex:
+From inside Claude Code:
 
-```bash
-python3 scripts/codex_orch.py init --run-id example --repo .
+```text
+/plugin marketplace add alexzh3/codex-orchestrator
+/plugin install codex-orchestrator@codex-orchestrator
+/reload-plugins
 ```
-
-After later review work, inspect compact state, record verification evidence, and generate the
-handoff report:
-
-```bash
-python3 scripts/codex_orch.py status --run-id example
-python3 scripts/codex_orch.py append-event --run-id example '{"type":"note","summary":"Reviewed diff"}'
-python3 scripts/codex_orch.py add-verification --run-id example --kind test --command "python3 -m unittest discover -s tests -v" --exit-code 0 --result passed --summary "Unit tests passed"
-python3 scripts/codex_orch.py report --run-id example
-```
-
-Runtime ledgers live under `.codex-orchestrator/runs/<run-id>/` and are ignored by git. Each run uses
-`state.json` for compact mutable state, `ledger.jsonl` for append-only events and evidence, and
-`report.md` for human-readable review, consensus, and final report sections.
-Runtime records are described by `schemas/codex-orchestrator.schema.json`.
-
-The script surface is intentionally small: `scripts/codex_orch.py` handles durable ledger, events,
-verification, worktrees, and reports; `scripts/codex_orch_parse.py` handles Codex IDE rollout and
-`codex exec --json` stream parsing.
 
 ---
 
@@ -223,15 +134,64 @@ After Codex finishes, review the diff, run verification, and ask Codex to review
 
 ---
 
-## When to use this instead of /codex:rescue
+## Commands
 
-Use this skill when:
+Use the workflow command when you want Claude to run the whole orchestration workflow end to end:
 
-* an existing Codex IDE session needs supervision without discarding its live context,
-* multiple sessions may race on files, branches, artifacts, or shared GPU/compute,
-* a durable audit trail is needed for thesis, research, or handoff review,
-* artifacts, manifests, logs, and generated outputs must be verified before acceptance,
-* disagreements need to be resolved with recorded evidence rather than a one-shot rescue.
+```text
+/codex-orchestrator:workflow
+```
+
+Use `start-run` only when you want to open a tracked run ledger:
+
+```text
+/codex-orchestrator:start-run
+```
+
+That command only creates:
+
+```text
+.codex-orchestrator/runs/<run-id>/
+  state.json
+  ledger.jsonl
+  report.md
+```
+
+It does not run tests, review diffs, resolve consensus, or generate the final report.
+
+Public commands:
+
+```text
+/codex-orchestrator:workflow       # reuse/dispatch Codex agents, monitor, review, verify, consensus, report
+/codex-orchestrator:start-run      # open state.json, ledger.jsonl, and report.md only
+/codex-orchestrator:report         # generate or update report.md after evidence is recorded
+```
+---
+
+## Ledger CLI
+
+Create a run ledger before supervising or dispatching Codex:
+
+```bash
+python3 scripts/codex_orch.py init --run-id example --repo .
+```
+
+After later review work, inspect compact state, record verification evidence, and generate the
+handoff report:
+
+```bash
+python3 scripts/codex_orch.py status --run-id example
+python3 scripts/codex_orch.py append-event --run-id example '{"type":"note","summary":"Reviewed diff"}'
+python3 scripts/codex_orch.py add-verification --run-id example --kind test --command "python3 -m unittest discover -s tests -v" --exit-code 0 --result passed --summary "Unit tests passed"
+python3 scripts/codex_orch.py report --run-id example
+```
+
+Runtime ledgers live under `.codex-orchestrator/runs/<run-id>/` and are ignored by git. Each run uses
+`state.json` for compact mutable state, `ledger.jsonl` for append-only events and evidence, and
+`report.md` for human-readable review, consensus, and final report sections.
+Runtime records are described by `schemas/codex-orchestrator.schema.json`.
+
+---
 
 ## Why not just use OpenAI's Codex plugin?
 

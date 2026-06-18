@@ -142,7 +142,7 @@ Capture each exec stream:
 
 ```bash
 EXEC_LOG=".codex-orchestrator/runs/<run-id>/exec-<name>.jsonl"
-"$CODEX" exec --json -s workspace-write -c approval_policy=never -C <worktree> "<scoped prompt>" > "$EXEC_LOG" &
+"$CODEX" exec --json -s workspace-write -c approval_policy=never -C <worktree> "<scoped prompt>" > "$EXEC_LOG" & PID=$!
 ```
 
 Record the subagent name, mode `exec`, worktree, branch, event file, and current status as ledger
@@ -152,10 +152,54 @@ with a temporary name until the stream emits `thread.started`, then update the s
 
 ## Monitoring Codex
 
-IDE sessions use `codex://threads/<thread-uuid>` and rollout JSONL. Exec sessions use captured
-`codex exec --json` streams. Treat monitoring as an active loop: poll state, read only new events
-from `next_offset`, update durable status, and decide whether to wait, resume, ask for approval, or
-review.
+Inside Claude Code, prefer native Monitor or Bash `run_in_background` over a manual sleep-poll loop.
+Arm once and get woken on real events instead of burning a turn per poll. Parser `state` and `tail`
+commands are the interpretation and fallback layer underneath the trigger, not a replacement for it.
+
+Tier 1: for exec completion, use one Bash `run_in_background` notification. No Monitor tool is
+needed. Launch and `wait` in the *same* command so `$PID` is a child you can `wait` on and capture
+its exit code (a separate watcher shell cannot; there, persist the PID and poll `kill -0`). Report
+the child rc with the final parser state so a crash or bad `$CODEX` path is not misread as idle:
+
+```bash
+# one run_in_background command: launch, block until real exit, then report status
+"$CODEX" exec --json -s workspace-write -c approval_policy=never -C <worktree> "<prompt>" > "$EXEC_LOG" & PID=$!
+wait "$PID"; RC=$?   # rc!=0, or an empty/unterminated log, means the run failed — not idle
+python3 scripts/codex_orch_parse.py state <name> --source exec --file "$EXEC_LOG" --json
+if [ "$RC" -ne 0 ]; then echo "EXEC EXITED rc=$RC — treat empty/partial log as failed"; fi
+exit "$RC"   # wrapper exit code must mirror the child, not the last test (avoids the && status trap)
+```
+
+Tier 2: for progress, stall, or failure during a run, use the Monitor tool with the parser as the
+filter, not text grep. Use a bounded `timeout_ms` for exec monitors and `persistent: true` for IDE
+monitors:
+
+```bash
+LEDGER=.codex-orchestrator/runs/<run>/ledger.jsonl; STALE=600
+# resume from the persisted offset for this (agent, log file); first arm falls back to 0 so a fast terminal event is not skipped
+OFF=$(tac "$LEDGER" 2>/dev/null | jq -rc --arg f "$EXEC_LOG" 'select(.type=="monitor_offset" and .name=="<name>" and .file==$f).offset' | head -1)
+OFF=${OFF:-0}; SZ=$(stat -c %s "$EXEC_LOG" 2>/dev/null || echo 0); (( OFF > SZ )) && OFF=0   # fresh/truncated log -> restart at 0
+while true; do
+  OUT=$(python3 scripts/codex_orch_parse.py tail <name> --source exec --file "$EXEC_LOG" --since-offset "$OFF" --json)
+  OFF=$(jq -r '.next_offset' <<<"$OUT")
+  # structured event types — no false positives from Codex merely *discussing* a commit
+  # turn.completed/turn.failed always; error only when it is not a benign reconnect notice
+  jq -rc '.events[]? | select((.type|test("turn.completed|turn.failed")) or (.type=="error" and ((.message//"")|test("[Rr]econnect")|not))) | "EVENT \(.type) \(.item.text // .message // "")"' <<<"$OUT"
+  MT=$(stat -c %Y "$EXEC_LOG"); (( $(date +%s)-MT > STALE )) && { echo "STALL ${STALE}s — turn ended / awaiting approval"; break; }
+  python3 scripts/codex_orch.py append-event --run-id <run> "{\"type\":\"monitor_offset\",\"name\":\"<name>\",\"file\":\"$EXEC_LOG\",\"offset\":$OFF}" >/dev/null  # persist per-(agent,file); MUST silence stdout
+  sleep 90
+done
+```
+
+In a Monitor, stdout is the event stream. Redirect `append-event` to `/dev/null` or every persist
+call becomes a spurious notification. Cover failure signatures, not just success; silence is not
+completion. Cap emitted events and use TaskStop before re-arming.
+
+Tier 3: for IDE rollout sessions, resolve the newest rollout path with
+`codex_orch_parse.py find <thread-uuid>` inside each monitor tick instead of caching the path. Codex
+appends a new rollout file on resume.
+
+Use bare parser commands as the fallback and interpretation layer:
 
 ```bash
 python3 scripts/codex_orch_parse.py find <thread-uuid> --source ide --json
@@ -225,18 +269,31 @@ For deterministic changes, inspect diffs and run relevant tests, typecheck, lint
 assertions. For nondeterministic rollout/training changes, require seeded determinism where possible,
 metric thresholds, and regression bands; do not accept one stochastic pass.
 
-Obtain an independent Codex review of the diff before acceptance, not only when Claude already
-suspects a problem. Run `codex exec review --uncommitted` (or `--commit <sha>` / `--base <branch>`)
-as a standard second opinion and record it as verification or consensus evidence. Do not accept on
-Claude's solo judgment unless the user explicitly opts out, and record that opt-out.
+Use a consensus-gated review loop:
 
-When Claude finds a suspected Codex mistake, share the exact finding and evidence back before
-accepting or implementing:
+1. Codex implements the scoped change.
+2. Claude reviews the actual diff, tests, logs, manifests, and artifacts.
+3. If Claude finds a suspected issue, share the exact finding, evidence, and proposed resolution
+   with Codex before implementing or accepting a fix.
+4. Record consensus: whether Claude and Codex agree, disagree, or partially agree; root cause when
+   known; chosen fix or no-fix rationale; and the verification required.
+5. Implement accepted fixes, then run Claude's final review and a Codex final review.
+6. Accept only when both final reviews pass, or when the user explicitly accepts a recorded risk.
+
+Run `codex exec review --uncommitted` (or `--commit <sha>` / `--base <branch>`) as the standard Codex
+final review before acceptance. Do not accept on Claude's solo judgment unless the user explicitly
+opts out, and record that opt-out.
+
+When Claude needs Codex consensus on a finding, use a targeted prompt rather than another broad
+rereview:
 
 ```bash
-"$CODEX" exec review --uncommitted
 "$CODEX" exec resume <thread-id> "<specific finding, evidence, and proposed fix>"
 ```
+
+Do not chain broad rereviews. If a final review still finds incorrect behavior after consensus fixes,
+run one scoped rereview/fix loop for the unresolved issue and record why the extra pass was needed.
+Escalate to the user instead of continuing open-ended review rounds.
 
 Record suspected issue, root cause when known, agreed resolution, and verification as `consensus`
 evidence in both `ledger.jsonl` and the `## Consensus` section of `report.md`.
