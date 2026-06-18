@@ -136,6 +136,56 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIn("Parser warning requires manual inspection", report)
         self.assertIn("No acceptance decision recorded", report)
 
+    def test_report_shows_review_placeholder_without_records(self) -> None:
+        self.init_run()
+        self.run_cli("report", "--run-id", "run")
+        report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
+
+        self.assertIn("No review notes recorded.", report)
+
+    def test_report_renders_manual_review_under_review_section(self) -> None:
+        self.init_run()
+        summary = "Independent Codex review: no regressions"
+        self.run_cli(
+            "add-verification",
+            "--run-id",
+            "run",
+            "--kind",
+            "manual_review",
+            "--result",
+            "passed",
+            "--summary",
+            summary,
+        )
+        self.run_cli("report", "--run-id", "run")
+        report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
+        review_section = report.split("## Review", 1)[1].split("\n## ", 1)[0]
+
+        self.assertIn(summary, report)
+        self.assertIn("### Recorded Reviews", report)
+        self.assertIn(summary, review_section)
+        self.assertNotIn("No review notes recorded.", report)
+
+    def test_report_keeps_automated_evidence_under_verification(self) -> None:
+        self.init_run()
+        summary = "Unit test suite passed under Python"
+        self.run_cli(
+            "add-verification",
+            "--run-id",
+            "run",
+            "--kind",
+            "test",
+            "--result",
+            "passed",
+            "--summary",
+            summary,
+        )
+        self.run_cli("report", "--run-id", "run")
+        report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
+        verification_section = report.split("### Verification Evidence", 1)[1]
+
+        self.assertIn(summary, verification_section)
+
     def test_report_shows_consensus_placeholder_without_records(self) -> None:
         self.init_run()
         self.run_cli("report", "--run-id", "run")

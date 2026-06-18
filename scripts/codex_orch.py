@@ -50,6 +50,8 @@ DEFAULT_VERIFICATION_POLICY = {
 }
 
 CONSENSUS_PLACEHOLDER = "No consensus decisions recorded."
+REVIEW_PLACEHOLDER = "No review notes recorded."
+REVIEW_KINDS = {"manual_review", "git_diff"}
 
 
 def utc_now() -> str:
@@ -397,6 +399,19 @@ def manual_consensus_section(text: str) -> str:
     return "\n".join(manual_lines).strip()
 
 
+def manual_review_section(text: str) -> str:
+    section = report_section(text, "Review", "")
+    generated_marker = "### Recorded Reviews"
+    if generated_marker in section:
+        section = section.split(generated_marker, 1)[0].strip()
+    manual_lines = [
+        line
+        for line in section.splitlines()
+        if line.strip() != REVIEW_PLACEHOLDER
+    ]
+    return "\n".join(manual_lines).strip()
+
+
 def consensus_field(value: object) -> str:
     if value is None:
         return ""
@@ -405,24 +420,48 @@ def consensus_field(value: object) -> str:
     return str(value)
 
 
+def verification_bullet(record: dict[str, object]) -> str:
+    command = f" command={record.get('command')!r}" if record.get("command") else ""
+    exit_code = f" exit_code={record.get('exit_code')}" if record.get("exit_code") is not None else ""
+    return "- {kind}: {result}{command}{exit_code} - {summary}".format(
+        kind=record.get("kind"),
+        result=record.get("result"),
+        command=command,
+        exit_code=exit_code,
+        summary=record.get("summary") or "",
+    )
+
+
 def command_report(args: argparse.Namespace) -> int:
     directory = run_dir(args.repo, args.run_id)
     state = load_json(state_path(directory))
     verifications = ledger_records(directory, "verification")
+    review_records = [record for record in verifications if record.get("kind") in REVIEW_KINDS]
+    evidence_records = [record for record in verifications if record.get("kind") not in REVIEW_KINDS]
     consensus_records = ledger_records(directory, "consensus")
     warnings = collect_warnings(state)
     existing_report = report_path(directory).read_text(encoding="utf-8") if report_path(directory).exists() else ""
+    manual_review = manual_review_section(existing_report)
     manual_consensus = manual_consensus_section(existing_report)
     lines = [
         "# Report",
         "",
         "## Review",
         "",
-        report_section(existing_report, "Review", "No review notes recorded."),
-        "",
-        "## Consensus",
-        "",
     ]
+    if manual_review:
+        lines.extend([manual_review, ""])
+
+    if review_records:
+        lines.append("### Recorded Reviews")
+        lines.append("")
+        for record in review_records:
+            lines.append(verification_bullet(record))
+        lines.append("")
+    elif not manual_review:
+        lines.extend([REVIEW_PLACEHOLDER, ""])
+
+    lines.extend(["## Consensus", ""])
     if manual_consensus:
         lines.extend([manual_consensus, ""])
 
@@ -479,19 +518,9 @@ def command_report(args: argparse.Namespace) -> int:
         lines.append("No sessions recorded.")
 
     lines.extend(["", "### Verification Evidence", ""])
-    if verifications:
-        for record in verifications:
-            command = f" command={record.get('command')!r}" if record.get("command") else ""
-            exit_code = f" exit_code={record.get('exit_code')}" if record.get("exit_code") is not None else ""
-            lines.append(
-                "- {kind}: {result}{command}{exit_code} - {summary}".format(
-                    kind=record.get("kind"),
-                    result=record.get("result"),
-                    command=command,
-                    exit_code=exit_code,
-                    summary=record.get("summary") or "",
-                )
-            )
+    if evidence_records:
+        for record in evidence_records:
+            lines.append(verification_bullet(record))
     else:
         lines.append("No verification evidence recorded.")
 
