@@ -1,6 +1,6 @@
 {
   "name": "codex-orchestrator",
-  "description": "Claude Code plugin for coordinating OpenAI Codex sessions from Claude Code.",
+  "description": "Claude Code plugin for coordinating reusable monitored OpenAI Codex exec agents and IDE sessions.",
   "owner": {
     "name": "alexzh3"
   },
@@ -8,7 +8,7 @@
     {
       "name": "codex-orchestrator",
       "source": "./",
-      "description": "Coordinate OpenAI Codex IDE and CLI sessions from Claude Code.",
+      "description": "Coordinate reusable monitored OpenAI Codex exec agents and IDE sessions from Claude Code.",
       "version": "0.1.0",
       "author": {
         "name": "alexzh3"

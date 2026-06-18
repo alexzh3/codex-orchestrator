@@ -1,12 +1,15 @@
 # Claude–Codex Orchestrator Skill
 
-A Claude Code skill for live-IDE Codex supervision, multi-session coordination, durable audit ledgers, and evidence-recorded consensus; it complements OpenAI's Codex plugin, does not replace it.
+A Claude Code skill for Codex exec subagent orchestration, live-IDE Codex supervision, durable audit
+ledgers, and evidence-recorded consensus; it complements OpenAI's Codex plugin, does not replace it.
 
 The core workflow is:
 
 > **Claude plans, monitors, reviews, and gates. Codex executes scoped implementation work in its own native harness. When Claude finds a suspected issue, Claude shares it back with Codex and records the evidence-based resolution before accepting the work.**
 
-This creates a practical heterogeneous coding-agent ensemble: Claude acts as the long-context orchestrator and reviewer, while Codex handles scoped implementation, backend work, refactors, test repair, and second-pass review.
+This creates a practical heterogeneous coding-agent ensemble: Claude acts as the long-context
+orchestrator and reviewer, while Codex handles scoped implementation, backend work, refactors, test
+repair, and second-pass review as reusable monitored `codex exec` agents by default.
 
 The actual operational playbook lives in [`skills/codex-orchestrator/SKILL.md`](./skills/codex-orchestrator/SKILL.md). This README only explains the motivation, setup, and intended workflow.
 
@@ -18,6 +21,9 @@ Use this skill when you want Claude Code to coordinate one or more Codex session
 
 It can:
 
+* dispatch scoped Codex workers with `codex exec --json`,
+* monitor each exec worker from compact JSONL streams,
+* reuse the same Codex agent/session for follow-up work when its context is still relevant,
 * locate a live Codex IDE session from a `codex://threads/<thread-uuid>` URL,
 * read Codex rollout logs without loading huge files into context,
 * detect whether Codex is active, complete, idle, or blocked on approval,
@@ -39,8 +45,9 @@ Claude Code
 Planner / Orchestrator / Reviewer
    │
    ├── creates or validates plan
-   ├── scopes Codex tasks
-   ├── monitors Codex progress
+   ├── scopes Codex exec subagent tasks
+   ├── reuses, launches, or resumes Codex exec agents
+   ├── monitors Codex JSONL / IDE event streams
    ├── verifies code, tests, diffs, logs, and artifacts
    ├── detects idle / blocked / complete states
    └── records consensus decisions
@@ -49,7 +56,8 @@ Planner / Orchestrator / Reviewer
 OpenAI Codex
 Executor / Implementer / Peer Reviewer
    │
-   ├── runs inside VS Code / Cursor / CLI
+   ├── runs as reusable codex exec agents by default
+   ├── can also run inside VS Code / Cursor
    ├── edits files in its native harness
    ├── performs scoped implementation work
    ├── can be resumed via codex exec
@@ -105,7 +113,7 @@ It does not run tests, review diffs, resolve consensus, or generate the final re
 Public commands:
 
 ```text
-/codex-orchestrator:workflow       # run setup, monitoring, review, verification, consensus, and report
+/codex-orchestrator:workflow       # reuse/dispatch Codex agents, monitor, review, verify, consensus, report
 /codex-orchestrator:start-run      # open state.json, ledger.jsonl, and report.md only
 /codex-orchestrator:report         # generate or update report.md after evidence is recorded
 ```
@@ -161,6 +169,7 @@ python3 scripts/codex_orch.py report --run-id example
 Runtime ledgers live under `.codex-orchestrator/runs/<run-id>/` and are ignored by git. Each run uses
 `state.json` for compact mutable state, `ledger.jsonl` for append-only events and evidence, and
 `report.md` for human-readable review, consensus, and final report sections.
+Runtime records are described by `schemas/codex-orchestrator.schema.json`.
 
 The script surface is intentionally small: `scripts/codex_orch.py` handles durable ledger, events,
 verification, worktrees, and reports; `scripts/codex_orch_parse.py` handles Codex IDE rollout and
@@ -169,6 +178,15 @@ verification, worktrees, and reports; `scripts/codex_orch_parse.py` handles Code
 ---
 
 ## Basic usage
+
+Default to headless Codex exec agents for new work:
+
+```text
+/codex-orchestrator:workflow
+
+Break this task into scoped Codex exec subagent prompts.
+First reuse any matching existing Codex agent. Start a new codex exec --json agent only if the task is new, the previous context is full or irrelevant, isolation requires it, or I explicitly ask for a fresh session. Monitor each JSONL stream with parser state/tail offsets, then review the diffs and record verification before reporting.
+```
 
 Start a Codex task in VS Code or Cursor.
 

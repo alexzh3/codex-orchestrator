@@ -1,5 +1,5 @@
 ---
-description: Create the compact durable run ledger only; no tests, review, consensus, or report generation.
+description: Create the compact durable run ledger only; no Codex subagents, monitors, review, or report generation.
 ---
 
 # Start Run
@@ -19,8 +19,9 @@ Do not use when: you want Claude to perform the whole workflow. Use `/codex-orch
 for the end-to-end run.
 
 Scope: setup only. This is the "open a run ledger" command. It should create the compact runtime
-files and stop; it should not monitor Codex, run tests, review diffs, resolve consensus, or generate
-the final report. Use `/codex-orchestrator:workflow` for the full end-to-end workflow.
+files and stop; it should not start Codex exec subagents, monitor Codex, run tests, review diffs,
+resolve consensus, or generate the final report. Use `/codex-orchestrator:workflow` for the full
+end-to-end workflow.
 
 Default path:
 

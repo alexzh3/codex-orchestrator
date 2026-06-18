@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alexzh3.github.io/codex-orchestrator/schemas/codex-orchestrator.schema.json",
+  "title": "Codex Orchestrator Runtime Schemas",
+  "description": "Schema bundle for state.json and ledger.jsonl records.",
+  "$defs": {
+    "state": {
+      "type": "object",
+      "required": [
+        "run_id",
+        "repo",
+        "created_at",
+        "status",
+        "sessions",
+        "verification_policy"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repo": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^/"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "blocked",
+            "complete",
+            "needs_review",
+            "accepted",
+            "rejected"
+          ]
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/session"
+          }
+        },
+        "verification_policy": {
+          "$ref": "#/$defs/verification_policy"
+        }
+      },
+      "additionalProperties": false
+    },
+    "session": {
+      "type": "object",
+      "required": [
+        "name",
+        "thread_id",
+        "mode",
+        "rollout_path",
+        "branch",
+        "worktree",
+        "status",
+        "last_seen_at"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "thread_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "ide",
+            "exec"
+          ]
+        },
+        "rollout_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "worktree": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "idle",
+            "complete",
+            "failed",
+            "awaiting-approval",
+            "unknown"
+          ]
+        },
+        "last_seen_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "event_source": {
+          "type": "string",
+          "enum": [
+            "ide",
+            "exec"
+          ]
+        },
+        "parse_confidence": {
+          "type": "string",
+          "enum": [
+            "low",
+            "high"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "verification_policy": {
+      "type": "object",
+      "required": [
+        "required",
+        "forbidden"
+      ],
+      "properties": {
+        "required": {
+          "$ref": "#/$defs/string_list"
+        },
+        "forbidden": {
+          "$ref": "#/$defs/string_list"
+        },
+        "nondeterministic_rollouts": {
+          "$ref": "#/$defs/string_list"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ledger_event": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/verification_event"
+        },
+        {
+          "$ref": "#/$defs/consensus_event"
+        },
+        {
+          "$ref": "#/$defs/task_event"
+        },
+        {
+          "$ref": "#/$defs/generic_event"
+        }
+      ]
+    },
+    "verification_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "kind",
+        "result",
+        "recorded_at",
+        "summary"
+      ],
+      "properties": {
+        "type": {
+          "const": "verification"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "git_diff",
+            "test",
+            "typecheck",
+            "lint",
+            "build",
+            "benchmark",
+            "screenshot",
+            "artifact_check",
+            "manual_review",
+            "custom"
+          ]
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed",
+            "skipped",
+            "inconclusive",
+            "needs_human_review"
+          ]
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "command": {
+          "type": "string"
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "string"
+        },
+        "stochastic": {
+          "type": "boolean"
+        },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "number",
+              "string",
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "consensus_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "recorded_at",
+        "finding",
+        "resolution",
+        "evidence"
+      ],
+      "properties": {
+        "type": {
+          "const": "consensus"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finding": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root_cause": {
+          "type": "string"
+        },
+        "resolution": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "$ref": "#/$defs/string_list"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "rejected",
+            "deferred"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "task_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "id",
+        "title",
+        "status"
+      ],
+      "properties": {
+        "type": {
+          "const": "task"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "active",
+            "blocked",
+            "complete",
+            "failed"
+          ]
+        },
+        "owner": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "generic_event": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "not": {
+            "enum": [
+              "verification",
+              "consensus",
+              "task"
+            ]
+          }
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "string_list": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
