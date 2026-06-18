@@ -1,17 +1,17 @@
 ---
-description: Orchestrates, monitors, reviews, and coordinates Codex exec subagents and IDE sessions from Claude Code. Use when the user wants Claude to dispatch scoped Codex exec workers, watch live Codex sessions, review results, or coordinate sequential or parallel Codex work without file or compute conflicts.
+description: Orchestrates, monitors, reviews, and coordinates Codex agents and IDE sessions from Claude Code. Use when the user wants Claude to dispatch scoped Codex workers, watch live Codex sessions, review results, or coordinate sequential or parallel Codex work without file or compute conflicts.
 ---
 
 # Claude-Codex Orchestration
 
 Claude is the planner, monitor, reviewer, consensus broker, and compute gate. Codex is the scoped
-executor or peer reviewer running in its native IDE or CLI harness.
+implementation agent or peer reviewer running in its native IDE or CLI harness.
 
 A live IDE session is identified by a pasted `codex://threads/<thread-uuid>` URL. Headless sessions
 started with `codex exec` are source kind `exec`; they are resumable from the CLI but do not appear
 in the IDE sidebar. Start in the IDE when the user needs IDE visibility.
 
-Default to an exec-first orchestration pattern for new work: once a plan exists, Codex is the first
+Default to a Codex-first orchestration pattern for new work: once a plan exists, Codex is the first
 mover for implementation, repair, refactor, and test-writing. Claude scopes prompts, reuses matching
 Codex agents when possible, launches Codex with `codex exec --json` only when a new agent is needed,
 captures each JSONL stream under the run directory, and monitors the streams with
@@ -20,41 +20,30 @@ existing thread URL or explicitly needs sidebar visibility.
 
 ## When To Involve Codex
 
-The "reuse before spawning" rules in this command decide whether to start a *new* Codex agent versus
-reuse an existing one. They do not decide whether to use Codex at all. Do not collapse to solo Claude
-work just because a task looks small or review-shaped. Map the task to an action first:
+`orchestrate` is prompt-directed: use the user prompt and recorded run state as scope, and do not
+create a full execution plan for focused monitoring, review, consensus, handoff, or compute-gating
+phases. The reuse rules decide whether to resume an existing Codex agent or start a new one; they do
+not authorize solo Claude execution.
 
-- Implementation, repair, refactor, or test-writing: dispatch or resume a Codex exec executor first
-  once the task has a usable plan. This is Codex's job, not work to do solo before Codex has moved.
-- Review, verification, or "is this ready" gating: run Claude's own review first, then run an
-  independent `codex exec review` pass on the diff as a required second opinion before acceptance.
-- Explicit ledger-only setup: no Codex; run the internal ledger init helper and stop.
+- Implementation, repair, refactor, or test-writing: dispatch or resume a Codex agent first.
+  If scope is missing, create only the minimal dispatch plan: task boundary, agent reuse, file
+  ownership/isolation, and verification gate.
+- Review, verification, or "is this ready" gating: review artifacts yourself, then get an independent
+  `codex exec review` pass before acceptance.
+- Plan review: mandatory Codex review of new Claude-created plans belongs to
+  `/codex-orchestrator:workflow`; in `orchestrate`, request it only when the user asks or risk
+  warrants a second opinion.
+- Ledger-only setup: run the internal init helper and stop.
 
-Claude may plan before dispatch only when no plan exists, the scope is ambiguous, or safety/compute
-gating is needed. That plan is an orchestration plan for Codex executors: choose task boundaries,
-agent reuse, worktrees, verification gates, and handoff order with Codex subagents in mind. If Claude
-creates a new plan, ask Codex to review that plan before dispatching execution. Planning does not
-authorize solo Claude execution. If Claude and Codex disagree about the plan, record the disagreement
-and evidence, then Claude makes the final planning decision as orchestrator. After plan review,
-delegate the scoped work to Codex and orchestrate it.
+## Command Boundary
 
-Solo Claude acceptance with no Codex pass is the exception, allowed only when the user explicitly
-opts out. Record the opt-out and its reason as a ledger event.
+Use `/codex-orchestrator:workflow` only for the full end-to-end run: ledger setup, planning,
+dispatch, monitoring, review, verification, consensus, and report.
 
-## Commands
-
-- `/codex-orchestrator:orchestrate`: prompt-directed orchestration using this command. Use this for
-  scoped Codex coordination such as dispatching or reusing exec agents, monitoring an existing
-  `codex://threads/<thread-uuid>` session, reviewing a diff, resolving consensus, handing off work,
-  or gating shared compute when the user does not ask for the full end-to-end workflow.
-- `/codex-orchestrator:workflow`: full run that initializes or reuses a ledger, reuses or resumes
-  existing Codex agents before dispatching new ones, monitors JSONL/IDE event streams, reviews and
-  verifies the result, resolves consensus when needed, and writes the report.
-- `/codex-orchestrator:report`: generate or update `report.md` from recorded evidence.
+Use `/codex-orchestrator:report` only to regenerate `report.md` from recorded evidence.
 
 Monitoring, review, consensus, handoff, and compute gating are workflow phases, not separate slash
-commands. Use `orchestrate` for prompt-directed phases, `workflow` only for the full end-to-end run,
-and `report` only to regenerate the human-readable report from recorded evidence.
+commands.
 
 ## Durable Ledger
 
@@ -66,7 +55,7 @@ Use a durable run ledger for all orchestration state:
   ledger.jsonl  # append-only events, verification, task updates, consensus records
   report.md     # authored Summary/Changes plus generated evidence, consensus, and risks
   prompts/      # exact prompts sent to Codex
-  logs/         # captured codex exec JSONL streams
+  logs/         # captured headless Codex JSONL streams
   artifacts/    # generated files, manifests, screenshots, benchmark outputs
 ```
 
@@ -101,7 +90,7 @@ ledger, prompts, logs, and verification. The report helper preserves those secti
 
 Use matching stems for Codex prompts and logs. For example, write the exact final review prompt to
 `prompts/final-review.md` and capture its JSONL stream in `logs/final-review.jsonl`. Do this for
-plan reviews, executor prompts, diff reviews, consensus prompts, rereviews, and handoffs. Keep the
+plan reviews, implementation prompts, diff reviews, consensus prompts, rereviews, and handoffs. Keep the
 ledger as the index by recording the prompt/log paths in the relevant session, verification, or
 consensus event.
 
@@ -110,23 +99,26 @@ consensus event.
 1. Create or reuse a run id and initialize the durable ledger if missing.
 2. Inspect `state.json` and recent ledger events for existing named Codex agents before starting any
    new session.
-3. If no usable plan exists, create or validate a minimal orchestration plan that assumes Codex
-   subagent executors are available: choose task boundaries, reuse strategy, worktree isolation, and
-   verification gates.
-4. If Claude creates a new plan, ask Codex to review the plan before dispatching execution.
-5. If Claude and Codex disagree about the plan, record the disagreement and evidence; Claude makes
-   the final planning decision as orchestrator.
-6. Once the plan is usable and reviewed, make Codex the first mover for implementation, repair,
-   refactor, or test-writing: dispatch or resume a Codex exec agent before Claude implements or
-   reviews the work. Use one reusable exec agent by default and several only when work can be isolated
+3. For focused phases, use the prompt and recorded run state as the scope. If dispatching
+   implementation work and no usable scope exists, create or validate a minimal dispatch plan for
+   Codex agents: task boundaries, reuse strategy, worktree isolation, and verification gates.
+4. For `/codex-orchestrator:workflow`, have Codex review any new Claude-created plan before
+   execution. For `/codex-orchestrator:orchestrate`, do this only when requested or when the new plan
+   is risky enough to require a second opinion before dispatch.
+5. If Claude and Codex disagree about a reviewed plan, record the evidence and choose one outcome:
+   revise until consensus, have Claude take the lead with an explicit recorded risk decision, or
+   defer the disputed decision to the user.
+6. Once the scope is usable, make Codex the first mover for implementation, repair,
+   refactor, or test-writing: dispatch or resume a Codex agent before Claude implements or
+   reviews the work. Use one reusable Codex agent by default and several only when work can be isolated
    by worktree, files, or compute.
 7. Continue in the same Codex session when that session's context is relevant to the next task. If
    it is almost full but still contextually relevant, compact/summarize the relevant state, then
    continue the same session. Launch a new `codex exec --json` session only when the task is
    contextually unrelated to existing sessions, isolation requires it, or the user explicitly asks.
 8. Attach to an IDE session when visibility or existing IDE context requires it.
-9. Monitor during Codex execution. Do not edit overlapping implementation files while a Codex
-   executor owns them; wait until Codex yields, completes, or a serialized handoff is recorded.
+9. Monitor during Codex execution. Do not edit overlapping implementation files while a Codex agent
+   owns them; wait until Codex yields, completes, or a serialized handoff is recorded.
 10. After Codex yields or completes, review artifacts and run the consensus-gated review loop below.
 11. Record verification evidence, consensus decisions, and final report state durably.
 12. Generate or update `report.md` for handoff or approval.
@@ -162,15 +154,15 @@ For IDE rollout sessions, keep using the same `codex://threads/<thread-uuid>` fo
 After a resume, re-find the newest rollout file for that thread id because Codex may append a new
 file for the same session. A new rollout file is not by itself a new agent.
 
-## Exec Subagents
+## Headless Codex Agents
 
-Prefer exec subagents for new implementation, repair, and peer-review loops because they are cheap
+Prefer headless Codex agents for new implementation, repair, and peer-review loops because they are cheap
 to scope, resumable, and easy to monitor from compact JSONL. Treat them as persistent agents, not
-one-shot commands. Give each subagent a bounded prompt, clear ownership, expected verification, and
-a stop condition. Do not let multiple subagents edit the same files unless the workflow explicitly
+one-shot commands. Give each agent a bounded prompt, clear ownership, expected verification, and
+a stop condition. Do not let multiple agents edit the same files unless the workflow explicitly
 serializes their handoff.
 
-Capture each exec stream:
+Capture each headless Codex stream:
 
 ```bash
 RUN_DIR=".codex-orchestrator/runs/<run-id>"
@@ -179,7 +171,7 @@ EXEC_LOG="$RUN_DIR/logs/exec-<name>.jsonl"
 "$CODEX" exec --json -s workspace-write -c approval_policy=never -C <worktree> < "$PROMPT_FILE" > "$EXEC_LOG" & PID=$!
 ```
 
-Record the subagent name, mode `exec`, worktree, branch, event file, and current status as ledger
+Record the agent name, mode `exec`, worktree, branch, event file, and current status as ledger
 events; include the prompt and log paths when available. Keep `state.json` to compact session state.
 If the thread id is not known at launch, monitor with a temporary name until the stream emits
 `thread.started`, then update the session record. Use `codex exec resume <thread-uuid>` only when
@@ -226,7 +218,7 @@ to approve in VS Code/Cursor and watch for file growth.
 Never load full rollout logs. Use parser state/tail, bounded raw tails, or `--dump-event-types` when
 status confidence is low.
 
-## Codex Exec
+## Codex CLI Invocation
 
 Locate the binary; IDE extension paths change:
 
@@ -234,7 +226,7 @@ Locate the binary; IDE extension paths change:
 CODEX=$(find ~/.cursor/extensions ~/.vscode/extensions ~/.vscode-server/extensions -maxdepth 4 -name codex -type f 2>/dev/null | head -1)
 ```
 
-Default headless executor mode:
+Default headless Codex command:
 
 ```bash
 "$CODEX" exec -s workspace-write -c approval_policy=never "<prompt>"
@@ -243,7 +235,7 @@ cat prompt.md | "$CODEX" exec -s workspace-write -c approval_policy=never
 ```
 
 Resume only when idle or complete. Never use `--ephemeral`; history is required for audit and
-resume. Start in the IDE when the user needs IDE sidebar visibility; headless exec sessions do not
+resume. Start in the IDE when the user needs IDE sidebar visibility; headless Codex sessions do not
 appear there.
 
 Use broad access only with explicit user authorization:
@@ -276,10 +268,12 @@ Use a consensus-gated review loop:
 2. Claude reviews the actual diff, tests, logs, manifests, and artifacts.
 3. If Claude finds a suspected issue, share the exact finding, evidence, and proposed resolution
    with Codex before implementing or accepting a fix.
-4. Record consensus: whether Claude and Codex agree, disagree, or partially agree; root cause when
-   known; chosen fix or no-fix rationale; and the verification required.
+4. Record the outcome: consensus, Claude-led risk decision, or user deferral; whether Claude and
+   Codex agree, disagree, or partially agree; root cause when known; chosen fix or no-fix rationale;
+   and the verification required.
 5. Implement accepted fixes, then run Claude's final review and a Codex final review.
-6. Accept only when both final reviews pass, or when the user explicitly accepts a recorded risk.
+6. Accept when both final reviews pass, when Claude records an explicit risk decision after the
+   evidence review, or when the user chooses the deferred path.
 
 Run `codex exec review --uncommitted` (or `--commit <sha>` / `--base <branch>`) as the standard Codex
 final review before acceptance. Do not accept on Claude's solo judgment unless the user explicitly
@@ -300,8 +294,8 @@ Do not chain broad rereviews. If a final review still finds incorrect behavior a
 run one scoped rereview/fix loop for the unresolved issue and record why the extra pass was needed.
 Escalate to the user instead of continuing open-ended review rounds.
 
-Record suspected issue, root cause when known, agreed resolution, and verification as `consensus`
-evidence in both `ledger.jsonl` and the `## Consensus` section of `report.md`.
+Record suspected issue, root cause when known, outcome, and verification as `consensus` evidence in
+both `ledger.jsonl` and the `## Consensus` section of `report.md`.
 
 ## Multi-Session And Compute
 
@@ -328,28 +322,3 @@ df -h /
 ```
 
 `docker ps` showing `Up` is not proof of activity; check VRAM, utilization, compute apps, and disk.
-
-## Non-Negotiable Rules
-
-- Treat artifacts as source of truth and narration as intent until verified.
-- Planning is for delegation: design the work around Codex executors, then delegate. Once a usable
-  plan exists, have Codex review any new Claude-created plan before execution; if planning
-  disagreement remains, record it and let Claude make the final planning decision; Codex is the first
-  mover for implementation, repair, refactor, and test-writing; Claude monitors during execution and
-  reviews/edits only after Codex yields or completes.
-- Do not edit files owned by an active Codex executor unless a serialized handoff explicitly transfers
-  ownership.
-- Never load whole rollout logs.
-- Do not infer success from silence or low-confidence parser output.
-- Re-find the rollout after every resume.
-- Do not race a live Codex turn; resume or inject only when idle or complete.
-- Reuse the matching named Codex agent before starting a new session.
-- Never use `--ephemeral`.
-- Default headless exec mode is `workspace-write` with `approval_policy=never`.
-- Use separate worktrees for parallel Codex sessions unless the user chooses otherwise.
-- Gate scarce compute before handoff.
-- Do not accept a change on Claude's solo judgment; get an independent Codex review of the diff
-  before acceptance unless the user explicitly opts out, and record the opt-out.
-- Do not chain broad rereviews. After final review, run at most one scoped rereview/fix loop for a
-  real unresolved issue, then escalate to the user.
-- Record consensus decisions and verification evidence durably.

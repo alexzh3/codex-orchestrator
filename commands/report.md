@@ -9,7 +9,7 @@ Use this command to close a run with durable evidence.
 Use when: verification evidence and any consensus decisions have already been recorded and you want
 a human-readable `report.md` for handoff or approval.
 
-Do not use when: you still need to start exec subagents, monitor Codex, or review the diff. Use
+Do not use when: you still need to start Codex agents, monitor Codex, or review the diff. Use
 `/codex-orchestrator:orchestrate` for prompt-directed orchestration phases, including monitoring,
 review, consensus, handoff, and compute gating. Use `/codex-orchestrator:workflow` only for the full
 end-to-end run.
