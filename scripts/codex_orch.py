@@ -41,9 +41,25 @@ REVIEW_KINDS = {"manual_review", "git_diff"}
 RUN_SUBDIRS = ("prompts", "logs", "artifacts")
 SUMMARY_OPEN_ITEM_LIMIT = 140
 TASK_STATUS_ORDER = ("complete", "active", "pending", "blocked", "failed")
+ALLOWED_TASK_STATUSES = set(TASK_STATUS_ORDER)
 TASK_RISK_STATUSES = {"blocked", "failed"}
 UNRESOLVED_VERIFICATION_RESULTS = {"failed", "inconclusive", "needs_human_review"}
-UNRESOLVED_CONSENSUS_STATUSES = {"deferred", "rejected"}
+CONSENSUS_OUTCOME_ORDER = ("consensus", "claude_decision", "user_action_required")
+CONSENSUS_OUTCOME_LABELS = {
+    "consensus": "consensus",
+    "claude_decision": "Claude decision",
+    "user_action_required": "user action required",
+}
+ALLOWED_CONSENSUS_OUTCOMES = set(CONSENSUS_OUTCOME_ORDER)
+ALLOWED_RISK_LEVELS = {"none", "low", "medium", "high"}
+LEGACY_CONSENSUS_STATUS_OUTCOMES = {
+    "accepted": "consensus",
+    "resolved": "consensus",
+    "deferred": "user_action_required",
+    "rejected": "user_action_required",
+}
+ALLOWED_LEGACY_CONSENSUS_STATUSES = set(LEGACY_CONSENSUS_STATUS_OUTCOMES)
+UNRESOLVED_CONSENSUS_OUTCOMES = {"user_action_required"}
 VERIFICATION_KIND_LABELS = {
     "artifact_check": "Artifact check",
     "benchmark": "Benchmark",
@@ -190,6 +206,182 @@ def load_event(raw: str) -> dict[str, object]:
     if not isinstance(event, dict):
         raise SystemExit("ERROR: event must be a JSON object")
     return event
+
+
+def require_fields(event: dict[str, object], event_type: str, fields: tuple[str, ...]) -> None:
+    missing = [field for field in fields if field not in event]
+    if missing:
+        raise SystemExit(f"ERROR: {event_type} event missing required field(s): {', '.join(missing)}")
+
+
+def reject_unknown_fields(event: dict[str, object], event_type: str, allowed_fields: set[str]) -> None:
+    unknown = sorted(field for field in event if field not in allowed_fields)
+    if unknown:
+        raise SystemExit(f"ERROR: {event_type} event has unknown field(s): {', '.join(unknown)}")
+
+
+def require_string(event: dict[str, object], event_type: str, field: str) -> str:
+    value = event.get(field)
+    if not isinstance(value, str) or not value:
+        raise SystemExit(f"ERROR: {event_type} field {field} must be a non-empty string")
+    return value
+
+
+def require_string_list(event: dict[str, object], event_type: str, field: str) -> None:
+    value = event.get(field)
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+        raise SystemExit(f"ERROR: {event_type} field {field} must be a non-empty string array")
+
+
+def optional_string(event: dict[str, object], event_type: str, field: str) -> None:
+    value = event.get(field)
+    if value is not None and not isinstance(value, str):
+        raise SystemExit(f"ERROR: {event_type} field {field} must be a string")
+
+
+def validate_verification_event(event: dict[str, object]) -> None:
+    event.setdefault("recorded_at", utc_now())
+    allowed_fields = {
+        "type",
+        "kind",
+        "result",
+        "recorded_at",
+        "summary",
+        "command",
+        "exit_code",
+        "artifacts",
+        "notes",
+        "stochastic",
+        "thresholds",
+    }
+    reject_unknown_fields(event, "verification", allowed_fields)
+    require_fields(event, "verification", ("type", "kind", "result", "recorded_at", "summary"))
+    kind = require_string(event, "verification", "kind")
+    if kind not in ALLOWED_VERIFICATION_KINDS:
+        allowed = ", ".join(ALLOWED_VERIFICATION_KINDS)
+        raise SystemExit(f"ERROR: verification kind must be one of: {allowed}")
+    result = require_string(event, "verification", "result")
+    if result not in ALLOWED_VERIFICATION_RESULTS:
+        allowed = ", ".join(ALLOWED_VERIFICATION_RESULTS)
+        raise SystemExit(f"ERROR: verification result must be one of: {allowed}")
+    require_string(event, "verification", "recorded_at")
+    require_string(event, "verification", "summary")
+    optional_string(event, "verification", "command")
+    optional_string(event, "verification", "notes")
+    exit_code = event.get("exit_code")
+    if exit_code is not None and type(exit_code) is not int:
+        raise SystemExit("ERROR: verification field exit_code must be an integer or null")
+    artifacts = event.get("artifacts")
+    if artifacts is not None and (
+        not isinstance(artifacts, list) or not all(isinstance(item, str) for item in artifacts)
+    ):
+        raise SystemExit("ERROR: verification field artifacts must be a string array")
+    stochastic = event.get("stochastic")
+    if stochastic is not None and not isinstance(stochastic, bool):
+        raise SystemExit("ERROR: verification field stochastic must be a boolean")
+    thresholds = event.get("thresholds")
+    if thresholds is not None and not isinstance(thresholds, dict):
+        raise SystemExit("ERROR: verification field thresholds must be an object")
+    if isinstance(thresholds, dict):
+        for key, value in thresholds.items():
+            if not isinstance(key, str) or not isinstance(value, (int, float, str, bool, type(None))):
+                raise SystemExit("ERROR: verification field thresholds must map strings to scalar values")
+
+
+def validate_consensus_event(event: dict[str, object]) -> None:
+    event.setdefault("recorded_at", utc_now())
+    allowed_fields = {
+        "type",
+        "recorded_at",
+        "finding",
+        "root_cause",
+        "outcome",
+        "resolution",
+        "evidence",
+        "risk_level",
+        "requires_user",
+        "status",
+        "summary",
+    }
+    reject_unknown_fields(event, "consensus", allowed_fields)
+    if "outcome" not in event and "status" in event:
+        legacy_status = consensus_field(event.get("status"))
+        mapped_outcome = LEGACY_CONSENSUS_STATUS_OUTCOMES.get(legacy_status)
+        if mapped_outcome:
+            event["outcome"] = mapped_outcome
+
+    require_fields(event, "consensus", ("type", "recorded_at", "finding", "outcome", "resolution", "evidence"))
+    require_string(event, "consensus", "recorded_at")
+    require_string(event, "consensus", "finding")
+    require_string(event, "consensus", "resolution")
+    optional_string(event, "consensus", "root_cause")
+    optional_string(event, "consensus", "summary")
+    optional_string(event, "consensus", "status")
+
+    outcome = consensus_field(event.get("outcome"))
+    if outcome not in ALLOWED_CONSENSUS_OUTCOMES:
+        allowed = ", ".join(CONSENSUS_OUTCOME_ORDER)
+        raise SystemExit(f"ERROR: consensus outcome must be one of: {allowed}")
+
+    require_string_list(event, "consensus", "evidence")
+
+    risk_level = consensus_field(event.get("risk_level"))
+    if risk_level and risk_level not in ALLOWED_RISK_LEVELS:
+        allowed = ", ".join(sorted(ALLOWED_RISK_LEVELS))
+        raise SystemExit(f"ERROR: consensus risk_level must be one of: {allowed}")
+    legacy_status = consensus_field(event.get("status"))
+    if legacy_status and legacy_status not in ALLOWED_LEGACY_CONSENSUS_STATUSES:
+        allowed = ", ".join(sorted(ALLOWED_LEGACY_CONSENSUS_STATUSES))
+        raise SystemExit(f"ERROR: consensus status must be one of: {allowed}")
+
+    requires_user = event.get("requires_user")
+    if requires_user is not None and not isinstance(requires_user, bool):
+        raise SystemExit("ERROR: consensus requires_user must be a boolean")
+
+    if outcome == "user_action_required":
+        event.setdefault("requires_user", True)
+
+
+def validate_task_event(event: dict[str, object]) -> None:
+    allowed_fields = {
+        "type",
+        "id",
+        "title",
+        "status",
+        "owner",
+        "created_at",
+        "updated_at",
+        "notes",
+    }
+    reject_unknown_fields(event, "task", allowed_fields)
+    require_fields(event, "task", ("type", "id", "title", "status"))
+    require_string(event, "task", "id")
+    require_string(event, "task", "title")
+    status = require_string(event, "task", "status")
+    if status not in ALLOWED_TASK_STATUSES:
+        allowed = ", ".join(TASK_STATUS_ORDER)
+        raise SystemExit(f"ERROR: task status must be one of: {allowed}")
+    optional_string(event, "task", "owner")
+    optional_string(event, "task", "created_at")
+    optional_string(event, "task", "updated_at")
+    optional_string(event, "task", "notes")
+
+
+def validate_ledger_event(event: dict[str, object]) -> None:
+    event_type = event.get("type")
+    if not isinstance(event_type, str) or not event_type:
+        raise SystemExit("ERROR: ledger event type must be a non-empty string")
+    recorded_at = event.get("recorded_at")
+    if recorded_at is not None and not isinstance(recorded_at, str):
+        raise SystemExit("ERROR: ledger event recorded_at must be a string")
+    if event_type == "verification":
+        validate_verification_event(event)
+    elif event_type == "consensus":
+        validate_consensus_event(event)
+    elif event_type == "task":
+        validate_task_event(event)
+    else:
+        event.setdefault("recorded_at", utc_now())
 
 
 def run_git(repo: Path, *args: str) -> None:
@@ -341,6 +533,7 @@ def command_append_event(args: argparse.Namespace) -> int:
         raise SystemExit("ERROR: no event JSON provided")
     event = load_event(raw_event)
     event.setdefault("type", "event")
+    validate_ledger_event(event)
     append_jsonl(ledger_path(directory), event)
     print_json({"ok": True, "ledger_path": str(ledger_path(directory)), "event": event})
     return 0
@@ -543,16 +736,31 @@ def verification_tally(records: list[dict[str, object]]) -> str:
     return ", ".join(f"{counts[result]} {result}" for result in ordered_results)
 
 
-def consensus_status_tally(records: list[dict[str, object]]) -> str:
+def consensus_outcome_tally(records: list[dict[str, object]]) -> str:
     if not records:
         return "none"
     counts: dict[str, int] = {}
     for record in records:
-        status = consensus_field(record.get("status")) or "unknown"
-        counts[status] = counts.get(status, 0) + 1
-    ordered_statuses = ("accepted", "rejected", "deferred")
-    parts = [f"{counts[status]} {status}" for status in ordered_statuses if status in counts]
+        outcome = consensus_outcome(record)
+        counts[outcome] = counts.get(outcome, 0) + 1
+    ordered_outcomes = [outcome for outcome in CONSENSUS_OUTCOME_ORDER if outcome in counts]
+    ordered_outcomes.extend(sorted(outcome for outcome in counts if outcome not in CONSENSUS_OUTCOME_ORDER))
+    parts = [f"{counts[outcome]} {consensus_outcome_label(outcome)}" for outcome in ordered_outcomes]
     return ", ".join(parts) if parts else "none"
+
+
+def consensus_outcome(record: dict[str, object]) -> str:
+    outcome = consensus_field(record.get("outcome"))
+    if outcome:
+        return outcome
+    legacy_status = consensus_field(record.get("status"))
+    if legacy_status:
+        return LEGACY_CONSENSUS_STATUS_OUTCOMES.get(legacy_status, legacy_status)
+    return "unknown"
+
+
+def consensus_outcome_label(outcome: str) -> str:
+    return CONSENSUS_OUTCOME_LABELS.get(outcome, outcome.replace("_", " "))
 
 
 def task_status_tally(records: list[dict[str, object]]) -> str:
@@ -591,10 +799,11 @@ def unresolved_items(
             summary = consensus_field(record.get("summary")) or "No summary recorded."
             items.append(f"{kind} ({result}): {summary}")
     for record in consensus_records:
-        status = consensus_field(record.get("status")) or "unknown"
-        if status in UNRESOLVED_CONSENSUS_STATUSES:
+        outcome = consensus_outcome(record)
+        requires_user = record.get("requires_user") is True
+        if outcome in UNRESOLVED_CONSENSUS_OUTCOMES or requires_user:
             finding = consensus_field(record.get("finding") or record.get("summary")) or "Consensus record"
-            items.append(f"{finding} ({status})")
+            items.append(f"{finding} ({consensus_outcome_label(outcome)})")
     for record in task_records:
         status = consensus_field(record.get("status")) or "unknown"
         if status in TASK_RISK_STATUSES:
@@ -656,7 +865,7 @@ def command_report(args: argparse.Namespace) -> int:
         lines.extend([
             f"- Evidence: {verification_tally(evidence_records)}",
             f"- Reviews: {len(review_records)}",
-            f"- Consensus: {consensus_status_tally(consensus_records)}",
+            f"- Consensus: {consensus_outcome_tally(consensus_records)}",
         ])
         if sessions:
             lines.append(f"- Sessions: {len(sessions)}")
@@ -724,9 +933,15 @@ def command_report(args: argparse.Namespace) -> int:
             if root_cause:
                 lines.append(f"  - **Root Cause:** {root_cause}")
             resolution = consensus_field(record.get("resolution")) or "Not recorded."
-            status = consensus_field(record.get("status")) or "unknown"
+            outcome = consensus_outcome(record)
             lines.append(f"  - **Resolution:** {resolution}")
-            lines.append(f"  - **Status:** {status}")
+            lines.append(f"  - **Outcome:** {consensus_outcome_label(outcome)}")
+            risk_level = consensus_field(record.get("risk_level"))
+            if risk_level:
+                lines.append(f"  - **Risk Level:** {risk_level}")
+            if record.get("requires_user") is not None:
+                requires_user = "yes" if record.get("requires_user") is True else "no"
+                lines.append(f"  - **Requires User:** {requires_user}")
             evidence = record.get("evidence")
             if isinstance(evidence, list):
                 evidence_items = [consensus_field(item) for item in evidence]
@@ -782,7 +997,7 @@ def build_parser() -> argparse.ArgumentParser:
     verification_parser.add_argument("--notes")
     verification_parser.set_defaults(func=command_add_verification)
 
-    append_parser = subparsers.add_parser("append-event", help="Append a JSON event to ledger.jsonl.")
+    append_parser = subparsers.add_parser("append-event", help="Append a schema-checked JSON event to ledger.jsonl.")
     append_parser.add_argument("--repo", default=".", help="Repository root.")
     append_parser.add_argument("--run-id", required=True, type=run_id_type)
     append_parser.add_argument("event_json", nargs="?", help="JSON object to append. If omitted, stdin is read.")

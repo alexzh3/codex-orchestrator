@@ -5,7 +5,7 @@ ledgers, and evidence-recorded consensus; it complements OpenAI's Codex plugin, 
 
 The core idea is:
 
-> **Claude orchestrates: it scopes, monitors, reviews, and gates the work. Codex executes scoped implementation work in its native harness and provides independent peer review when a second opinion is useful. Disagreements are worked through with evidence until there is consensus, a recorded risk decision, or user deferral.**
+> **Claude orchestrates: it scopes, monitors, reviews, and gates the work. Codex executes scoped implementation work in its native harness and provides independent peer review when a second opinion is useful. Disagreements are worked through with evidence until there is consensus, a recorded Claude decision, or required user action.**
 
 This creates a practical heterogeneous coding-agent ensemble: Claude acts as the long-context
 orchestrator and reviewer, while Codex handles scoped implementation, backend work, refactors, test
@@ -192,7 +192,7 @@ That is why this plugin uses **evidence-based consensus** instead of majority vo
 * Claude proposes or validates the plan and remains the final orchestrator and reviewer.
 * Codex provides independent peer review where useful, including risky plans and implementation diffs.
 * If Claude and Codex disagree, the disagreement is recorded and worked from artifacts until there is
-  consensus, a Claude-led recorded risk decision, or user deferral.
+  `consensus`, `claude_decision`, or `user_action_required`.
 * Codex executes a scoped implementation.
 * Claude verifies the diff, tests, logs, and artifacts.
 * When Claude finds a suspected issue, Codex can also review Claude’s objection.

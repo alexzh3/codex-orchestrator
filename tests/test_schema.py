@@ -37,6 +37,17 @@ class SchemaTests(unittest.TestCase):
         ):
             self.assertFalse((ROOT / "schemas" / old_name).exists())
 
+        consensus = defs["consensus_event"]
+        self.assertIn("outcome", consensus["required"])
+        self.assertEqual(
+            consensus["properties"]["outcome"]["enum"],
+            ["consensus", "claude_decision", "user_action_required"],
+        )
+        self.assertEqual(
+            consensus["properties"]["risk_level"]["enum"],
+            ["none", "low", "medium", "high"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

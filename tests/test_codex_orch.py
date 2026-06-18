@@ -139,6 +139,82 @@ class CodexOrchCliTests(unittest.TestCase):
         ]
         self.assertEqual(records[0]["type"], "event")
         self.assertEqual(records[0]["summary"], "smoke")
+        self.assertIn("recorded_at", records[0])
+
+    def test_append_event_rejects_incomplete_consensus_record(self) -> None:
+        self.init_run()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "append-event",
+                "--run-id",
+                "run",
+                json.dumps({"type": "consensus", "finding": "Missing outcome"}),
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=self.repo,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("consensus event missing required field", result.stderr)
+
+    def test_append_event_rejects_invalid_typed_records(self) -> None:
+        self.init_run()
+        cases = [
+            (
+                {
+                    "type": "verification",
+                    "kind": "not-a-kind",
+                    "result": "passed",
+                    "summary": "Bad verification kind",
+                },
+                "verification kind must be one of",
+            ),
+            (
+                {
+                    "type": "task",
+                    "id": "task-1",
+                    "title": "Bad task status",
+                    "status": "resolved",
+                },
+                "task status must be one of",
+            ),
+            (
+                {
+                    "type": "consensus",
+                    "finding": "Bad status",
+                    "outcome": "consensus",
+                    "resolution": "Invalid legacy status should not pass.",
+                    "status": "not-a-status",
+                    "evidence": ["validation"],
+                },
+                "consensus status must be one of",
+            ),
+        ]
+        for event, message in cases:
+            with self.subTest(event=event):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "append-event",
+                        "--run-id",
+                        "run",
+                        json.dumps(event),
+                    ],
+                    check=False,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=self.repo,
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
 
     def test_report_records_missing_and_present_evidence(self) -> None:
         self.init_run()
@@ -290,8 +366,10 @@ class CodexOrchCliTests(unittest.TestCase):
                     "type": "consensus",
                     "finding": finding,
                     "root_cause": "The report generator reused generated placeholder text.",
+                    "outcome": "consensus",
                     "resolution": resolution,
-                    "status": "resolved",
+                    "risk_level": "none",
+                    "requires_user": False,
                     "evidence": ["report.md omits stale placeholder", "ledger record is rendered"],
                 }
             ),
@@ -303,6 +381,9 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertNotIn("No consensus decisions recorded.", report)
         self.assertIn(finding, report)
         self.assertIn(resolution, report)
+        self.assertIn("  - **Outcome:** consensus", report)
+        self.assertIn("  - **Risk Level:** none", report)
+        self.assertIn("  - **Requires User:** no", report)
 
     def test_report_flags_open_risks_in_accepted_run(self) -> None:
         self.init_run()
@@ -329,7 +410,11 @@ class CodexOrchCliTests(unittest.TestCase):
                 {
                     "type": "consensus",
                     "finding": "Accepted consensus finding",
-                    "status": "accepted",
+                    "outcome": "consensus",
+                    "resolution": "Claude and Codex agree this finding is accepted.",
+                    "risk_level": "none",
+                    "requires_user": False,
+                    "evidence": ["Claude review", "Codex review"],
                 }
             ),
         )
@@ -341,7 +426,11 @@ class CodexOrchCliTests(unittest.TestCase):
                 {
                     "type": "consensus",
                     "finding": "Consensus requires owner decision",
-                    "status": "deferred",
+                    "outcome": "user_action_required",
+                    "resolution": "Claude needs the user to choose the path before accepting.",
+                    "risk_level": "high",
+                    "requires_user": True,
+                    "evidence": ["Claude confidence below acceptance threshold"],
                 }
             ),
         )
@@ -358,13 +447,13 @@ class CodexOrchCliTests(unittest.TestCase):
         )
         self.assertIn("- Evidence: 1 failed", summary_section)
         self.assertIn("- Reviews: 0", summary_section)
-        self.assertIn("- Consensus: 1 accepted, 1 deferred", summary_section)
+        self.assertIn("- Consensus: 1 consensus, 1 user action required", summary_section)
         self.assertIn("- Sessions: 1", summary_section)
         self.assertIn("- Open items (3):", summary_section)
-        self.assertIn("  - Consensus requires owner decision (deferred)", summary_section)
+        self.assertIn("  - Consensus requires owner decision (user action required)", summary_section)
         self.assertIn("- Session codex-a has unknown status.", risks_section)
         self.assertIn("- Test (failed): Unit tests failed", risks_section)
-        self.assertIn("- Consensus requires owner decision (deferred)", risks_section)
+        self.assertIn("- Consensus requires owner decision (user action required)", risks_section)
 
     def test_report_renders_task_changes_and_task_risks(self) -> None:
         self.init_run()

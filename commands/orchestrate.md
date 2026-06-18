@@ -23,7 +23,7 @@ existing thread URL or explicitly needs sidebar visibility.
 `orchestrate` is prompt-directed: use the user prompt and recorded run state as scope, and do not
 create a full execution plan for focused monitoring, review, consensus, handoff, or compute-gating
 phases. The reuse rules decide whether to resume an existing Codex agent or start a new one; they do
-not authorize solo Claude execution.
+not authorize Claude to bypass Codex for implementation or review.
 
 - Implementation, repair, refactor, or test-writing: dispatch or resume a Codex agent first.
   If scope is missing, create only the minimal dispatch plan: task boundary, agent reuse, file
@@ -75,7 +75,8 @@ python3 scripts/codex_orch.py report --run-id <run-id>
 ```
 
 Use `append-event` only as an advanced escape hatch for custom material facts that do not yet have a
-typed command:
+typed command. Known ledger event types are schema-validated; custom event types are recorded as
+generic ledger events:
 
 ```bash
 python3 scripts/codex_orch.py append-event --run-id <run-id> '{"type":"note"}'
@@ -106,8 +107,9 @@ consensus event.
    execution. For `/codex-orchestrator:orchestrate`, do this only when requested or when the new plan
    is risky enough to require a second opinion before dispatch.
 5. If Claude and Codex disagree about a reviewed plan, record the evidence and choose one outcome:
-   revise until consensus, have Claude take the lead with an explicit recorded risk decision, or
-   defer the disputed decision to the user.
+   `consensus` when evidence resolves the disagreement, `claude_decision` when Claude proceeds with
+   recorded rationale/risk, or `user_action_required` when Claude is not confident enough to
+   continue or accept without user input.
 6. Once the scope is usable, make Codex the first mover for implementation, repair,
    refactor, or test-writing: dispatch or resume a Codex agent before Claude implements or
    reviews the work. Use one reusable Codex agent by default and several only when work can be isolated
@@ -268,16 +270,17 @@ Use a consensus-gated review loop:
 2. Claude reviews the actual diff, tests, logs, manifests, and artifacts.
 3. If Claude finds a suspected issue, share the exact finding, evidence, and proposed resolution
    with Codex before implementing or accepting a fix.
-4. Record the outcome: consensus, Claude-led risk decision, or user deferral; whether Claude and
+4. Record the outcome: `consensus`, `claude_decision`, or `user_action_required`; whether Claude and
    Codex agree, disagree, or partially agree; root cause when known; chosen fix or no-fix rationale;
-   and the verification required.
+   risk level; whether user input is required; and the verification required.
 5. Implement accepted fixes, then run Claude's final review and a Codex final review.
-6. Accept when both final reviews pass, when Claude records an explicit risk decision after the
-   evidence review, or when the user chooses the deferred path.
+6. Accept when both final reviews pass or when Claude records `claude_decision` after the evidence
+   review. Use `user_action_required` only when Claude needs user input before continuing or
+   accepting.
 
 Run `codex exec review --uncommitted` (or `--commit <sha>` / `--base <branch>`) as the standard Codex
-final review before acceptance. Do not accept on Claude's solo judgment unless the user explicitly
-opts out, and record that opt-out.
+final review before acceptance whenever a diff exists. A `claude_decision` outcome must still record
+evidence, rationale, risk level, and verification.
 
 Save every Codex review or consensus prompt under `prompts/` before running it, and capture its
 JSONL output under `logs/` with the same filename stem. Reference both paths from the review or

@@ -33,16 +33,16 @@ Default workflow:
 2. Initialize state.json, ledger.jsonl, report.md, prompts/, logs/, and artifacts/ if needed.
 3. Inspect existing named Codex agents in state/ledger and classify their current status.
 4. If no usable plan exists, create a minimal orchestration plan for Codex agents.
-5. Have Codex review any new Claude-created plan before execution; if planning disagreement remains, record the evidence and choose one outcome: revise until consensus, have Claude take the lead with an explicit recorded risk decision, or defer the disputed decision to the user.
+5. Have Codex review any new Claude-created plan before execution; if planning disagreement remains, record the evidence and choose one outcome: `consensus` when evidence resolves it, `claude_decision` when Claude proceeds with recorded rationale/risk, or `user_action_required` when Claude is not confident enough to continue or accept without user input.
 6. Scope tasks and dispatch implementation/repair/refactor/test-writing to a Codex agent; map each task to an existing agent when the role/context matches.
 7. Resume matching idle/complete agents; compact first when a relevant session is almost full. Keep monitoring active ones.
 8. Start a new headless Codex agent with `codex exec --json` only for unrelated work, full/irrelevant context, required isolation, or explicit user request.
 9. Save each Codex prompt under prompts/ and capture each Codex JSONL stream under logs/ using matching stems.
 10. Monitor each session with parser state/tail offsets without loading full rollout logs.
 11. Review code, diffs, logs, and artifacts yourself after Codex yields or completes.
-12. Obtain an independent Codex review of the diff before acceptance (`codex exec review`), not only on a suspected issue; solo acceptance needs an explicit, recorded user opt-out.
+12. Obtain an independent Codex review of the diff before acceptance (`codex exec review`), not only on a suspected issue; if Claude proceeds via `claude_decision`, record the evidence, rationale, risk level, and verification.
 13. Run or inspect verification checks and record verification (including the Codex review) in ledger.jsonl.
-14. Resolve any Claude/Codex disagreement with evidence, explicit risk decision, or user deferral, and record the outcome durably.
+14. Resolve any Claude/Codex disagreement with evidence and record `consensus`, `claude_decision`, or `user_action_required` durably.
 15. Generate or update report.md.
 ```
 
