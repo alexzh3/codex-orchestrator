@@ -1,6 +1,6 @@
 {
   "name": "codex-orchestrator",
-  "description": "Coordinate reusable monitored OpenAI Codex exec agents and IDE sessions from Claude Code.",
+  "description": "Coordinate reusable monitored OpenAI Codex agents and IDE sessions from Claude Code.",
   "version": "0.1.0",
   "author": {
     "name": "alexzh3"

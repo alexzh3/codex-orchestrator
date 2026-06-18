@@ -451,7 +451,7 @@ def add_common_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Parse Codex exec streams or IDE rollout JSONL.")
+    parser = argparse.ArgumentParser(description="Parse headless Codex streams or IDE rollout JSONL.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     find_parser = subparsers.add_parser("find", help="Find the newest rollout for a thread id.")
