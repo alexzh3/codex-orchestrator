@@ -136,6 +136,41 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIn("Parser warning requires manual inspection", report)
         self.assertIn("No acceptance decision recorded", report)
 
+    def test_report_shows_consensus_placeholder_without_records(self) -> None:
+        self.init_run()
+        self.run_cli("report", "--run-id", "run")
+        report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
+
+        self.assertIn("No consensus decisions recorded.", report)
+
+    def test_report_renders_consensus_record_without_placeholder(self) -> None:
+        self.init_run()
+        self.run_cli("report", "--run-id", "run")
+        finding = "Consensus finding from ledger"
+        resolution = "Render rich consensus records without the placeholder"
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "consensus",
+                    "finding": finding,
+                    "root_cause": "The report generator reused generated placeholder text.",
+                    "resolution": resolution,
+                    "status": "resolved",
+                    "evidence": ["report.md omits stale placeholder", "ledger record is rendered"],
+                }
+            ),
+        )
+
+        self.run_cli("report", "--run-id", "run")
+        report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("No consensus decisions recorded.", report)
+        self.assertIn(finding, report)
+        self.assertIn(resolution, report)
+
 
 if __name__ == "__main__":
     unittest.main()

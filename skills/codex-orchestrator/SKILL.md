@@ -1,10 +1,7 @@
 ---
 name: codex-orchestrator
 description: >-
-  Orchestrate, monitor, review, and coordinate Codex exec subagents and IDE
-  sessions from Claude Code. Use when the user wants Claude to dispatch scoped
-  Codex exec workers, watch live Codex sessions, review results, or coordinate
-  sequential or parallel Codex work without file or compute conflicts.
+  Orchestrates, monitors, reviews, and coordinates Codex exec subagents and IDE sessions from Claude Code. Use when the user wants Claude to dispatch scoped Codex exec workers, watch live Codex sessions, review results, or coordinate sequential or parallel Codex work without file or compute conflicts.
 ---
 
 # Claude-Codex Orchestration

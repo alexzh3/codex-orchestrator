@@ -49,6 +49,8 @@ DEFAULT_VERIFICATION_POLICY = {
     ],
 }
 
+CONSENSUS_PLACEHOLDER = "No consensus decisions recorded."
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -383,11 +385,24 @@ def report_section(text: str, heading: str, default: str) -> str:
 
 
 def manual_consensus_section(text: str) -> str:
-    section = report_section(text, "Consensus", "No consensus decisions recorded.")
+    section = report_section(text, "Consensus", "")
     generated_marker = "### Ledger Records"
     if generated_marker in section:
         section = section.split(generated_marker, 1)[0].strip()
-    return section or "No consensus decisions recorded."
+    manual_lines = [
+        line
+        for line in section.splitlines()
+        if line.strip() != CONSENSUS_PLACEHOLDER
+    ]
+    return "\n".join(manual_lines).strip()
+
+
+def consensus_field(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True)
+    return str(value)
 
 
 def command_report(args: argparse.Namespace) -> int:
@@ -397,6 +412,7 @@ def command_report(args: argparse.Namespace) -> int:
     consensus_records = ledger_records(directory, "consensus")
     warnings = collect_warnings(state)
     existing_report = report_path(directory).read_text(encoding="utf-8") if report_path(directory).exists() else ""
+    manual_consensus = manual_consensus_section(existing_report)
     lines = [
         "# Report",
         "",
@@ -406,15 +422,37 @@ def command_report(args: argparse.Namespace) -> int:
         "",
         "## Consensus",
         "",
-        manual_consensus_section(existing_report),
-        "",
     ]
+    if manual_consensus:
+        lines.extend([manual_consensus, ""])
+
     if consensus_records:
         lines.append("### Ledger Records")
         lines.append("")
         for record in consensus_records:
-            lines.append(f"- {record.get('summary') or record.get('finding') or record}")
+            finding = consensus_field(record.get("finding") or record.get("summary")) or "Consensus record"
+            lines.append(f"- **Finding:** {finding}")
+            root_cause = consensus_field(record.get("root_cause"))
+            if root_cause:
+                lines.append(f"  - **Root Cause:** {root_cause}")
+            resolution = consensus_field(record.get("resolution")) or "Not recorded."
+            status = consensus_field(record.get("status")) or "unknown"
+            lines.append(f"  - **Resolution:** {resolution}")
+            lines.append(f"  - **Status:** {status}")
+            evidence = record.get("evidence")
+            if isinstance(evidence, list):
+                evidence_items = [consensus_field(item) for item in evidence]
+                evidence_items = [item for item in evidence_items if item]
+                if evidence_items:
+                    lines.append("  - **Evidence:**")
+                    lines.extend(f"    - {item}" for item in evidence_items)
+            else:
+                evidence_text = consensus_field(evidence)
+                if evidence_text:
+                    lines.append(f"  - **Evidence:** {evidence_text}")
         lines.append("")
+    elif not manual_consensus:
+        lines.extend([CONSENSUS_PLACEHOLDER, ""])
 
     lines.extend([
         "## Final Report",
