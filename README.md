@@ -95,7 +95,7 @@ Default to headless Codex exec agents for new work:
 /codex-orchestrator:workflow
 
 Break this task into scoped Codex exec subagent prompts.
-First reuse any matching existing Codex agent. Start a new codex exec --json agent only if the task is new, the previous context is full or irrelevant, isolation requires it, or I explicitly ask for a fresh session. Monitor each JSONL stream with parser state/tail offsets, then review the diffs and record verification before reporting.
+First reuse any matching existing Codex agent whose context is relevant. If that session is almost full but still relevant, compact the useful state and continue in the same session. Start a new codex exec --json agent only when the task is contextually unrelated, isolation requires it, or I explicitly ask for a fresh session. Monitor each JSONL stream with parser state/tail offsets, do not edit overlapping files while Codex owns them, then review the diffs and record verification after Codex yields or completes.
 ```
 
 Start a Codex task in VS Code or Cursor.

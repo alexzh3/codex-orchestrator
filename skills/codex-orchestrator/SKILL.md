@@ -13,9 +13,10 @@ A live IDE session is identified by a pasted `codex://threads/<thread-uuid>` URL
 started with `codex exec` are source kind `exec`; they are resumable from the CLI but do not appear
 in the IDE sidebar. Start in the IDE when the user needs IDE visibility.
 
-Default to an exec-first orchestration pattern for new work: Claude scopes one or more prompts,
-reuses matching Codex agents when possible, launches Codex with `codex exec --json` only when a new
-agent is needed, captures each JSONL stream under the run directory, and monitors the streams with
+Default to an exec-first orchestration pattern for new work: once a plan exists, Codex is the first
+mover for implementation, repair, refactor, and test-writing. Claude scopes prompts, reuses matching
+Codex agents when possible, launches Codex with `codex exec --json` only when a new agent is needed,
+captures each JSONL stream under the run directory, and monitors the streams with
 `codex_orch_parse.py state` and `tail`. Use IDE session monitoring when the user provides an
 existing thread URL or explicitly needs sidebar visibility.
 
@@ -25,11 +26,17 @@ The "reuse before spawning" rules in this skill decide whether to start a *new* 
 reuse an existing one. They do not decide whether to use Codex at all. Do not collapse to solo Claude
 work just because a task looks small or review-shaped. Map the task to an action first:
 
-- Implementation, repair, refactor, or test-writing: dispatch a Codex exec executor. This is Codex's
-  job, not work to do solo.
+- Implementation, repair, refactor, or test-writing: dispatch or resume a Codex exec executor first
+  once the task has a usable plan. This is Codex's job, not work to do solo before Codex has moved.
 - Review, verification, or "is this ready" gating: run Claude's own review first, then run an
   independent `codex exec review` pass on the diff as a required second opinion before acceptance.
 - Pure ledger setup (`/codex-orchestrator:start-run`): no Codex; open the ledger and stop.
+
+Claude may plan before dispatch only when no plan exists, the scope is ambiguous, or safety/compute
+gating is needed. That plan is an orchestration plan for Codex executors: choose task boundaries,
+agent reuse, worktrees, verification gates, and handoff order with Codex subagents in mind. Planning
+does not authorize solo Claude execution; after planning, delegate the scoped work to Codex and
+orchestrate it.
 
 Solo Claude acceptance with no Codex pass is the exception, allowed only when the user explicitly
 opts out. Record the opt-out and its reason as a ledger event.
@@ -70,48 +77,56 @@ Later workflow/report helpers:
 
 ```bash
 python3 scripts/codex_orch.py status --run-id <run-id>
-python3 scripts/codex_orch.py append-event --run-id <run-id> '{"type":"note"}'
 python3 scripts/codex_orch.py add-verification --run-id <run-id> --kind test --command "<cmd>" --exit-code <n> --result passed --summary "<summary>"
 python3 scripts/codex_orch.py report --run-id <run-id>
 ```
 
-Keep durable facts in these files, not only in model context. Update `state.json` when run or session
-status changes, append material facts to `ledger.jsonl`, and keep `report.md` readable for the user.
-Runtime records follow `schemas/codex-orchestrator.schema.json`.
+Use `append-event` only as an advanced escape hatch for custom material facts that do not yet have a
+typed command:
+
+```bash
+python3 scripts/codex_orch.py append-event --run-id <run-id> '{"type":"note"}'
+```
+
+Keep durable facts in these files, not only in model context. Keep `state.json` as a compact
+run/session snapshot where relevant, append material facts to `ledger.jsonl`, and keep `report.md`
+readable for the user. Runtime records follow `schemas/codex-orchestrator.schema.json`.
 
 ## Workflow
 
 1. Create or reuse a run id and initialize the durable ledger if missing.
 2. Inspect `state.json` and recent ledger events for existing named Codex agents before starting any
    new session.
-3. Break the user goal into scoped tasks. Dispatch the implementation, repair, refactor, or
-   test-writing work to a Codex exec agent; this is Codex's job, not work to do solo. Use one
-   reusable exec agent by default and several only when work can be isolated by worktree, files, or
-   compute.
-4. Resume the matching idle/complete Codex agent when the task continues its role, files, worktree,
-   or prior context. Launch a new `codex exec --json` session only when the task is genuinely new,
-   the old context is full or irrelevant, isolation requires it, or the user explicitly asks.
+3. If no usable plan exists, create or validate a minimal orchestration plan that assumes Codex
+   subagent executors are available: choose task boundaries, reuse strategy, worktree isolation, and
+   verification gates. Once the plan is usable, make Codex the first mover for implementation,
+   repair, refactor, or test-writing: dispatch or resume a Codex exec agent before Claude implements
+   or reviews the work. Use one reusable exec agent by default and several only when work can be
+   isolated by worktree, files, or compute.
+4. Continue in the same Codex session when that session's context is relevant to the next task. If
+   it is almost full but still contextually relevant, compact/summarize the relevant state, then
+   continue the same session. Launch a new `codex exec --json` session only when the task is
+   contextually unrelated to existing sessions, isolation requires it, or the user explicitly asks.
 5. Attach to an IDE session when visibility or existing IDE context requires it.
-6. Monitor each subagent using parser `state`/`tail` commands; store offsets/status in durable
-   notes and never load full rollout logs.
-7. Review code, diffs, logs, manifests, generated artifacts, and test output yourself.
-8. Obtain an independent Codex review of the diff before acceptance (`codex exec review`), not only
-   when Claude already suspects a problem. Solo Claude acceptance is allowed only with an explicit,
-   recorded user opt-out.
-9. Record verification evidence, including the Codex review, in `ledger.jsonl` and running notes in
-   `report.md`.
-10. If Claude and Codex disagree, resolve it with evidence and record the resolution as consensus
-    before implementing or accepting the fix.
-11. Generate or update `report.md` for handoff or approval.
+6. Monitor during Codex execution. Do not edit overlapping implementation files while a Codex
+   executor owns them; wait until Codex yields, completes, or a serialized handoff is recorded.
+7. After Codex yields or completes, review artifacts and run the consensus-gated review loop below.
+8. Record verification evidence, consensus decisions, and final report state durably.
+9. Generate or update `report.md` for handoff or approval.
 
 Do not run this sequence for `/codex-orchestrator:start-run`; that command only opens the ledger.
 
 ## Agent Identity And Reuse
 
 Treat each Codex session as a named agent with durable identity: role, thread id, worktree, branch,
-event source, and current status. Reuse the same agent for follow-up prompts that belong to the same
-task, files, subsystem, or review thread. Do not start a duplicate agent just because another prompt
-is needed.
+event source, and current status. Session reuse is simple: continue in the same Codex session when
+its context is relevant to the task; if it is almost full but still relevant, compact/summarize the
+relevant state and continue there; create a new Codex session only for contextually unrelated work,
+required isolation, or an explicit user request. Do not start a duplicate agent just because another
+prompt is needed.
+
+When compacting a relevant Codex session before continuing, preserve: goal, files touched, key
+decisions, current diff/test status, unresolved issues, and the next scoped prompt.
 
 Before launching Codex:
 
@@ -121,10 +136,10 @@ Before launching Codex:
 4. If a matching session is idle or complete, resume it with the next scoped prompt.
 5. If no matching session exists, create a new named agent and record why.
 
-Start a new Codex session only when the work is unrelated to existing agents, the prior context is
-full/stale/irrelevant for the next task, parser confidence is too low to trust the session after
-bounded inspection, isolation requires a separate worktree, or the user explicitly requests a fresh
-agent. Record the reason as a ledger event.
+Start a new Codex session only when the work is contextually unrelated to existing agents, parser
+confidence is too low to trust the session after bounded inspection, isolation requires a separate
+worktree, or the user explicitly requests a fresh agent. An almost-full but relevant session is a
+compaction/resume case, not a new-session reason. Record the reason as a ledger event.
 
 For IDE rollout sessions, keep using the same `codex://threads/<thread-uuid>` for follow-up work.
 After a resume, re-find the newest rollout file for that thread id because Codex may append a new
@@ -153,53 +168,19 @@ with a temporary name until the stream emits `thread.started`, then update the s
 ## Monitoring Codex
 
 Inside Claude Code, prefer native Monitor or Bash `run_in_background` over a manual sleep-poll loop.
-Arm once and get woken on real events instead of burning a turn per poll. Parser `state` and `tail`
-commands are the interpretation and fallback layer underneath the trigger, not a replacement for it.
+Native monitoring wakes Claude; `codex_orch_parse.py` interprets JSONL; `state.json`/`ledger.jsonl`
+persist durable facts. For concrete native Monitor and `run_in_background` recipes, read
+`references/monitoring.md`.
 
-Tier 1: for exec completion, use one Bash `run_in_background` notification. No Monitor tool is
-needed. Launch and `wait` in the *same* command so `$PID` is a child you can `wait` on and capture
-its exit code (a separate watcher shell cannot; there, persist the PID and poll `kill -0`). Report
-the child rc with the final parser state so a crash or bad `$CODEX` path is not misread as idle:
+Core monitoring rules:
 
-```bash
-# one run_in_background command: launch, block until real exit, then report status
-"$CODEX" exec --json -s workspace-write -c approval_policy=never -C <worktree> "<prompt>" > "$EXEC_LOG" & PID=$!
-wait "$PID"; RC=$?   # rc!=0, or an empty/unterminated log, means the run failed — not idle
-python3 scripts/codex_orch_parse.py state <name> --source exec --file "$EXEC_LOG" --json
-if [ "$RC" -ne 0 ]; then echo "EXEC EXITED rc=$RC — treat empty/partial log as failed"; fi
-exit "$RC"   # wrapper exit code must mirror the child, not the last test (avoids the && status trap)
-```
+- Use parser `state`/`tail` output, not raw grep, to interpret Codex JSONL.
+- Use `next_offset` to read deltas and avoid reloading full rollout logs.
+- Cover failure signals, not only success; silence is not completion.
+- Re-find IDE rollout paths after every resume.
+- In a Monitor, stdout is the event stream; silence bookkeeping commands such as `append-event`.
 
-Tier 2: for progress, stall, or failure during a run, use the Monitor tool with the parser as the
-filter, not text grep. Use a bounded `timeout_ms` for exec monitors and `persistent: true` for IDE
-monitors:
-
-```bash
-LEDGER=.codex-orchestrator/runs/<run>/ledger.jsonl; STALE=600
-# resume from the persisted offset for this (agent, log file); first arm falls back to 0 so a fast terminal event is not skipped
-OFF=$(tac "$LEDGER" 2>/dev/null | jq -rc --arg f "$EXEC_LOG" 'select(.type=="monitor_offset" and .name=="<name>" and .file==$f).offset' | head -1)
-OFF=${OFF:-0}; SZ=$(stat -c %s "$EXEC_LOG" 2>/dev/null || echo 0); (( OFF > SZ )) && OFF=0   # fresh/truncated log -> restart at 0
-while true; do
-  OUT=$(python3 scripts/codex_orch_parse.py tail <name> --source exec --file "$EXEC_LOG" --since-offset "$OFF" --json)
-  OFF=$(jq -r '.next_offset' <<<"$OUT")
-  # structured event types — no false positives from Codex merely *discussing* a commit
-  # turn.completed/turn.failed always; error only when it is not a benign reconnect notice
-  jq -rc '.events[]? | select((.type|test("turn.completed|turn.failed")) or (.type=="error" and ((.message//"")|test("[Rr]econnect")|not))) | "EVENT \(.type) \(.item.text // .message // "")"' <<<"$OUT"
-  MT=$(stat -c %Y "$EXEC_LOG"); (( $(date +%s)-MT > STALE )) && { echo "STALL ${STALE}s — turn ended / awaiting approval"; break; }
-  python3 scripts/codex_orch.py append-event --run-id <run> "{\"type\":\"monitor_offset\",\"name\":\"<name>\",\"file\":\"$EXEC_LOG\",\"offset\":$OFF}" >/dev/null  # persist per-(agent,file); MUST silence stdout
-  sleep 90
-done
-```
-
-In a Monitor, stdout is the event stream. Redirect `append-event` to `/dev/null` or every persist
-call becomes a spurious notification. Cover failure signatures, not just success; silence is not
-completion. Cap emitted events and use TaskStop before re-arming.
-
-Tier 3: for IDE rollout sessions, resolve the newest rollout path with
-`codex_orch_parse.py find <thread-uuid>` inside each monitor tick instead of caching the path. Codex
-appends a new rollout file on resume.
-
-Use bare parser commands as the fallback and interpretation layer:
+Bare parser commands:
 
 ```bash
 python3 scripts/codex_orch_parse.py find <thread-uuid> --source ide --json
@@ -327,6 +308,11 @@ df -h /
 ## Non-Negotiable Rules
 
 - Treat artifacts as source of truth and narration as intent until verified.
+- Planning is for delegation: design the work around Codex executors, then delegate. Once a usable
+  plan exists, Codex is the first mover for implementation, repair, refactor, and test-writing;
+  Claude monitors during execution and reviews/edits only after Codex yields or completes.
+- Do not edit files owned by an active Codex executor unless a serialized handoff explicitly transfers
+  ownership.
 - Never load whole rollout logs.
 - Do not infer success from silence or low-confidence parser output.
 - Re-find the rollout after every resume.
@@ -338,4 +324,6 @@ df -h /
 - Gate scarce compute before handoff.
 - Do not accept a change on Claude's solo judgment; get an independent Codex review of the diff
   before acceptance unless the user explicitly opts out, and record the opt-out.
+- Do not chain broad rereviews. After final review, run at most one scoped rereview/fix loop for a
+  real unresolved issue, then escalate to the user.
 - Record consensus decisions and verification evidence durably.
