@@ -47,6 +47,8 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertTrue((self.ledger_dir() / "state.json").is_file())
         self.assertTrue((self.ledger_dir() / "ledger.jsonl").is_file())
         self.assertTrue((self.ledger_dir() / "report.md").is_file())
+        state = json.loads((self.ledger_dir() / "state.json").read_text(encoding="utf-8"))
+        self.assertNotIn("verification_policy", state)
         self.assertFalse((self.ledger_dir() / "events.jsonl").exists())
         self.assertFalse((self.ledger_dir() / "tasks.json").exists())
         self.assertFalse((self.ledger_dir() / "verification.jsonl").exists())

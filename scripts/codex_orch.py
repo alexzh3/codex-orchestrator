@@ -31,24 +31,6 @@ ALLOWED_VERIFICATION_RESULTS = (
     "needs_human_review",
 )
 
-DEFAULT_VERIFICATION_POLICY = {
-    "required": [
-        "git diff review",
-        "test command",
-        "artifact manifest check when artifacts are produced",
-    ],
-    "forbidden": [
-        "delete tests to pass",
-        "shrink validation ranges without justification",
-        "accept training/RL changes on a single stochastic pass",
-    ],
-    "nondeterministic_rollouts": [
-        "seeded determinism where supported",
-        "metric-threshold checks on eval rollouts",
-        "regression bands on reward/return instead of equality assertions",
-    ],
-}
-
 CONSENSUS_PLACEHOLDER = "No consensus decisions recorded."
 REVIEW_PLACEHOLDER = "No review notes recorded."
 REVIEW_KINDS = {"manual_review", "git_diff"}
@@ -159,7 +141,6 @@ def initial_state(repo: Path, run_id: str) -> dict[str, object]:
         "created_at": utc_now(),
         "status": "active",
         "sessions": [],
-        "verification_policy": DEFAULT_VERIFICATION_POLICY,
     }
 
 

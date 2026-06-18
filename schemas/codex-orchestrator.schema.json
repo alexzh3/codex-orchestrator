@@ -11,8 +11,7 @@
         "repo",
         "created_at",
         "status",
-        "sessions",
-        "verification_policy"
+        "sessions"
       ],
       "properties": {
         "run_id": {
@@ -44,9 +43,6 @@
           "items": {
             "$ref": "#/$defs/session"
           }
-        },
-        "verification_policy": {
-          "$ref": "#/$defs/verification_policy"
         }
       },
       "additionalProperties": false
@@ -125,25 +121,6 @@
             "low",
             "high"
           ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "verification_policy": {
-      "type": "object",
-      "required": [
-        "required",
-        "forbidden"
-      ],
-      "properties": {
-        "required": {
-          "$ref": "#/$defs/string_list"
-        },
-        "forbidden": {
-          "$ref": "#/$defs/string_list"
-        },
-        "nondeterministic_rollouts": {
-          "$ref": "#/$defs/string_list"
         }
       },
       "additionalProperties": false

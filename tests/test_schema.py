@@ -27,6 +27,7 @@ class SchemaTests(unittest.TestCase):
             "generic_event",
         ):
             self.assertIn(name, defs)
+        self.assertNotIn("verification_policy", defs)
 
         for old_name in (
             "state.schema.json",

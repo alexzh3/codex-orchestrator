@@ -17,23 +17,21 @@ The actual operational playbook lives in [`skills/codex-orchestrator/SKILL.md`](
 
 ## What this skill does
 
-Use this skill when you want Claude Code to coordinate one or more Codex sessions.
+Use this skill when you want Claude Code to coordinate Codex sessions instead of supervising them
+manually.
 
-It can:
+It helps Claude:
 
-* dispatch scoped Codex workers with `codex exec --json`,
-* monitor each exec worker from compact JSONL streams,
-* reuse the same Codex agent/session for follow-up work when its context is still relevant,
-* locate a live Codex IDE session from a `codex://threads/<thread-uuid>` URL,
-* read Codex rollout logs without loading huge files into context,
-* detect whether Codex is active, complete, idle, or blocked on approval,
-* ask Codex to review uncommitted changes,
-* coordinate multiple Codex sessions sequentially or in parallel,
+* launch, reuse, or resume scoped `codex exec --json` workers,
+* attach to live Codex IDE sessions from `codex://threads/<thread-uuid>` URLs,
+* monitor compact JSONL/rollout streams and classify session status,
+* coordinate sequential or parallel Codex work without file or compute conflicts,
 * gate shared compute before expensive rollouts,
-* and record evidence, verification results, and any Claude/Codex disagreement resolutions in a final report.
+* record verification evidence and Claude/Codex consensus in a final report.
 
 ---
-## Hypothetical Architecture
+
+## Architecture
 
 ```text
 User goal
@@ -65,6 +63,7 @@ Executor / Implementer / Peer Reviewer
 Repository
 Code / tests / manifests / logs / git history
 ```
+
 ---
 
 ## Requirements
@@ -122,74 +121,36 @@ codex://threads/<thread-uuid>
 Review what Codex is doing, detect when it finishes or blocks, verify the diff against the repository, and share any suspected mistakes back with Codex before accepting the result.
 ```
 
-For a headless handoff:
-
-```text
-/codex-orchestrator:workflow
-
-Ask Codex to implement the next scoped task using codex exec.
-Run Codex in workspace-write mode with approval_policy=never.
-After Codex finishes, review the diff, run verification, and ask Codex to review any suspicious changes before accepting.
-```
-
 ---
 
 ## Commands
 
-Use the workflow command when you want Claude to run the whole orchestration workflow end to end:
+Available slash commands:
 
-```text
-/codex-orchestrator:workflow
-```
+| Command | What it does |
+| --- | --- |
+| `/codex-orchestrator:workflow` | Reuse or dispatch Codex agents, monitor them, review diffs, record verification, resolve consensus, and report. |
+| `/codex-orchestrator:start-run` | Open a tracked run only by creating `state.json`, `ledger.jsonl`, and `report.md`. It does not run agents, tests, reviews, or consensus. |
+| `/codex-orchestrator:report` | Generate or update `report.md` from evidence already recorded in the run ledger. |
 
-Use `start-run` only when you want to open a tracked run ledger:
-
-```text
-/codex-orchestrator:start-run
-```
-
-That command only creates:
-
-```text
-.codex-orchestrator/runs/<run-id>/
-  state.json
-  ledger.jsonl
-  report.md
-```
-
-It does not run tests, review diffs, resolve consensus, or generate the final report.
-
-Public commands:
-
-```text
-/codex-orchestrator:workflow       # reuse/dispatch Codex agents, monitor, review, verify, consensus, report
-/codex-orchestrator:start-run      # open state.json, ledger.jsonl, and report.md only
-/codex-orchestrator:report         # generate or update report.md after evidence is recorded
-```
 ---
 
-## Ledger CLI
+## Runtime Files And CLI
 
-Create a run ledger before supervising or dispatching Codex:
+Most users can use the slash commands and ignore the Python CLI. It exists for manual debugging,
+scripted runs, and inspecting the durable files the agent writes.
 
 ```bash
 python3 scripts/codex_orch.py init --run-id example --repo .
-```
-
-After later review work, inspect compact state, record verification evidence, and generate the
-handoff report:
-
-```bash
 python3 scripts/codex_orch.py status --run-id example
-python3 scripts/codex_orch.py append-event --run-id example '{"type":"note","summary":"Reviewed diff"}'
 python3 scripts/codex_orch.py add-verification --run-id example --kind test --command "python3 -m unittest discover -s tests -v" --exit-code 0 --result passed --summary "Unit tests passed"
 python3 scripts/codex_orch.py report --run-id example
 ```
 
-Runtime ledgers live under `.codex-orchestrator/runs/<run-id>/` and are ignored by git. Each run uses
-`state.json` for compact mutable state, `ledger.jsonl` for append-only events and evidence, and
-`report.md` for human-readable review, consensus, and final report sections.
-Runtime records are described by `schemas/codex-orchestrator.schema.json`.
+Runtime files live under `.codex-orchestrator/runs/<run-id>/` and are ignored by git:
+`state.json` is compact mutable state, `ledger.jsonl` is append-only evidence, and `report.md` is
+the human-readable handoff. Runtime records are described by
+`schemas/codex-orchestrator.schema.json`.
 
 ---
 
@@ -228,10 +189,10 @@ At the same time, this skill does not rely on long context alone. Reports like [
 
 ### 3. Cost-aware delegation
 
-Codex currently offers a substantially higher effective usage allowance for many coding workflows, especially on higher ChatGPT plans, whereas Claude is way more restrictive with their usage limits.
+Codex may be the cheaper or higher-throughput executor for repetitive coding loops, depending on
+the user's plan and limits.
 
 This skill therefore routes repetitive implementation loops to Codex while preserving Claude's budget for the work where it is most valuable: planning, long-context reasoning, review, orchestration, and final judgment.
-
 
 ### 4. Native harnesses matter
 
@@ -243,18 +204,15 @@ This skill does not try to wrap Codex through a generic interface. It lets Codex
 
 ## Security model
 
-This skill is designed for **bounded autonomy**, not unrestricted agent execution; the author is not responsible for any damage caused.
+This skill is designed for **bounded autonomy**, not unrestricted agent execution; the author is not
+responsible for any damage caused. Normal Codex executor tasks should run in `workspace-write`, while
+Claude gates elevated operations such as network access, out-of-workspace writes, Docker socket
+access, deployments, credentials, or GPU-heavy rollouts.
 
-Default assumptions:
-
-* Codex runs in `workspace-write` for normal executor tasks.
-* Claude gates dangerous or expensive actions before they run.
-* Network access, out-of-workspace writes, Docker socket access, deployments, credentials, and GPU-heavy rollouts are treated as elevated operations that require explicit user authorization or a deliberately configured permission profile.
-* Codex should not receive `danger-full-access` just to avoid approval friction.
-* If broad access is required, run Codex only inside a trusted, externally hardened environment such as a dedicated container or VM.
-* Secrets should not be assumed safe just because Codex is sandboxed. Keep secrets out of the workspace where possible, deny `.env` files in custom permission profiles, and avoid exposing unnecessary credentials to agent-run commands.
-* All agent claims must be verified against artifacts: diffs, tests, logs, manifests, build output, or benchmark results.
-* Consensus decisions should be recorded when Claude and Codex disagree about a bug, fix, or implementation direction.
+Do not give Codex `danger-full-access` just to avoid approval friction. If broad access is required,
+use a trusted, externally hardened container or VM. Keep secrets out of the workspace where possible,
+verify all agent claims against artifacts, and record consensus when Claude and Codex disagree about
+a bug, fix, or implementation direction.
 
 ---
 
