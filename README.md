@@ -256,7 +256,7 @@ That is why this skill uses **evidence-based consensus** instead of majority vot
 * Claude proposes or validates the plan.
 * Codex executes a scoped implementation.
 * Claude verifies the diff, tests, logs, and artifacts.
-* When Claude finds a suspected issue, Codex reviews Claude’s objection or the uncommitted diff.
+* Codex independently reviews the diff before acceptance; when Claude finds a suspected issue, Codex also reviews Claude’s objection.
 * Disagreements are resolved using evidence, not vibes.
 * The final report records each disagreement or mistake, its root cause when known, the agreed resolution, and the verification evidence.
 

@@ -22,6 +22,21 @@ agent is needed, captures each JSONL stream under the run directory, and monitor
 `codex_orch_parse.py state` and `tail`. Use IDE session monitoring when the user provides an
 existing thread URL or explicitly needs sidebar visibility.
 
+## When To Involve Codex
+
+The "reuse before spawning" rules in this skill decide whether to start a *new* Codex agent versus
+reuse an existing one. They do not decide whether to use Codex at all. Do not collapse to solo Claude
+work just because a task looks small or review-shaped. Map the task to an action first:
+
+- Implementation, repair, refactor, or test-writing: dispatch a Codex exec executor. This is Codex's
+  job, not work to do solo.
+- Review, verification, or "is this ready" gating: run Claude's own review first, then run an
+  independent `codex exec review` pass on the diff as a required second opinion before acceptance.
+- Pure ledger setup (`/codex-orchestrator:start-run`): no Codex; open the ledger and stop.
+
+Solo Claude acceptance with no Codex pass is the exception, allowed only when the user explicitly
+opts out. Record the opt-out and its reason as a ledger event.
+
 ## Commands
 
 - `/codex-orchestrator:workflow`: full run that initializes or reuses a ledger, reuses or resumes
@@ -72,19 +87,25 @@ Runtime records follow `schemas/codex-orchestrator.schema.json`.
 1. Create or reuse a run id and initialize the durable ledger if missing.
 2. Inspect `state.json` and recent ledger events for existing named Codex agents before starting any
    new session.
-3. Break the user goal into scoped Codex tasks; use one reusable exec agent by default and several
-   only when work can be isolated by worktree, files, or compute.
+3. Break the user goal into scoped tasks. Dispatch the implementation, repair, refactor, or
+   test-writing work to a Codex exec agent; this is Codex's job, not work to do solo. Use one
+   reusable exec agent by default and several only when work can be isolated by worktree, files, or
+   compute.
 4. Resume the matching idle/complete Codex agent when the task continues its role, files, worktree,
    or prior context. Launch a new `codex exec --json` session only when the task is genuinely new,
    the old context is full or irrelevant, isolation requires it, or the user explicitly asks.
 5. Attach to an IDE session when visibility or existing IDE context requires it.
 6. Monitor each subagent using parser `state`/`tail` commands; store offsets/status in durable
    notes and never load full rollout logs.
-7. Review code, diffs, logs, manifests, generated artifacts, and test output before acceptance.
-8. Record verification evidence in `ledger.jsonl` and running notes in `report.md`.
-9. If Claude finds a suspected issue, share it with Codex and record the evidence-based resolution
-   as consensus before implementing or accepting the fix.
-10. Generate or update `report.md` for handoff or approval.
+7. Review code, diffs, logs, manifests, generated artifacts, and test output yourself.
+8. Obtain an independent Codex review of the diff before acceptance (`codex exec review`), not only
+   when Claude already suspects a problem. Solo Claude acceptance is allowed only with an explicit,
+   recorded user opt-out.
+9. Record verification evidence, including the Codex review, in `ledger.jsonl` and running notes in
+   `report.md`.
+10. If Claude and Codex disagree, resolve it with evidence and record the resolution as consensus
+    before implementing or accepting the fix.
+11. Generate or update `report.md` for handoff or approval.
 
 Do not run this sequence for `/codex-orchestrator:start-run`; that command only opens the ledger.
 
@@ -207,6 +228,11 @@ For deterministic changes, inspect diffs and run relevant tests, typecheck, lint
 assertions. For nondeterministic rollout/training changes, require seeded determinism where possible,
 metric thresholds, and regression bands; do not accept one stochastic pass.
 
+Obtain an independent Codex review of the diff before acceptance, not only when Claude already
+suspects a problem. Run `codex exec review --uncommitted` (or `--commit <sha>` / `--base <branch>`)
+as a standard second opinion and record it as verification or consensus evidence. Do not accept on
+Claude's solo judgment unless the user explicitly opts out, and record that opt-out.
+
 When Claude finds a suspected Codex mistake, share the exact finding and evidence back before
 accepting or implementing:
 
@@ -256,4 +282,6 @@ df -h /
 - Default headless exec mode is `workspace-write` with `approval_policy=never`.
 - Use separate worktrees for parallel Codex sessions unless the user chooses otherwise.
 - Gate scarce compute before handoff.
+- Do not accept a change on Claude's solo judgment; get an independent Codex review of the diff
+  before acceptance unless the user explicitly opts out, and record the opt-out.
 - Record consensus decisions and verification evidence durably.

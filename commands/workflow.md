@@ -31,14 +31,14 @@ Default workflow:
 1. Create or reuse a run id.
 2. Initialize state.json, ledger.jsonl, and report.md if needed.
 3. Inspect existing named Codex agents in state/ledger and classify their current status.
-4. Scope Codex tasks and map each task to an existing agent when the role/context matches.
+4. Scope tasks and dispatch implementation/repair/refactor/test-writing to a Codex exec agent; map each task to an existing agent when the role/context matches.
 5. Resume matching idle/complete agents; keep monitoring active ones.
 6. Start a new `codex exec --json` agent only for unrelated work, full/irrelevant context, required isolation, or explicit user request.
 7. Monitor each session with parser state/tail offsets without loading full rollout logs.
-8. Review code, diffs, logs, and artifacts.
-9. Run or inspect verification checks.
-10. Record verification and material events in ledger.jsonl.
-11. Record consensus findings if Claude and Codex disagree.
+8. Review code, diffs, logs, and artifacts yourself.
+9. Obtain an independent Codex review of the diff before acceptance (`codex exec review`), not only on a suspected issue; solo acceptance needs an explicit, recorded user opt-out.
+10. Run or inspect verification checks and record verification (including the Codex review) in ledger.jsonl.
+11. Resolve any Claude/Codex disagreement with evidence and record it as consensus.
 12. Generate or update report.md.
 ```
 
