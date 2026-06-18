@@ -313,10 +313,10 @@
         "status": {
           "type": "string",
           "enum": [
-            "pending",
-            "active",
-            "blocked",
             "complete",
+            "active",
+            "pending",
+            "blocked",
             "failed"
           ]
         },

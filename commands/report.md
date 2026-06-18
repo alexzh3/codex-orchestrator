@@ -35,7 +35,7 @@ report.md
 Default command:
 
 ```bash
-python3 scripts/codex_orch.py report --run-id <run-id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" report --run-id <run-id>
 ```
 
 The final report should stay compact: authored `Summary` and `Changes`, generated `Evidence`,
@@ -44,5 +44,5 @@ generated `Consensus`, and generated `Risks / Follow-ups`.
 Reference:
 
 ```text
-commands/orchestrate.md
+${CLAUDE_PLUGIN_ROOT}/commands/orchestrate.md
 ```

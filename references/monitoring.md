@@ -5,7 +5,7 @@ Use these recipes only when running inside Claude Code and you need concrete nat
 
 ```text
 Claude Code native Monitor / run_in_background = wake-up trigger
-codex_orch_parse.py                            = JSONL interpretation
+${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py = JSONL interpretation
 state.json / ledger.jsonl                      = durable state and evidence
 prompts/ and logs/                             = paired prompt and JSONL files by stem
 ```
@@ -26,7 +26,7 @@ PROMPT_FILE="$RUN_DIR/prompts/<name>.md"
 EXEC_LOG="$RUN_DIR/logs/<name>.jsonl"
 "$CODEX" exec --json -s workspace-write -c approval_policy=never -C <worktree> < "$PROMPT_FILE" > "$EXEC_LOG" & PID=$!
 wait "$PID"; RC=$?   # rc!=0, or an empty/unterminated log, means the run failed, not idle
-python3 scripts/codex_orch_parse.py state <name> --source exec --file "$EXEC_LOG" --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" state <name> --source exec --file "$EXEC_LOG" --json
 if [ "$RC" -ne 0 ]; then echo "EXEC EXITED rc=$RC - treat empty/partial log as failed"; fi
 exit "$RC"
 ```
@@ -46,12 +46,12 @@ LEDGER=.codex-orchestrator/runs/<run>/ledger.jsonl; STALE=600
 OFF=$(tac "$LEDGER" 2>/dev/null | jq -rc --arg f "$EXEC_LOG" 'select(.type=="monitor_offset" and .name=="<name>" and .file==$f).offset' | head -1)
 OFF=${OFF:-0}; SZ=$(stat -c %s "$EXEC_LOG" 2>/dev/null || echo 0); (( OFF > SZ )) && OFF=0
 while true; do
-  OUT=$(python3 scripts/codex_orch_parse.py tail <name> --source exec --file "$EXEC_LOG" --since-offset "$OFF" --json)
+  OUT=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" tail <name> --source exec --file "$EXEC_LOG" --since-offset "$OFF" --json)
   OFF=$(jq -r '.next_offset' <<<"$OUT")
   # turn.completed/turn.failed always; error only when it is not a benign reconnect notice
   jq -rc '.events[]? | select((.type|test("turn.completed|turn.failed")) or (.type=="error" and ((.message//"")|test("[Rr]econnect")|not))) | "EVENT \(.type) \(.item.text // .message // "")"' <<<"$OUT"
   MT=$(stat -c %Y "$EXEC_LOG"); (( $(date +%s)-MT > STALE )) && { echo "STALL ${STALE}s - turn ended / awaiting approval"; break; }
-  python3 scripts/codex_orch.py append-event --run-id <run> "{\"type\":\"monitor_offset\",\"name\":\"<name>\",\"file\":\"$EXEC_LOG\",\"offset\":$OFF}" >/dev/null
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" append-event --run-id <run> "{\"type\":\"monitor_offset\",\"name\":\"<name>\",\"file\":\"$EXEC_LOG\",\"offset\":$OFF}" >/dev/null
   sleep 90
 done
 ```
@@ -63,7 +63,8 @@ completion. Cap emitted events and use TaskStop before re-arming.
 ## IDE Rollout Sessions
 
 For IDE rollout sessions, resolve the newest rollout path with
-`codex_orch_parse.py find <thread-uuid>` inside each monitor tick instead of caching the path. Codex
+`${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py find <thread-uuid>` inside each monitor tick
+instead of caching the path. Codex
 may append a new rollout file on resume.
 
 Rollout path form:

@@ -33,7 +33,7 @@ It helps Claude:
 
 * [Claude Code](https://code.claude.com/docs/en/overview) installed in your IDE or terminal.
 * [OpenAI Codex](https://developers.openai.com/codex/cli/reference) installed in your IDE, or available through the Codex CLI.
-* Git initialized in the target repository.
+* Git initialized in the target repository when using worktree isolation or branch-based review.
 * At least one verification path: tests, typecheck, lint, build, benchmark, screenshot, or custom script.
 
 ---
@@ -156,10 +156,10 @@ initialize runtime files internally. The CLI exists for manual debugging, script
 inspecting the durable files the agent writes.
 
 ```bash
-python3 scripts/codex_orch.py init --run-id example --repo .
-python3 scripts/codex_orch.py status --run-id example
-python3 scripts/codex_orch.py add-verification --run-id example --kind test --command "python3 -m unittest discover -s tests -v" --exit-code 0 --result passed --summary "Unit tests passed"
-python3 scripts/codex_orch.py report --run-id example
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" init --run-id example --repo .
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" status --run-id example
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" add-verification --run-id example --kind test --command "python3 -m unittest discover -s tests -v" --exit-code 0 --result passed --summary "Unit tests passed"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" report --run-id example
 ```
 
 Runtime files live under `.codex-orchestrator/runs/<run-id>/` and are ignored by git:

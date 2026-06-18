@@ -1,11 +1,22 @@
 from __future__ import annotations
 
 import json
+import sys
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from codex_orch_contract import (  # noqa: E402
+    ALLOWED_RISK_LEVELS,
+    ALLOWED_VERIFICATION_KINDS,
+    ALLOWED_VERIFICATION_RESULTS,
+    CONSENSUS_OUTCOME_ORDER,
+    TASK_STATUS_ORDER,
+)
+
 SCHEMA = ROOT / "schemas" / "codex-orchestrator.schema.json"
 
 
@@ -41,11 +52,35 @@ class SchemaTests(unittest.TestCase):
         self.assertIn("outcome", consensus["required"])
         self.assertEqual(
             consensus["properties"]["outcome"]["enum"],
-            ["consensus", "claude_decision", "user_action_required"],
+            list(CONSENSUS_OUTCOME_ORDER),
         )
         self.assertEqual(
             consensus["properties"]["risk_level"]["enum"],
-            ["none", "low", "medium", "high"],
+            list(ALLOWED_RISK_LEVELS),
+        )
+
+    def test_schema_enums_match_runtime_contract(self) -> None:
+        defs = json.loads(SCHEMA.read_text(encoding="utf-8"))["$defs"]
+
+        self.assertEqual(
+            defs["verification_event"]["properties"]["kind"]["enum"],
+            list(ALLOWED_VERIFICATION_KINDS),
+        )
+        self.assertEqual(
+            defs["verification_event"]["properties"]["result"]["enum"],
+            list(ALLOWED_VERIFICATION_RESULTS),
+        )
+        self.assertEqual(
+            defs["consensus_event"]["properties"]["outcome"]["enum"],
+            list(CONSENSUS_OUTCOME_ORDER),
+        )
+        self.assertEqual(
+            defs["consensus_event"]["properties"]["risk_level"]["enum"],
+            list(ALLOWED_RISK_LEVELS),
+        )
+        self.assertEqual(
+            defs["task_event"]["properties"]["status"]["enum"],
+            list(TASK_STATUS_ORDER),
         )
 
 

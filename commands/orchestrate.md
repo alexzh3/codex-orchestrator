@@ -15,8 +15,8 @@ Default to a Codex-first orchestration pattern for new work: once a plan exists,
 mover for implementation, repair, refactor, and test-writing. Claude scopes prompts, reuses matching
 Codex agents when possible, launches Codex with `codex exec --json` only when a new agent is needed,
 captures each JSONL stream under the run directory, and monitors the streams with
-`codex_orch_parse.py state` and `tail`. Use IDE session monitoring when the user provides an
-existing thread URL or explicitly needs sidebar visibility.
+`${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py state` and `tail`. Use IDE session monitoring
+when the user provides an existing thread URL or explicitly needs sidebar visibility.
 
 ## When To Involve Codex
 
@@ -63,15 +63,15 @@ Slash commands initialize the ledger internally when orchestration starts. Manua
 debugging or explicit ledger-only setup:
 
 ```bash
-python3 scripts/codex_orch.py init --repo <repo> --run-id <run-id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" init --repo <repo> --run-id <run-id>
 ```
 
 Later workflow/report helpers:
 
 ```bash
-python3 scripts/codex_orch.py status --run-id <run-id>
-python3 scripts/codex_orch.py add-verification --run-id <run-id> --kind test --command "<cmd>" --exit-code <n> --result passed --summary "<summary>"
-python3 scripts/codex_orch.py report --run-id <run-id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" status --run-id <run-id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" add-verification --run-id <run-id> --kind test --command "<cmd>" --exit-code <n> --result passed --summary "<summary>"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" report --run-id <run-id>
 ```
 
 Use `append-event` only as an advanced escape hatch for custom material facts that do not yet have a
@@ -79,7 +79,7 @@ typed command. Known ledger event types are schema-validated; custom event types
 generic ledger events:
 
 ```bash
-python3 scripts/codex_orch.py append-event --run-id <run-id> '{"type":"note"}'
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" append-event --run-id <run-id> '{"type":"note"}'
 ```
 
 Keep durable facts in these files, not only in model context. Keep `state.json` as a compact
@@ -141,8 +141,9 @@ decisions, current diff/test status, unresolved issues, and the next scoped prom
 
 Before launching Codex:
 
-1. Run `python3 scripts/codex_orch.py status --run-id <run-id>` or inspect `state.json`.
-2. Classify each candidate session with `codex_orch_parse.py state`.
+1. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" status --run-id <run-id>` or inspect
+   `state.json`.
+2. Classify each candidate session with `${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py state`.
 3. If a matching session is active, keep monitoring it.
 4. If a matching session is idle or complete, resume it with the next scoped prompt.
 5. If no matching session exists, create a new named agent and record why.
@@ -182,9 +183,9 @@ the previous turn is idle or complete.
 ## Monitoring Codex
 
 Inside Claude Code, prefer native Monitor or Bash `run_in_background` over a manual sleep-poll loop.
-Native monitoring wakes Claude; `codex_orch_parse.py` interprets JSONL; `state.json`/`ledger.jsonl`
-persist durable facts. For concrete native Monitor and `run_in_background` recipes, read
-`references/monitoring.md`.
+Native monitoring wakes Claude; `${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py` interprets JSONL;
+`state.json`/`ledger.jsonl` persist durable facts. For concrete native Monitor and
+`run_in_background` recipes, read `${CLAUDE_PLUGIN_ROOT}/references/monitoring.md`.
 
 Core monitoring rules:
 
@@ -197,11 +198,11 @@ Core monitoring rules:
 Bare parser commands:
 
 ```bash
-python3 scripts/codex_orch_parse.py find <thread-uuid> --source ide --json
-python3 scripts/codex_orch_parse.py state <thread-uuid> --source ide --json
-python3 scripts/codex_orch_parse.py tail <thread-uuid> --source ide --since-offset <offset> --json
-python3 scripts/codex_orch_parse.py state <thread-uuid> --source exec --file <exec-jsonl> --json
-python3 scripts/codex_orch_parse.py tail <thread-uuid> --source exec --file <exec-jsonl> --since-offset <offset> --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" find <thread-uuid> --source ide --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" state <thread-uuid> --source ide --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" tail <thread-uuid> --source ide --since-offset <offset> --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" state <thread-uuid> --source exec --file <exec-jsonl> --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" tail <thread-uuid> --source exec --file <exec-jsonl> --since-offset <offset> --json
 ```
 
 For exec monitors, use the `next_offset` returned by `state` or `tail` as the next
@@ -306,7 +307,7 @@ Use separate worktrees for parallel sessions unless the user explicitly chooses 
 coordination:
 
 ```bash
-python3 scripts/codex_orch.py worktree --name codex-a
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" worktree --name codex-a
 ```
 
 Use sequential handoff when agents touch the same files/contracts or share scarce compute/artifact

@@ -46,4 +46,5 @@ Default workflow:
 15. Generate or update report.md.
 ```
 
-Follow `commands/orchestrate.md` for the full operating contract and concrete procedures.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/orchestrate.md` for the full operating contract and concrete
+procedures.
