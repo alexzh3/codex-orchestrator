@@ -22,6 +22,15 @@ REPORT_HEADINGS = [
     "## Consensus",
     "## Risks / Follow-ups",
 ]
+GENERATED_REPORT_HEADINGS = [
+    "## Summary",
+    "## Reproducibility",
+    "## Changes",
+    "## Task Graph",
+    "## Evidence",
+    "## Consensus",
+    "## Risks / Follow-ups",
+]
 
 
 def git_head(path: Path) -> str | None:
@@ -269,7 +278,7 @@ class CodexOrchCliTests(unittest.TestCase):
         report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
         summary_section = self.report_section(report, "## Summary")
         top_level_headings = [line for line in report.splitlines() if line.startswith("## ")]
-        self.assertEqual(top_level_headings, REPORT_HEADINGS)
+        self.assertEqual(top_level_headings, GENERATED_REPORT_HEADINGS)
         self.assertIn("No authored summary recorded.", summary_section)
         self.assertIn("### Generated Digest", summary_section)
         self.assertIn("- Run ID: run", summary_section)
@@ -284,6 +293,7 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIn("No run metadata recorded.", self.report_section(report, "## Reproducibility"))
         self.assertIn("- Report Completeness: 0.00", self.report_section(report, "## Reproducibility"))
         self.assertIn("No authored changes recorded.", self.report_section(report, "## Changes"))
+        self.assertIn("No task graph records recorded.", self.report_section(report, "## Task Graph"))
         self.assertIn("No evidence recorded.", report)
         self.assertNotIn("## Final Report", report)
 
@@ -612,8 +622,9 @@ class CodexOrchCliTests(unittest.TestCase):
         score = report_completeness_score(state, ledger)
         self.assertEqual(score["components"]["run_meta_present"]["earned"], 0.0)
         self.assertEqual(score["components"]["tasks_listed"]["earned"], 0.15)
+        self.assertEqual(score["components"]["changed_files_attributed"]["earned"], 0.15)
         self.assertEqual(score["components"]["prompt_log_pairs_complete"]["earned"], 0.05)
-        self.assertAlmostEqual(score["total"], 0.6)
+        self.assertAlmostEqual(score["total"], 0.75)
 
         self.run_cli(
             "benchmark",

@@ -17,6 +17,7 @@ CHANGES_PLACEHOLDER = "No authored changes recorded."
 EVIDENCE_PLACEHOLDER = "No evidence recorded."
 RISKS_PLACEHOLDER = "No unresolved risks or follow-ups recorded."
 RUN_META_PLACEHOLDER = "No run metadata recorded."
+TASK_GRAPH_PLACEHOLDER = "No task graph records recorded."
 REVIEW_KINDS = {"manual_review", "git_diff"}
 FINAL_REVIEW_KINDS = {"review", "manual_review", "git_diff"}
 SUMMARY_OPEN_ITEM_LIMIT = 140
@@ -186,18 +187,18 @@ def changed_file_attribution_ratio(
     total_files = 0
     attributed_files = 0
     for record in ledger:
-        files = []
-        files.extend(string_list(record.get("changed_files")))
-        files.extend(string_list(record.get("files")))
-        files.extend(string_list(record.get("file")))
+        if record.get("type") != "task_checkpoint":
+            continue
+        files = string_list(record.get("files_changed"))
         if not files:
             continue
         total_files += len(files)
-        task_ref = text_field(record.get("task_id") or record.get("task") or record.get("task_ref"))
-        if task_ref and (not task_ids or task_ref in task_ids):
-            attributed_files += len(files)
+        task_ref = text_field(record.get("task_id"))
+        if not task_ref or (task_ids and task_ref not in task_ids):
+            continue
+        attributed_files += len(files)
     if total_files == 0:
-        return 0.0
+        return 1.0
     return attributed_files / total_files
 
 
@@ -225,23 +226,15 @@ def risks_reflect_failed_checks_ratio(verification_records: list[dict[str, objec
     return len(reflected) / len(unresolved)
 
 
-def artifact_pair_key(path: str, prefix: str) -> str:
-    relative = path[len(prefix) :]
-    return relative.rsplit(".", 1)[0] if "." in relative else relative
-
-
 def prompt_log_pair_ratio(ledger: list[dict[str, object]]) -> float:
-    prompts: set[str] = set()
-    logs: set[str] = set()
-    for record in ledger:
-        for artifact in string_list(record.get("artifacts")):
-            if artifact.startswith("prompts/"):
-                prompts.add(artifact_pair_key(artifact, "prompts/"))
-            elif artifact.startswith("logs/"):
-                logs.add(artifact_pair_key(artifact, "logs/"))
-    if not prompts and not logs:
-        return 0.0
-    return len(prompts & logs) / max(len(prompts), len(logs))
+    dispatches = [record for record in ledger if record.get("type") == "dispatch_started"]
+    if not dispatches:
+        return 1.0
+    complete = 0
+    for record in dispatches:
+        if text_field(record.get("prompt_path")) and text_field(record.get("log_path")):
+            complete += 1
+    return complete / len(dispatches)
 
 
 def prompt_log_pairs_complete(ledger: list[dict[str, object]]) -> bool:
@@ -249,23 +242,47 @@ def prompt_log_pairs_complete(ledger: list[dict[str, object]]) -> bool:
 
 
 def gate_result_present(ledger: list[dict[str, object]]) -> bool:
-    return latest_record(ledger, "gate_result") is not None
+    return any(record.get("type") == "gate_result" for record in ledger)
+
+
+def task_records_for_score(ledger: list[dict[str, object]]) -> list[dict[str, object]]:
+    task_created_records = [record for record in ledger if record.get("type") == "task_created"]
+    if task_created_records:
+        return task_created_records
+    return [record for record in ledger if record.get("type") == "task"]
+
+
+def has_work_evidence(ledger: list[dict[str, object]]) -> bool:
+    evidence_types = {
+        "consensus",
+        "dispatch_started",
+        "file_claimed",
+        "gate_result",
+        "review",
+        "task",
+        "task_checkpoint",
+        "task_created",
+        "task_updated",
+        "verification",
+    }
+    return any(record.get("type") in evidence_types for record in ledger)
 
 
 def report_completeness_score(state: dict[str, object], ledger: list[dict[str, object]]) -> dict[str, object]:
     del state
     run_meta = latest_record(ledger, "run_meta")
-    task_records = [record for record in ledger if record.get("type") == "task"]
+    task_records = task_records_for_score(ledger)
     verification_records = [record for record in ledger if record.get("type") == "verification"]
+    has_evidence = has_work_evidence(ledger)
     ratios = {
         "run_meta_present": 1.0 if run_meta else 0.0,
         "tasks_listed": task_completion_ratio(task_records),
-        "changed_files_attributed": changed_file_attribution_ratio(ledger, task_records),
+        "changed_files_attributed": changed_file_attribution_ratio(ledger, task_records) if has_evidence else 0.0,
         "verification_records_complete": verification_completion_ratio(verification_records),
         "final_review_present": 1.0 if any(is_final_review_verification(record) for record in ledger) else 0.0,
         "risks_reflect_failed_checks": risks_reflect_failed_checks_ratio(verification_records),
         "gate_result_present": 1.0 if gate_result_present(ledger) else 0.0,
-        "prompt_log_pairs_complete": prompt_log_pair_ratio(ledger),
+        "prompt_log_pairs_complete": prompt_log_pair_ratio(ledger) if has_evidence else 0.0,
     }
     components: dict[str, dict[str, object]] = {}
     for key, label, weight in COMPLETENESS_COMPONENTS:
@@ -391,6 +408,20 @@ def truncate_summary_item(text: str) -> str:
     return text[: SUMMARY_OPEN_ITEM_LIMIT - 1].rstrip() + "…"
 
 
+def brief_string_list(value: object, *, code: bool = False, limit: int = 3) -> str:
+    items = string_list(value)
+    if not items:
+        return ""
+    rendered: list[str] = []
+    for item in items[:limit]:
+        text = inline_code(item) if code else truncate_summary_item(item)
+        rendered.append(text)
+    remaining = len(items) - limit
+    if remaining > 0:
+        rendered.append(f"+{remaining} more")
+    return ", ".join(rendered)
+
+
 def unresolved_items(
     warnings: list[str],
     verification_records: list[dict[str, object]],
@@ -440,6 +471,81 @@ def render_task_records(lines: list[str], task_records: list[dict[str, object]])
             value = text_field(record.get(field))
             if value:
                 lines.append(f"  - {label}: {value}")
+    lines.append("")
+
+
+def task_graph_records(ledger: list[dict[str, object]]) -> list[dict[str, object]]:
+    tasks: dict[str, dict[str, object]] = {}
+    order: list[str] = []
+
+    def task_for(task_id: str) -> dict[str, object]:
+        if task_id not in tasks:
+            tasks[task_id] = {"id": task_id}
+            order.append(task_id)
+        return tasks[task_id]
+
+    for record in ledger:
+        record_type = record.get("type")
+        if record_type == "task_created":
+            task_id = text_field(record.get("id"))
+            if not task_id:
+                continue
+            task = task_for(task_id)
+            for field in ("title", "status", "owner"):
+                value = text_field(record.get(field))
+                if value:
+                    task[field] = value
+            for field in ("files_allowed", "acceptance"):
+                values = string_list(record.get(field))
+                if values:
+                    task[field] = values
+        elif record_type == "task_updated":
+            task_id = text_field(record.get("id"))
+            if not task_id:
+                continue
+            task = task_for(task_id)
+            status = text_field(record.get("status"))
+            if status:
+                task["status"] = status
+        elif record_type == "task_checkpoint":
+            task_id = text_field(record.get("task_id"))
+            if not task_id:
+                continue
+            task = task_for(task_id)
+            task["latest_checkpoint"] = record
+            task.setdefault("owner", text_field(record.get("agent")))
+            task.setdefault("status", text_field(record.get("status")))
+
+    return [tasks[task_id] for task_id in order]
+
+
+def render_task_graph(lines: list[str], ledger: list[dict[str, object]]) -> None:
+    lines.extend(["## Task Graph", ""])
+    tasks = task_graph_records(ledger)
+    if not tasks:
+        lines.extend([TASK_GRAPH_PLACEHOLDER, ""])
+        return
+
+    for task in tasks:
+        task_id = text_field(task.get("id")) or "unknown"
+        title = text_field(task.get("title")) or task_id
+        status = text_field(task.get("status")) or "unknown"
+        lines.append(f"- **{task_id}**: {title} ({status})")
+        lines.append(f"  - Owner: {text_field(task.get('owner')) or 'not recorded'}")
+        lines.append(
+            f"  - Files allowed: {brief_string_list(task.get('files_allowed'), code=True) or 'not recorded'}"
+        )
+        lines.append(f"  - Acceptance: {brief_string_list(task.get('acceptance')) or 'not recorded'}")
+        checkpoint = task.get("latest_checkpoint")
+        if isinstance(checkpoint, dict):
+            checkpoint_status = text_field(checkpoint.get("status")) or "unknown"
+            checkpoint_summary = text_field(checkpoint.get("summary")) or "No summary recorded."
+            lines.append(f"  - Latest checkpoint: {checkpoint_status} - {checkpoint_summary}")
+            files_changed = brief_string_list(checkpoint.get("files_changed"), code=True)
+            lines.append(f"  - Files changed: {files_changed or 'none'}")
+        else:
+            lines.append("  - Latest checkpoint: not recorded")
+            lines.append("  - Files changed: none")
     lines.append("")
 
 
@@ -539,6 +645,8 @@ def render_report(
         render_task_records(lines, task_records)
     else:
         lines.extend([CHANGES_PLACEHOLDER, ""])
+
+    render_task_graph(lines, ledger)
 
     lines.extend(["## Evidence", ""])
     if evidence_records:

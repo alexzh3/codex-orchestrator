@@ -79,7 +79,8 @@ record `verification` + `consensus`; gate; commit. Resume the same session for s
 
 ## Current status (2026-06-29)
 
-Plugin **v0.3.0**. 46 tests green. Work is on a stack of open PRs (not yet merged to `main`):
+Plugin **v0.3.1** (in progress). **Hold merges to `main`** per current direction — keep stacking PRs
+for review. 51+ tests green. Open PR stack:
 
 | PR | Branch | Contents | Tests |
 |----|--------|----------|-------|
@@ -94,14 +95,17 @@ Claude Code 2.1.195.
 ## Roadmap
 
 ### Refactor releases (see `refactor_plan.md`)
-- **0.3 Benchmarkability & metadata** — ✅ PR #8
-- **0.4 Task protocol** — typed events (`task_created`, `file_claimed`, `dispatch_started`,
-  `task_checkpoint`, `review`, …), file claims + conflict checks, report Task Graph. *(next)*
-- **0.5 Gate & generated prompts** — `gate` + `doctor` commands, `render-prompt` + templates +
+**Versioning policy:** stay on the **0.3.x** line — each release bumps the patch (0.3.1, 0.3.2, …),
+not the minor. Do not bump to 0.4+ without explicit instruction.
+- **0.3.0 Benchmarkability & metadata** — ✅ PR #8
+- **0.3.1 Task protocol** — typed events (`task_created`, `file_claimed`, `dispatch_started`,
+  `task_checkpoint`, `review`, `gate_result`, …), file claims + `check-conflicts`, report Task Graph,
+  benchmark score wired to the new events. *(in progress)*
+- **0.3.2 Gate & generated prompts** — `gate` + `doctor` commands, `render-prompt` + templates +
   Codex output schema, strict report mode, revised session-reuse policy.
-- **0.6 Skills & monitors** — migrate `commands/*` → `skills/<name>/SKILL.md`, `bin/codex-orch`,
+- **0.3.3 Skills & monitors** — migrate `commands/*` → `skills/<name>/SKILL.md`, `bin/codex-orch`,
   plugin-native monitors, finish `scripts/codex_orchestrator/` package split (highest conflict → last).
-- **0.7 External benchmark adapters** — see benchmark roadmap below.
+- **0.3.4 External benchmark adapters** — see benchmark roadmap below.
 
 ### Head-to-head version-quality benchmark (two tiers, select **lowest-success-rate** tasks)
 Config in `bench/tiers.json`. Scaffolding done (dry-run); real adapters are **infra-gated**:

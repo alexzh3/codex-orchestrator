@@ -96,6 +96,21 @@ No authored changes recorded.
   - Owner: codex-exec-a
   - Notes: Kept network and agent calls out of the replay harness.
 
+## Task Graph
+
+- **T001**: Create replay case descriptor (complete)
+  - Owner: codex-exec-a
+  - Files allowed: `bench/cases/replay/long-run-001/case.json`, `bench/cases/replay/long-run-001/state.json`
+  - Acceptance: case descriptor points at deterministic fixture files, state records both monitored Codex sessions
+  - Latest checkpoint: complete - Created the deterministic replay descriptor and state fixture.
+  - Files changed: `bench/cases/replay/long-run-001/case.json`, `bench/cases/replay/long-run-001/state.json`
+- **T005**: Refresh golden report after renderer change (blocked)
+  - Owner: codex-exec-a
+  - Files allowed: `bench/cases/replay/long-run-001/ledger.jsonl`, `bench/cases/replay/long-run-001/expected-report.md`
+  - Acceptance: ledger captures task history and verification evidence, golden report refresh remains explicitly tracked
+  - Latest checkpoint: blocked - Recorded task protocol events and left the golden refresh blocked for the review gate.
+  - Files changed: `bench/cases/replay/long-run-001/ledger.jsonl`, `bench/cases/replay/long-run-001/expected-report.md`
+
 ## Evidence
 
 - **Test** (failed)
