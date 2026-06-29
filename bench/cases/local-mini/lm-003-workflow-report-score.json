@@ -1,0 +1,15 @@
+{
+  "id": "lm-003-workflow-report-score",
+  "suite": "local-mini",
+  "start_ref": "main",
+  "prompt": "Add one sentence to commands/workflow.md mentioning that benchmark reports include report_score for sidecar quality comparison.",
+  "files_allowed": [
+    "commands/workflow.md"
+  ],
+  "acceptance": {
+    "command": "grep -qi 'report_score' commands/workflow.md"
+  },
+  "timeout_seconds": 1800,
+  "max_turns": 35,
+  "max_budget_usd": 3
+}
