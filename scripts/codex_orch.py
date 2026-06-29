@@ -861,6 +861,15 @@ def glob_literal_prefix(pattern: str) -> str:
     return pattern[: min(positions)] if positions else pattern
 
 
+def glob_literal_dir_prefix(pattern: str) -> str:
+    parts: list[str] = []
+    for part in normalize_glob(pattern).split("/"):
+        if has_glob_meta(part):
+            break
+        parts.append(part)
+    return "/".join(parts)
+
+
 def glob_sample(pattern: str) -> str:
     output: list[str] = []
     index = 0
@@ -892,6 +901,12 @@ def is_path_prefix(prefix: str, path: str) -> bool:
     return bool(prefix) and (path == prefix or path.startswith(f"{prefix}/"))
 
 
+def dir_prefixes_overlap(first: str, second: str) -> bool:
+    if not first or not second:
+        return True
+    return is_path_prefix(first, second) or is_path_prefix(second, first)
+
+
 def glob_patterns_overlap(first: str, second: str) -> bool:
     first = normalize_glob(first)
     second = normalize_glob(second)
@@ -909,6 +924,8 @@ def glob_patterns_overlap(first: str, second: str) -> bool:
     second_has_meta = has_glob_meta(second)
     if not first_has_meta and not second_has_meta:
         return is_path_prefix(first, second) or is_path_prefix(second, first)
+    if first_has_meta and second_has_meta:
+        return dir_prefixes_overlap(glob_literal_dir_prefix(first), glob_literal_dir_prefix(second))
     if not first_has_meta:
         return fnmatch.fnmatchcase(first, second) or is_path_prefix(first, glob_literal_prefix(second))
     if not second_has_meta:
@@ -916,31 +933,25 @@ def glob_patterns_overlap(first: str, second: str) -> bool:
     return False
 
 
-def claimed_task_statuses(records: list[dict[str, object]]) -> tuple[dict[str, str], set[str]]:
-    statuses: dict[str, str] = {}
-    completed_dispatches: set[str] = set()
+def terminal_claim_tasks(records: list[dict[str, object]]) -> set[str]:
+    terminal_tasks: set[str] = set()
     for record in records:
         record_type = record.get("type")
-        if record_type in {"task", "task_created", "task_updated"}:
+        if record_type == "task_updated":
             task_id = record.get("id")
             status = record.get("status")
         elif record_type == "task_checkpoint":
             task_id = record.get("task_id")
             status = record.get("status")
-        elif record_type == "dispatch_completed":
-            task_id = record.get("task_id")
-            if isinstance(task_id, str) and task_id:
-                completed_dispatches.add(task_id)
-            continue
         else:
             continue
-        if isinstance(task_id, str) and task_id and isinstance(status, str):
-            statuses[task_id] = status
-    return statuses, completed_dispatches
+        if isinstance(task_id, str) and task_id and status in TERMINAL_TASK_STATUSES:
+            terminal_tasks.add(task_id)
+    return terminal_tasks
 
 
 def file_claim_conflict_report(records: list[dict[str, object]]) -> dict[str, object]:
-    statuses, completed_dispatches = claimed_task_statuses(records)
+    terminal_tasks = terminal_claim_tasks(records)
     claims_by_task: dict[str, list[str]] = {}
     for record in records:
         if record.get("type") != "file_claimed":
@@ -949,7 +960,7 @@ def file_claim_conflict_report(records: list[dict[str, object]]) -> dict[str, ob
         allow = record.get("allow")
         if not isinstance(task_id, str) or not task_id or not isinstance(allow, list):
             continue
-        if task_id in completed_dispatches or statuses.get(task_id) in TERMINAL_TASK_STATUSES:
+        if task_id in terminal_tasks:
             continue
         task_claims = claims_by_task.setdefault(task_id, [])
         task_claims.extend(pattern for pattern in allow if isinstance(pattern, str) and pattern)

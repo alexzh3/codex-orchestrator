@@ -270,6 +270,117 @@ class TaskProtocolTests(unittest.TestCase):
             [{"allow_a": "scripts/*", "allow_b": "scripts/codex_orch.py"}],
         )
 
+    def test_check_conflicts_overapproximates_same_directory_wildcards(self) -> None:
+        self.init_run()
+        self.run_cli(
+            "claim-files",
+            "--repo",
+            str(self.repo),
+            "--run-id",
+            "run",
+            "--task-id",
+            "task-a",
+            "--agent",
+            "codex-a",
+            "--allow",
+            "src/*_service.py",
+        )
+        self.run_cli(
+            "claim-files",
+            "--repo",
+            str(self.repo),
+            "--run-id",
+            "run",
+            "--task-id",
+            "task-b",
+            "--agent",
+            "codex-b",
+            "--allow",
+            "src/user_*.py",
+        )
+
+        result = self.run_cli("check-conflicts", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["conflicts"][0]["task_a"], "task-a")
+        self.assertEqual(payload["conflicts"][0]["task_b"], "task-b")
+        self.assertEqual(
+            payload["conflicts"][0]["overlap"],
+            [{"allow_a": "src/*_service.py", "allow_b": "src/user_*.py"}],
+        )
+
+    def test_check_conflicts_allows_wildcards_in_disjoint_directories(self) -> None:
+        self.init_run()
+        self.run_cli(
+            "claim-files",
+            "--repo",
+            str(self.repo),
+            "--run-id",
+            "run",
+            "--task-id",
+            "task-a",
+            "--agent",
+            "codex-a",
+            "--allow",
+            "src/a/**",
+        )
+        self.run_cli(
+            "claim-files",
+            "--repo",
+            str(self.repo),
+            "--run-id",
+            "run",
+            "--task-id",
+            "task-b",
+            "--agent",
+            "codex-b",
+            "--allow",
+            "src/b/**",
+        )
+
+        result = self.run_cli("check-conflicts", "--repo", str(self.repo), "--run-id", "run")
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["conflicts"], [])
+
+    def test_failed_dispatch_does_not_release_file_claims(self) -> None:
+        self.init_run()
+        self.run_cli(
+            "claim-files",
+            "--repo",
+            str(self.repo),
+            "--run-id",
+            "run",
+            "--task-id",
+            "task-a",
+            "--agent",
+            "codex-a",
+            "--allow",
+            "scripts/*",
+        )
+        self.append_event({"type": "dispatch_completed", "task_id": "task-a", "agent": "codex-a", "status": "failed"})
+        self.run_cli(
+            "claim-files",
+            "--repo",
+            str(self.repo),
+            "--run-id",
+            "run",
+            "--task-id",
+            "task-b",
+            "--agent",
+            "codex-b",
+            "--allow",
+            "scripts/codex_orch.py",
+        )
+
+        result = self.run_cli("check-conflicts", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["conflicts"][0]["task_a"], "task-a")
+        self.assertEqual(payload["conflicts"][0]["task_b"], "task-b")
+
     def test_check_conflicts_ignores_terminal_tasks(self) -> None:
         self.init_run()
         self.run_cli(
