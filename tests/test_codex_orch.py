@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from codex_orch_report import report_completeness_score  # noqa: E402
+from codex_orch_report import prompt_log_pair_ratio, report_completeness_score  # noqa: E402
 
 REPORT_HEADINGS = [
     "## Summary",
@@ -651,6 +651,64 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIs(benchmark["prompt_log_pairs_complete"], True)
         self.assertEqual(benchmark["ledger_errors"], 0)
         self.assertAlmostEqual(benchmark["report_score"], score["total"])
+
+    def test_typed_review_and_session_dispatch_count_for_report_score(self) -> None:
+        self.init_run()
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "review",
+                    "task_id": "task-1",
+                    "reviewer": "claude",
+                    "kind": "diff",
+                    "result": "passed",
+                    "command": "codex exec review --base main",
+                    "prompt_path": "prompts/review.md",
+                    "log_path": "logs/review.jsonl",
+                    "summary": "Typed review passed",
+                    "findings": [],
+                }
+            ),
+        )
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "session_dispatch",
+                    "task_id": "task-1",
+                    "session": "codex-a",
+                    "prompt_path": "prompts/task-1.md",
+                    "log_path": "logs/task-1.jsonl",
+                }
+            ),
+        )
+
+        self.run_cli("report", "--run-id", "run")
+        report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
+        summary_section = self.report_section(report, "## Summary")
+        consensus_section = self.report_section(report, "## Consensus")
+        state = json.loads((self.ledger_dir() / "state.json").read_text(encoding="utf-8"))
+        ledger = [
+            json.loads(line)
+            for line in (self.ledger_dir() / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        score = report_completeness_score(state, ledger)
+
+        self.assertIn("- Reviews: 1", summary_section)
+        self.assertIn("- **Diff Review** (passed)", consensus_section)
+        self.assertIn("Typed review passed", consensus_section)
+        self.assertEqual(
+            prompt_log_pair_ratio([record for record in ledger if record.get("type") == "session_dispatch"]),
+            1.0,
+        )
+        self.assertEqual(score["components"]["final_review_present"]["earned"], 0.15)
+        self.assertEqual(score["components"]["prompt_log_pairs_complete"]["earned"], 0.05)
 
     def test_benchmark_plugin_ref_does_not_fall_back_to_target_repo_commit(self) -> None:
         target_head = self.init_target_git_repo()

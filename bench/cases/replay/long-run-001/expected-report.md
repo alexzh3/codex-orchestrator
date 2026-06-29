@@ -23,7 +23,7 @@ No authored summary recorded.
   - Add long workflow report test
   - Document deterministic replay protocol
 - Evidence: 1 failed
-- Reviews: 1
+- Reviews: 2
 - Consensus: 1 user action required
 - Sessions: 2
 - Open items (5):
@@ -134,6 +134,12 @@ No authored changes recorded.
   - Artifacts:
     - `prompts/final-review.md`
     - `logs/final-review.jsonl`
+- **Diff Review** (passed)
+  - Reviewer: claude
+  - Summary: Typed review passed after checking the refreshed report output.
+  - Command: `codex exec review --base main`
+  - Prompt: `prompts/typed-review.md`
+  - Log: `logs/typed-review.jsonl`
 
 ### Decisions
 

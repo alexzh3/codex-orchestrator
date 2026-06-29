@@ -169,6 +169,18 @@ def is_final_review_verification(record: dict[str, object]) -> bool:
     return record.get("type") == "verification" and record.get("kind") in FINAL_REVIEW_KINDS
 
 
+def is_passed_typed_review(record: dict[str, object]) -> bool:
+    return record.get("type") == "review" and record.get("result") == "passed"
+
+
+def is_final_review_record(record: dict[str, object]) -> bool:
+    return is_final_review_verification(record) or is_passed_typed_review(record)
+
+
+def is_dispatch_record(record: dict[str, object]) -> bool:
+    return record.get("type") in {"dispatch_started", "session_dispatch"}
+
+
 def task_completion_ratio(task_records: list[dict[str, object]]) -> float:
     if not task_records:
         return 0.0
@@ -227,7 +239,7 @@ def risks_reflect_failed_checks_ratio(verification_records: list[dict[str, objec
 
 
 def prompt_log_pair_ratio(ledger: list[dict[str, object]]) -> float:
-    dispatches = [record for record in ledger if record.get("type") == "dispatch_started"]
+    dispatches = [record for record in ledger if is_dispatch_record(record)]
     if not dispatches:
         return 1.0
     complete = 0
@@ -259,6 +271,7 @@ def has_work_evidence(ledger: list[dict[str, object]]) -> bool:
         "file_claimed",
         "gate_result",
         "review",
+        "session_dispatch",
         "task",
         "task_checkpoint",
         "task_created",
@@ -279,7 +292,7 @@ def report_completeness_score(state: dict[str, object], ledger: list[dict[str, o
         "tasks_listed": task_completion_ratio(task_records),
         "changed_files_attributed": changed_file_attribution_ratio(ledger, task_records) if has_evidence else 0.0,
         "verification_records_complete": verification_completion_ratio(verification_records),
-        "final_review_present": 1.0 if any(is_final_review_verification(record) for record in ledger) else 0.0,
+        "final_review_present": 1.0 if any(is_final_review_record(record) for record in ledger) else 0.0,
         "risks_reflect_failed_checks": risks_reflect_failed_checks_ratio(verification_records),
         "gate_result_present": 1.0 if gate_result_present(ledger) else 0.0,
         "prompt_log_pairs_complete": prompt_log_pair_ratio(ledger) if has_evidence else 0.0,
@@ -343,6 +356,29 @@ def record_lines(record: dict[str, object]) -> list[str]:
         if artifact_items:
             lines.append("  - Artifacts:")
             lines.extend(f"    - {inline_code(item)}" for item in artifact_items)
+    return lines
+
+
+def typed_review_lines(record: dict[str, object]) -> list[str]:
+    result = text_field(record.get("result")) or "unknown"
+    kind = text_field(record.get("kind")) or "review"
+    lines = [f"- **{kind.replace('_', ' ').title()} Review** ({result})"]
+    for field, label in (
+        ("reviewer", "Reviewer"),
+        ("summary", "Summary"),
+        ("command", "Command"),
+        ("prompt_path", "Prompt"),
+        ("log_path", "Log"),
+    ):
+        value = text_field(record.get(field))
+        if not value:
+            continue
+        value = inline_code(value) if field in {"command", "prompt_path", "log_path"} else value
+        lines.append(f"  - {label}: {value}")
+    findings = string_list(record.get("findings"))
+    if findings:
+        lines.append("  - Findings:")
+        lines.extend(f"    - {finding}" for finding in findings)
     return lines
 
 
@@ -589,6 +625,8 @@ def render_report(
 ) -> str:
     verifications = [record for record in ledger if record.get("type") == "verification"]
     review_records = [record for record in verifications if record.get("kind") in REVIEW_KINDS]
+    typed_review_records = [record for record in ledger if record.get("type") == "review"]
+    all_review_records = [*review_records, *typed_review_records]
     evidence_records = [record for record in verifications if record.get("kind") not in REVIEW_KINDS]
     consensus_records = [record for record in ledger if record.get("type") == "consensus"]
     task_records = [record for record in ledger if record.get("type") == "task"]
@@ -620,7 +658,7 @@ def render_report(
             lines.append("- Changes: none")
         lines.extend([
             f"- Evidence: {verification_tally(evidence_records)}",
-            f"- Reviews: {len(review_records)}",
+            f"- Reviews: {len(all_review_records)}",
             f"- Consensus: {consensus_outcome_tally(consensus_records)}",
         ])
         if sessions:
@@ -665,10 +703,12 @@ def render_report(
     if manual_consensus:
         lines.extend([manual_consensus, ""])
         wrote_consensus_content = True
-    if review_records:
+    if all_review_records:
         lines.extend(["### Reviews", ""])
         for record in review_records:
             lines.extend(record_lines(record))
+        for record in typed_review_records:
+            lines.extend(typed_review_lines(record))
         lines.append("")
         wrote_consensus_content = True
     if consensus_records:
