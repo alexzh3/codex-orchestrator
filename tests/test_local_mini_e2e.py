@@ -11,7 +11,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from bench.runners.run_claude import load_case, run_case  # noqa: E402
+from bench.runners.run_claude import (  # noqa: E402
+    assemble_real_result,
+    files_within_allowlist,
+    load_case,
+    run_case,
+)
 from codex_orch import validate_benchmark_result  # noqa: E402
 
 
@@ -52,6 +57,90 @@ class LocalMiniE2ETests(unittest.TestCase):
         self.assertIn("--max-budget-usd", argv)
         self.assertIn(str(case["max_budget_usd"]), argv)
         self.assertIn(f"/codex-orchestrator:workflow {case['prompt']}", argv)
+
+    def test_files_within_allowlist_reports_offending_paths(self) -> None:
+        ok, offending = files_within_allowlist(["README.md", "scripts/x.py"], ["README.md"])
+
+        self.assertFalse(ok)
+        self.assertEqual(offending, ["scripts/x.py"])
+
+        ok, offending = files_within_allowlist(["README.md", "scripts/x.py"], ["README.md", "scripts/*.py"])
+
+        self.assertTrue(ok)
+        self.assertEqual(offending, [])
+
+    def test_missing_sidecar_real_payload_fails_visibly(self) -> None:
+        case = load_case(self.case_paths()[0])
+        payload = assemble_real_result(
+            case,
+            "demo",
+            repo_commit="abc123",
+            wall_seconds=0.1,
+            sidecar={},
+            sidecar_path=None,
+            sidecar_error="missing .codex-orchestrator run directory",
+            acceptance_command="true",
+            acceptance_returncode=0,
+            acceptance_timed_out=False,
+            claude_returncode=0,
+            timed_out=False,
+            claude_argv=["claude", "-p"],
+            changed_paths=[],
+            forbidden_paths=[],
+        )
+
+        validate_benchmark_result(payload)
+        self.assertFalse(payload["passed"])
+        self.assertEqual(payload["ledger_errors"], 1)
+        self.assertEqual(payload["report_score"], 0.0)
+        external_score = payload["external_score"]
+        self.assertIsInstance(external_score, dict)
+        self.assertFalse(external_score["sidecar_present"])
+        self.assertIn("missing sidecar", external_score["failure_reason"])
+
+    def test_forbidden_changed_file_fails_even_when_acceptance_passes(self) -> None:
+        case = load_case(self.case_paths()[0])
+        payload = assemble_real_result(
+            case,
+            "demo",
+            repo_commit="abc123",
+            wall_seconds=0.1,
+            sidecar={
+                "suite": "local-mini",
+                "case_id": case["id"],
+                "plugin_ref": "demo",
+                "repo_commit": "abc123",
+                "passed": True,
+                "wall_seconds": 0.1,
+                "claude_turns": 3,
+                "codex_sessions": 2,
+                "codex_reviews": 1,
+                "manual_interventions": 0,
+                "prompt_log_pairs_complete": True,
+                "ledger_errors": 0,
+                "gate_passed": True,
+                "report_score": 0.91,
+                "external_score": {"tests_passed": True},
+            },
+            sidecar_path=Path("/tmp/benchmark.json"),
+            sidecar_error=None,
+            acceptance_command="true",
+            acceptance_returncode=0,
+            acceptance_timed_out=False,
+            claude_returncode=0,
+            timed_out=False,
+            claude_argv=["claude", "-p"],
+            changed_paths=["README.md", "scripts/x.py"],
+            forbidden_paths=["scripts/x.py"],
+        )
+
+        validate_benchmark_result(payload)
+        self.assertFalse(payload["passed"])
+        external_score = payload["external_score"]
+        self.assertIsInstance(external_score, dict)
+        self.assertTrue(external_score["tests_passed"])
+        self.assertTrue(external_score["forbidden_file_violation"])
+        self.assertEqual(external_score["forbidden_files"], ["scripts/x.py"])
 
     def test_cli_local_mini_dry_run_writes_case_repeat_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

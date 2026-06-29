@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import fnmatch
 import json
 import re
 import shutil
@@ -129,6 +130,44 @@ def _git_output(args: list[str], *, cwd: Path) -> str | None:
     return result.stdout.strip() or None
 
 
+def _git_lines(args: list[str], *, cwd: Path) -> list[str]:
+    output = _git_output(args, cwd=cwd)
+    if output is None:
+        return []
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def _normalize_relative_path(path: str) -> str:
+    normalized = path.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+def files_within_allowlist(
+    changed_paths: list[str],
+    allowed_globs: list[str],
+) -> tuple[bool, list[str]]:
+    allowed = [_normalize_relative_path(pattern) for pattern in allowed_globs if pattern]
+    offending: list[str] = []
+    for raw_path in changed_paths:
+        path = _normalize_relative_path(raw_path)
+        if not any(path == pattern or fnmatch.fnmatchcase(path, pattern) for pattern in allowed):
+            offending.append(path)
+    return len(offending) == 0, offending
+
+
+def changed_files(target_dir: Path) -> list[str]:
+    paths: set[str] = set()
+    for args in (
+        ["diff", "--name-only"],
+        ["diff", "--cached", "--name-only"],
+        ["ls-files", "--others", "--exclude-standard"],
+    ):
+        paths.update(_git_lines(args, cwd=target_dir))
+    return sorted(_normalize_relative_path(path) for path in paths)
+
+
 def _add_worktree(repo_root: Path, ref: str, *, prefix: str, work_dir: Path) -> Path:
     work_dir.mkdir(parents=True, exist_ok=True)
     destination = Path(tempfile.mkdtemp(prefix=prefix, dir=work_dir))
@@ -155,14 +194,66 @@ def _remove_worktree(repo_root: Path, path: Path) -> None:
     )
 
 
-def _newest_benchmark_json(target_dir: Path) -> Path | None:
+def _newest_run_dir(target_dir: Path) -> Path | None:
     runs_dir = target_dir / ".codex-orchestrator" / "runs"
     if not runs_dir.is_dir():
         return None
-    candidates = list(runs_dir.glob("*/benchmark.json"))
+    candidates = [path for path in runs_dir.iterdir() if path.is_dir()]
     if not candidates:
         return None
     return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def _generate_benchmark_sidecar(
+    *,
+    target_dir: Path,
+    plugin_dir: Path,
+    case_id: str,
+    plugin_ref: str,
+    timeout_seconds: int,
+) -> tuple[Path | None, str | None]:
+    run_dir = _newest_run_dir(target_dir)
+    if run_dir is None:
+        return None, "missing .codex-orchestrator run directory"
+
+    script = plugin_dir / "scripts" / "codex_orch.py"
+    if not script.is_file():
+        return None, f"missing benchmark command script: {script}"
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "benchmark",
+                "--repo",
+                str(target_dir),
+                "--run-id",
+                run_dir.name,
+                "--suite",
+                LOCAL_MINI_SUITE,
+                "--case-id",
+                case_id,
+                "--plugin-ref",
+                plugin_ref,
+            ],
+            cwd=target_dir,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "benchmark command timed out"
+
+    sidecar_path = run_dir / "benchmark.json"
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+        return None, f"benchmark command failed: {detail}"
+    if not sidecar_path.is_file():
+        return None, f"benchmark command did not write sidecar: {sidecar_path}"
+    return sidecar_path, None
 
 
 def _load_sidecar(path: Path | None) -> dict[str, object]:
@@ -194,6 +285,92 @@ def _non_negative_number(value: object, default: float) -> float:
 def _score(value: object, default: float = 0.0) -> float:
     number = _non_negative_number(value, default)
     return min(1.0, max(0.0, number))
+
+
+def _case_allowed_globs(case: dict[str, object]) -> list[str]:
+    files_allowed = case.get("files_allowed")
+    if not isinstance(files_allowed, list):
+        raise ValueError("case files_allowed must be a list")
+    result: list[str] = []
+    for value in files_allowed:
+        if not isinstance(value, str) or not value:
+            raise ValueError("case files_allowed entries must be non-empty strings")
+        result.append(value)
+    return result
+
+
+def assemble_real_result(
+    case: dict[str, object],
+    plugin_ref: str,
+    *,
+    repo_commit: str | None,
+    wall_seconds: float,
+    sidecar: dict[str, object],
+    sidecar_path: Path | None,
+    sidecar_error: str | None,
+    acceptance_command: str,
+    acceptance_returncode: int | None,
+    acceptance_timed_out: bool,
+    claude_returncode: int | None,
+    timed_out: bool,
+    claude_argv: list[str],
+    changed_paths: list[str],
+    forbidden_paths: list[str],
+) -> dict[str, object]:
+    sidecar_validation_error: str | None = None
+    if sidecar_path is not None and sidecar:
+        try:
+            validate_benchmark_result(sidecar)
+        except SystemExit as exc:
+            sidecar_validation_error = str(exc)
+    sidecar_present = bool(sidecar_path is not None and sidecar and sidecar_validation_error is None)
+    metric_source = sidecar if sidecar_present else {}
+    tests_passed = acceptance_returncode == 0
+    sidecar_failure = not sidecar_present
+    forbidden_violation = bool(forbidden_paths)
+    if sidecar_failure and not sidecar_error:
+        sidecar_error = sidecar_validation_error or "benchmark sidecar missing or malformed"
+
+    failure_reasons: list[str] = []
+    if sidecar_failure:
+        failure_reasons.append(f"missing sidecar: {sidecar_error}")
+    if forbidden_violation:
+        failure_reasons.append(f"forbidden-file violation: {', '.join(forbidden_paths)}")
+
+    payload: dict[str, object] = {
+        "suite": LOCAL_MINI_SUITE,
+        "case_id": _string_field(case, "id"),
+        "plugin_ref": plugin_ref,
+        "repo_commit": repo_commit,
+        "passed": tests_passed and not sidecar_failure and not forbidden_violation,
+        "wall_seconds": round(wall_seconds, 6),
+        "claude_turns": _non_negative_int(metric_source.get("claude_turns"), 0),
+        "codex_sessions": _non_negative_int(metric_source.get("codex_sessions"), 0),
+        "codex_reviews": _non_negative_int(metric_source.get("codex_reviews"), 0),
+        "manual_interventions": _non_negative_int(metric_source.get("manual_interventions"), 0),
+        "prompt_log_pairs_complete": bool(metric_source.get("prompt_log_pairs_complete")),
+        "ledger_errors": _non_negative_int(metric_source.get("ledger_errors"), 0) + (1 if sidecar_failure else 0),
+        "gate_passed": _bool_or_none(metric_source.get("gate_passed")),
+        "report_score": _score(metric_source.get("report_score")),
+        "external_score": {
+            "tests_passed": tests_passed,
+            "acceptance_command": acceptance_command,
+            "acceptance_exit_code": acceptance_returncode,
+            "acceptance_timed_out": acceptance_timed_out,
+            "claude_exit_code": claude_returncode,
+            "timed_out": timed_out,
+            "sidecar_path": str(sidecar_path) if sidecar_path else None,
+            "sidecar_present": sidecar_present,
+            "sidecar_error": sidecar_error,
+            "changed_files": changed_paths,
+            "forbidden_files": forbidden_paths,
+            "forbidden_file_violation": forbidden_violation,
+            "failure_reason": "; ".join(failure_reasons) if failure_reasons else None,
+            "claude_argv": claude_argv,
+        },
+    }
+    _validate_payload(payload)
+    return payload
 
 
 def _dry_run_payload(
@@ -306,38 +483,36 @@ def _real_payload(
             except subprocess.TimeoutExpired:
                 acceptance_timed_out = True
 
-        sidecar_path = _newest_benchmark_json(target_dir)
+        run_changed_files = changed_files(target_dir)
+        allowed_ok, forbidden_paths = files_within_allowlist(run_changed_files, _case_allowed_globs(case))
+        del allowed_ok
+
+        sidecar_path, sidecar_error = _generate_benchmark_sidecar(
+            target_dir=target_dir,
+            plugin_dir=plugin_dir,
+            case_id=case_id,
+            plugin_ref=plugin_ref,
+            timeout_seconds=timeout_seconds,
+        )
         sidecar = _load_sidecar(sidecar_path)
         repo_commit = _git_output(["rev-parse", "HEAD"], cwd=target_dir)
-        tests_passed = acceptance_returncode == 0
-        payload: dict[str, object] = {
-            "suite": LOCAL_MINI_SUITE,
-            "case_id": case_id,
-            "plugin_ref": plugin_ref,
-            "repo_commit": repo_commit,
-            "passed": tests_passed,
-            "wall_seconds": round(time.perf_counter() - started, 6),
-            "claude_turns": _non_negative_int(sidecar.get("claude_turns"), 0),
-            "codex_sessions": _non_negative_int(sidecar.get("codex_sessions"), 0),
-            "codex_reviews": _non_negative_int(sidecar.get("codex_reviews"), 0),
-            "manual_interventions": _non_negative_int(sidecar.get("manual_interventions"), 0),
-            "prompt_log_pairs_complete": bool(sidecar.get("prompt_log_pairs_complete")),
-            "ledger_errors": _non_negative_int(sidecar.get("ledger_errors"), 0),
-            "gate_passed": _bool_or_none(sidecar.get("gate_passed")),
-            "report_score": _score(sidecar.get("report_score")),
-            "external_score": {
-                "tests_passed": tests_passed,
-                "acceptance_command": acceptance_command,
-                "acceptance_exit_code": acceptance_returncode,
-                "acceptance_timed_out": acceptance_timed_out,
-                "claude_exit_code": claude_returncode,
-                "timed_out": timed_out,
-                "sidecar_path": str(sidecar_path) if sidecar_path else None,
-                "claude_argv": argv,
-            },
-        }
-        _validate_payload(payload)
-        return payload
+        return assemble_real_result(
+            case,
+            plugin_ref,
+            repo_commit=repo_commit,
+            wall_seconds=time.perf_counter() - started,
+            sidecar=sidecar,
+            sidecar_path=sidecar_path,
+            sidecar_error=sidecar_error,
+            acceptance_command=acceptance_command,
+            acceptance_returncode=acceptance_returncode,
+            acceptance_timed_out=acceptance_timed_out,
+            claude_returncode=claude_returncode,
+            timed_out=timed_out,
+            claude_argv=argv,
+            changed_paths=run_changed_files,
+            forbidden_paths=forbidden_paths,
+        )
     finally:
         if remove_plugin_worktree and plugin_dir is not None:
             _remove_worktree(repo_root, plugin_dir)
