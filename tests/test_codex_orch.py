@@ -24,6 +24,19 @@ REPORT_HEADINGS = [
 ]
 
 
+def git_head(path: Path) -> str | None:
+    result = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "HEAD"],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
 class CodexOrchCliTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -50,6 +63,35 @@ class CodexOrchCliTests(unittest.TestCase):
 
     def init_run(self) -> None:
         self.run_cli("init", "--run-id", "run", "--repo", str(self.repo))
+
+    def init_target_git_repo(self) -> str:
+        subprocess.run(["git", "init"], check=True, cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            check=True,
+            cwd=self.repo,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"],
+            check=True,
+            cwd=self.repo,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        (self.repo / "README.md").write_text("target repo\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], check=True, cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(
+            ["git", "commit", "-m", "initial target commit"],
+            check=True,
+            cwd=self.repo,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        head = git_head(self.repo)
+        self.assertIsNotNone(head)
+        return str(head)
 
     def report_section(self, report: str, heading: str) -> str:
         return report.split(heading, 1)[1].split("\n## ", 1)[0]
@@ -598,6 +640,42 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIs(benchmark["prompt_log_pairs_complete"], True)
         self.assertEqual(benchmark["ledger_errors"], 0)
         self.assertAlmostEqual(benchmark["report_score"], score["total"])
+
+    def test_benchmark_plugin_ref_does_not_fall_back_to_target_repo_commit(self) -> None:
+        target_head = self.init_target_git_repo()
+        self.init_run()
+
+        self.run_cli("benchmark", "--run-id", "run", "--suite", "suite-a", "--case-id", "case-1")
+        benchmark = json.loads((self.ledger_dir() / "benchmark.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(benchmark["repo_commit"], target_head)
+        self.assertEqual(benchmark["plugin_ref"], git_head(ROOT))
+        self.assertNotEqual(benchmark["plugin_ref"], target_head)
+
+    def test_benchmark_passed_null_overrides_gate_result(self) -> None:
+        self.init_run()
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps({"type": "gate_result", "passed": True}),
+        )
+
+        self.run_cli(
+            "benchmark",
+            "--run-id",
+            "run",
+            "--suite",
+            "suite-a",
+            "--case-id",
+            "case-1",
+            "--passed",
+            "null",
+        )
+        benchmark = json.loads((self.ledger_dir() / "benchmark.json").read_text(encoding="utf-8"))
+
+        self.assertIs(benchmark["gate_passed"], True)
+        self.assertIsNone(benchmark["passed"])
 
     def test_report_preserves_authored_sections_across_runs(self) -> None:
         self.init_run()

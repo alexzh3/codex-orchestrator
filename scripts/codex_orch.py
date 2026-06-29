@@ -33,6 +33,7 @@ from codex_orch_report import (
 PROTOCOL_VERSION = "1.0"
 SCHEMA_VERSION = "1.0"
 RUN_SUBDIRS = ("prompts", "logs", "artifacts")
+UNSET = object()
 
 
 def utc_now() -> str:
@@ -57,6 +58,10 @@ def name_type(value: str) -> str:
 
 def repo_root(repo: str) -> Path:
     return Path(repo).expanduser().resolve()
+
+
+def plugin_root() -> Path:
+    return Path(__file__).resolve().parent.parent
 
 
 def run_dir(repo: str, run_id: str) -> Path:
@@ -513,8 +518,8 @@ def detect_git_sha(repo: Path) -> str | None:
     return sha or None
 
 
-def detect_plugin_version(repo: Path) -> str | None:
-    plugin_json = repo / ".claude-plugin" / "plugin.json"
+def detect_plugin_version(root: Path) -> str | None:
+    plugin_json = root / ".claude-plugin" / "plugin.json"
     if not plugin_json.exists():
         return None
     try:
@@ -564,12 +569,13 @@ def build_run_meta(
     benchmark_case_id: str | None = None,
 ) -> dict[str, object]:
     repo_commit = detect_git_sha(repo)
+    plugin_checkout = plugin_root()
     record: dict[str, object] = {
         "type": "run_meta",
         "recorded_at": utc_now(),
         "run_id": run_id,
-        "plugin_version": detect_plugin_version(repo),
-        "plugin_git_sha": plugin_ref or repo_commit,
+        "plugin_version": detect_plugin_version(plugin_checkout),
+        "plugin_git_sha": plugin_ref or detect_git_sha(plugin_checkout),
         "protocol_version": PROTOCOL_VERSION,
         "schema_version": SCHEMA_VERSION,
         "claude_code_version": None,
@@ -852,12 +858,14 @@ def command_benchmark(args: argparse.Namespace) -> int:
     sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
     gate_passed = latest_gate_passed(ledger)
     score = report_completeness_score(state, ledger)
+    plugin_checkout = plugin_root()
+    passed = args.passed if args.passed is not UNSET else gate_passed
     payload: dict[str, object] = {
         "suite": args.suite or string_or_none(run_meta.get("benchmark_suite")),
         "case_id": args.case_id or string_or_none(run_meta.get("benchmark_case_id")),
-        "plugin_ref": args.plugin_ref or string_or_none(run_meta.get("plugin_git_sha")) or detect_git_sha(repo),
+        "plugin_ref": args.plugin_ref or string_or_none(run_meta.get("plugin_git_sha")) or detect_git_sha(plugin_checkout),
         "repo_commit": string_or_none(run_meta.get("repo_commit")) or detect_git_sha(repo),
-        "passed": args.passed if args.passed is not None else gate_passed,
+        "passed": passed,
         "wall_seconds": None,
         "claude_turns": None,
         "codex_sessions": len(sessions),
@@ -940,7 +948,12 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--suite", help="Benchmark suite name.")
     benchmark_parser.add_argument("--case-id", help="Benchmark case id.")
     benchmark_parser.add_argument("--plugin-ref", help="Plugin git SHA or ref.")
-    benchmark_parser.add_argument("--passed", type=nullable_bool_type, help="Benchmark pass status: true, false, or null.")
+    benchmark_parser.add_argument(
+        "--passed",
+        default=UNSET,
+        type=nullable_bool_type,
+        help="Benchmark pass status: true, false, or null.",
+    )
     benchmark_parser.set_defaults(func=command_benchmark)
 
     return parser
