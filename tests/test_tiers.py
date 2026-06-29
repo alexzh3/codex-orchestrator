@@ -134,14 +134,15 @@ class TierBenchmarkTests(unittest.TestCase):
         self.assertIn("Benchmark comparison", compare.stdout)
         self.assertIn("external pass rate", compare.stdout)
 
-    def test_real_mode_adapter_methods_raise_not_implemented(self) -> None:
+    def test_real_mode_adapter_methods_raise_runtime_error(self) -> None:
         for adapter in ADAPTERS.values():
-            with self.assertRaises(NotImplementedError) as selection_error:
+            with self.assertRaises(RuntimeError) as selection_error:
                 adapter.iter_tasks(1, "lowest_success_rate", dry_run=False)
+            self.assertNotIsInstance(selection_error.exception, NotImplementedError)
             self.assertIn(adapter.real_infra, str(selection_error.exception))
 
             task = adapter.iter_tasks(1, "lowest_success_rate", dry_run=True)[0]
-            with self.assertRaises(NotImplementedError) as run_error:
+            with self.assertRaises(RuntimeError) as run_error:
                 adapter.run_task(
                     task,
                     "demo",
@@ -149,6 +150,7 @@ class TierBenchmarkTests(unittest.TestCase):
                     repo_root=ROOT,
                     work_dir=Path("/tmp/codex-orch-tier-test"),
                 )
+            self.assertNotIsInstance(run_error.exception, NotImplementedError)
             self.assertIn(adapter.real_infra, str(run_error.exception))
 
     def test_dry_run_output_is_byte_identical(self) -> None:

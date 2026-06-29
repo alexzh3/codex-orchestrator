@@ -55,6 +55,22 @@ class RealAdapterTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def write_one_task_dataset(
+        self,
+        root: Path,
+        filename: str,
+        id_field: str,
+        prompt_field: str,
+    ) -> None:
+        record = {
+            id_field: "only-task",
+            prompt_field: "Solve the only fake task.",
+            "success_rate": 0.2,
+            "acceptance": {"command": "true"},
+            "files_allowed": ["README.md"],
+        }
+        (root / filename).write_text(json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")
+
     def runner_result(self, task_id: str) -> dict[str, object]:
         return {
             "suite": "local-mini",
@@ -95,6 +111,34 @@ class RealAdapterTests(unittest.TestCase):
             self.assertEqual(tasks[0]["suite"], adapter.name)
             self.assertEqual(tasks[0]["benchmark"], adapter.name)
             self.assertEqual(tasks[0]["selection"], "lowest_success_rate")
+
+    def test_iter_tasks_fails_when_real_dataset_cannot_fill_requested_count(self) -> None:
+        for adapter, filename, id_field, prompt_field in ADAPTERS:
+            with self.subTest(adapter=adapter.name), tempfile.TemporaryDirectory() as tmp:
+                dataset_dir = Path(tmp)
+                self.write_one_task_dataset(dataset_dir, filename, id_field, prompt_field)
+                with patch.dict(os.environ, {adapter.dataset_env_var: str(dataset_dir)}):
+                    with self.assertRaises(RuntimeError) as error:
+                        adapter.iter_tasks(2, "lowest_success_rate", dry_run=False)
+
+            self.assertNotIsInstance(error.exception, NotImplementedError)
+            self.assertIn("requested count 2", str(error.exception))
+            self.assertIn(adapter.dataset_env_var, str(error.exception))
+
+    def test_explicit_empty_file_allowlist_is_preserved(self) -> None:
+        adapter = RExBenchAdapter()
+        task = {
+            "id": "no-edits",
+            "prompt": "Inspect only.",
+            "selection": "lowest_success_rate",
+            "files_allowed": [],
+            "acceptance": {"command": "true"},
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            case = adapter._case_from_task(task, Path(tmp))
+
+        self.assertEqual(case["files_allowed"], [])
 
     def test_run_task_uses_runner_and_grader_hooks_for_schema_valid_result(self) -> None:
         for adapter, filename, id_field, prompt_field in ADAPTERS:
@@ -142,6 +186,63 @@ class RealAdapterTests(unittest.TestCase):
                 self.assertEqual(case["acceptance"], {"command": "true"})
                 self.assertEqual(case["files_allowed"], ["bench/README.md"])
                 grade_mock.assert_called_once()
+
+    def test_timeout_and_grader_failure_merge_as_failed_results(self) -> None:
+        adapter = RExBenchAdapter()
+        task = {
+            "id": "timeout-task",
+            "prompt": "Trigger a timeout.",
+            "selection": "lowest_success_rate",
+            "acceptance": {"command": "true"},
+        }
+
+        timeout_runner = self.runner_result("timeout-task")
+        timeout_runner["passed"] = False
+        timeout_external = dict(timeout_runner["external_score"])
+        timeout_external.pop("acceptance_exit_code")
+        timeout_external["acceptance_timed_out"] = True
+        timeout_runner["external_score"] = timeout_external
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(adapter, "_run_claude_case", return_value=timeout_runner):
+                timeout_result = adapter.run_task(
+                    task,
+                    "demo",
+                    dry_run=False,
+                    repo_root=ROOT,
+                    work_dir=Path(tmp),
+                )
+
+        validate_benchmark_result(timeout_result)
+        self.assertFalse(timeout_result["passed"])
+        timeout_score = timeout_result["external_score"]
+        self.assertIsInstance(timeout_score, dict)
+        self.assertFalse(timeout_score["tests_passed"])
+        self.assertTrue(timeout_score["grader_timed_out"])
+        self.assertIsNone(timeout_score["grader_exit_code"])
+
+        failing_runner = self.runner_result("timeout-task")
+        failing_runner["passed"] = False
+        failing_external = dict(failing_runner["external_score"])
+        failing_external["acceptance_exit_code"] = 1
+        failing_runner["external_score"] = failing_external
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(adapter, "_run_claude_case", return_value=failing_runner):
+                failing_result = adapter.run_task(
+                    task,
+                    "demo",
+                    dry_run=False,
+                    repo_root=ROOT,
+                    work_dir=Path(tmp),
+                )
+
+        validate_benchmark_result(failing_result)
+        self.assertFalse(failing_result["passed"])
+        failing_score = failing_result["external_score"]
+        self.assertIsInstance(failing_score, dict)
+        self.assertFalse(failing_score["tests_passed"])
+        self.assertEqual(failing_score["grader_exit_code"], 1)
 
     def test_missing_dataset_raises_clear_runtime_error(self) -> None:
         for adapter, _filename, _id_field, _prompt_field in ADAPTERS:

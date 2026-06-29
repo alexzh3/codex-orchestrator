@@ -42,6 +42,11 @@ class Adapter:
                 raise self._dataset_error(dataset_dir, "no task descriptors were found")
             tasks = [self._normalize_task(raw_task, dataset_dir, selection) for raw_task in raw_tasks]
             selected = self._select_tasks(tasks, selection)
+            if len(selected) < count:
+                raise self._dataset_error(
+                    dataset_dir,
+                    f"only {len(selected)} task descriptors are available for requested count {count}",
+                )
             return selected[:count]
         return [self._dry_run_task(index, selection) for index in range(1, count + 1)]
 
@@ -126,7 +131,7 @@ class Adapter:
         return path
 
     def _dataset_error(self, dataset_dir: Path, reason: str) -> RuntimeError:
-        return _runtime_error(
+        return RuntimeError(
             f"{self.display_name} dataset is unavailable: {reason}. "
             f"Set {self.dataset_env_var} to a local dataset directory. "
             f"Expected layout: {self.dataset_layout}. "
@@ -203,12 +208,15 @@ class Adapter:
 
     def _case_from_task(self, task: TaskDescriptor, work_dir: Path) -> dict[str, object]:
         task_id = _string_field(task, "id")
+        files_allowed = task.get("files_allowed")
+        if files_allowed is None:
+            files_allowed = ["*", "**/*"]
         return {
             "id": task_id,
             "suite": self.name,
             "start_ref": _string_value(task.get("start_ref")) or _string_value(task.get("base_ref")) or self.default_start_ref,
             "prompt": _string_field(task, "prompt"),
-            "files_allowed": _string_list_value(task.get("files_allowed") or ["*", "**/*"], field="files_allowed"),
+            "files_allowed": _string_list_value(files_allowed, field="files_allowed"),
             "acceptance": {
                 "command": self._acceptance_command(task, work_dir),
             },
@@ -232,7 +240,7 @@ class Adapter:
         if not template and self.grader_command_env_var:
             template = os.environ.get(self.grader_command_env_var, "")
         if not template:
-            raise _runtime_error(
+            raise RuntimeError(
                 f"{self.display_name} real run needs a grader command. "
                 f"Put acceptance.command or grader_command in the task descriptor, "
                 f"or set {self.grader_command_env_var}. Required infra: {self.real_infra}; "
@@ -263,30 +271,22 @@ class Adapter:
         if not isinstance(external_score, dict):
             raise RuntimeError(f"{self.display_name} grader result is unavailable in the runner payload.")
 
-        if external_score.get("acceptance_timed_out") is True:
-            raise RuntimeError(
-                f"{self.display_name} grader timed out. Required infra: {self.grader_infra}. "
-                f"Command: {external_score.get('acceptance_command')}"
-            )
-
         exit_code = external_score.get("acceptance_exit_code")
-        if type(exit_code) is not int:
+        grader_exit_code = exit_code if type(exit_code) is int else None
+        if grader_exit_code in (126, 127):
             raise RuntimeError(
-                f"{self.display_name} grader did not run. Ensure {self.grader_infra} is installed "
-                f"and configure {self.grader_command_env_var} or task acceptance.command."
-            )
-        if exit_code in (126, 127):
-            raise RuntimeError(
-                f"{self.display_name} grader command could not start (exit {exit_code}). "
+                f"{self.display_name} grader command could not start (exit {grader_exit_code}). "
                 f"Install {self.grader_infra} or set {self.grader_command_env_var}. "
                 f"Command: {external_score.get('acceptance_command')}"
             )
 
         return {
             "benchmark": self.name,
-            "tests_passed": exit_code == 0,
-            "grader_exit_code": exit_code,
+            "tests_passed": grader_exit_code == 0,
+            "grader_exit_code": grader_exit_code,
             "grader_command": external_score.get("acceptance_command"),
+            "grader_timed_out": external_score.get("acceptance_timed_out") is True,
+            "claude_timed_out": external_score.get("timed_out") is True,
             "required_infra": self.grader_infra,
         }
 
@@ -529,23 +529,6 @@ def _format_command(template: str, task: TaskDescriptor, work_dir: Path) -> str:
 class _FormatValues(dict[str, object]):
     def __missing__(self, key: str) -> object:
         raise KeyError(key)
-
-
-def _runtime_error(message: str) -> RuntimeError:
-    if _legacy_real_mode_not_implemented_test():
-        return NotImplementedError(message)
-    return RuntimeError(message)
-
-
-def _legacy_real_mode_not_implemented_test() -> bool:
-    try:
-        import inspect
-    except ImportError:
-        return False
-    for frame in inspect.stack(context=0):
-        if frame.function == "test_real_mode_adapter_methods_raise_not_implemented":
-            return True
-    return False
 
 
 def _grade_passed(grade: dict[str, object], display_name: str) -> bool:
