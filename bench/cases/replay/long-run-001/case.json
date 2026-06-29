@@ -1,0 +1,9 @@
+{
+  "expected_report": "expected-report.md",
+  "generated_at": "2026-06-29T09:00:00Z",
+  "id": "long-run-001",
+  "ledger": "ledger.jsonl",
+  "plugin_ref": "plugin-ref-0.3-fixture",
+  "state": "state.json",
+  "suite": "replay"
+}
