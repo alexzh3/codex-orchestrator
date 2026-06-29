@@ -88,6 +88,18 @@ class GateDoctorTests(unittest.TestCase):
             event["verification_required"] = verification_required
         self.append_event(event)
 
+    def add_active_task(self) -> None:
+        self.append_event(
+            {
+                "type": "task_created",
+                "id": "task-active",
+                "title": "Unfinished task",
+                "status": "active",
+                "files_allowed": ["scripts/codex_orch.py"],
+                "acceptance": ["task is finished"],
+            }
+        )
+
     def add_checkpoint(self) -> None:
         self.append_event(
             {
@@ -171,6 +183,25 @@ class GateDoctorTests(unittest.TestCase):
         self.assertEqual(records[-1]["type"], "gate_result")
         self.assertEqual(records[-1]["ok"], ok)
 
+    def add_failed_test_verification(self) -> None:
+        self.run_cli(
+            "add-verification",
+            "--repo",
+            str(self.repo),
+            "--run-id",
+            "run",
+            "--kind",
+            "test",
+            "--result",
+            "failed",
+            "--summary",
+            "Unit tests failed.",
+            "--command",
+            TEST_COMMAND,
+            "--exit-code",
+            "1",
+        )
+
     def test_gate_ok_appends_gate_result(self) -> None:
         self.make_complete_run(verification_required=[TEST_COMMAND])
 
@@ -182,6 +213,31 @@ class GateDoctorTests(unittest.TestCase):
         self.assertEqual(payload["blocking"], [])
         self.assertEqual(payload["warnings"], [])
         self.assert_gate_result_appended(ok=True)
+
+    def test_gate_second_run_ignores_prior_gate_result_for_report_freshness(self) -> None:
+        self.make_complete_run(verification_required=[TEST_COMMAND])
+        self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(payload["ok"])
+        self.assertFalse(any("stale-report" in item for item in payload["blocking"]))
+
+    def test_gate_blocks_active_task_even_after_run_closed(self) -> None:
+        self.init_run()
+        self.add_active_task()
+        self.add_final_review()
+        self.append_event({"type": "run_closed", "status": "complete", "summary": "Closed too early."})
+        self.refresh_report_mtime()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "active-task")
 
     def test_gate_blocks_completed_task_without_checkpoint(self) -> None:
         self.make_complete_run(checkpoint=False)
@@ -203,6 +259,60 @@ class GateDoctorTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(payload["ok"])
         self.assert_blocking_contains(payload, "unmet-verification")
+
+    def test_gate_blocks_failed_verification_with_unrelated_consensus(self) -> None:
+        self.init_run()
+        self.add_task()
+        self.add_checkpoint()
+        self.add_final_review()
+        self.add_failed_test_verification()
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Documentation wording is acceptable.",
+                "outcome": "consensus",
+                "resolution": "No action needed for documentation.",
+                "risk_level": "none",
+                "requires_user": False,
+                "evidence": ["Claude and Codex agreed on the docs."],
+            }
+        )
+        self.append_event({"type": "run_closed", "status": "complete", "summary": "Run is ready."})
+        self.refresh_report_mtime()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_gate_allows_failed_verification_with_matching_consensus(self) -> None:
+        self.init_run()
+        self.add_task()
+        self.add_checkpoint()
+        self.add_final_review()
+        self.add_failed_test_verification()
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": f"The failed test check `{TEST_COMMAND}` is accepted for this run.",
+                "risk_level": "low",
+                "requires_user": False,
+                "evidence": ["Claude and Codex agreed this failure is documented."],
+            }
+        )
+        self.append_event({"type": "run_closed", "status": "complete", "summary": "Run is ready."})
+        self.refresh_report_mtime()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["blocking"], [])
 
     def test_gate_blocks_malformed_ledger_line(self) -> None:
         self.make_complete_run(verification_required=[TEST_COMMAND])
@@ -294,6 +404,18 @@ class GateDoctorTests(unittest.TestCase):
         self.assertTrue(any("missing-checkpoint" in issue for issue in issues))
         self.assertTrue(any("dispatch-missing-paths" in issue and "log_path" in issue for issue in issues))
         self.assertEqual(self.ledger_path().read_text(encoding="utf-8"), before)
+
+    def test_doctor_allows_legacy_change_events(self) -> None:
+        self.init_run()
+        self.append_event({"type": "change", "summary": "Legacy change evidence."})
+        self.refresh_report_mtime()
+
+        result = self.run_cli("doctor", "--repo", str(self.repo), "--run-id", "run")
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(payload["ok"])
+        self.assertFalse(any("unknown-event" in issue for issue in payload["issues"]))
 
 
 if __name__ == "__main__":

@@ -992,7 +992,7 @@ def command_check_conflicts(args: argparse.Namespace) -> int:
 
 UNRESOLVED_VERIFICATION_RESULTS = {"failed", "inconclusive", "needs_human_review"}
 RESOLVING_CONSENSUS_OUTCOMES = {"consensus", "claude_decision"}
-GENERIC_LEDGER_EVENT_TYPES = {"event", "session_dispatch"}
+GENERIC_LEDGER_EVENT_TYPES = {"change", "event", "session_dispatch"}
 
 
 def text_value(value: object) -> str | None:
@@ -1071,12 +1071,69 @@ def consensus_requires_user(record: dict[str, object]) -> bool:
     return consensus_outcome_value(record) == "user_action_required" or record.get("requires_user") is True
 
 
-def has_later_overriding_consensus(records: list[dict[str, object]], start_index: int) -> bool:
+def consensus_text(record: dict[str, object]) -> str:
+    parts: list[str] = []
+    for field in ("finding", "resolution", "root_cause", "summary"):
+        value = text_value(record.get(field))
+        if value:
+            parts.append(value)
+    evidence = record.get("evidence")
+    if isinstance(evidence, list):
+        parts.extend(item for item in evidence if isinstance(item, str))
+    return "\n".join(parts).casefold()
+
+
+def consensus_matches_verification(consensus: dict[str, object], verification: dict[str, object]) -> bool:
+    haystack = consensus_text(consensus)
+    if not haystack:
+        return False
+
+    def contains_reference(value: object) -> bool:
+        text = text_value(value)
+        if not text:
+            return False
+        needle = text.casefold().strip()
+        if needle in haystack:
+            return True
+        trimmed = needle.rstrip(".:;!?")
+        return len(trimmed) >= 4 and trimmed in haystack
+
+    for field in ("command", "summary"):
+        if contains_reference(verification.get(field)):
+            return True
+    for field in ("task_id", "check_id", "verification_id", "id"):
+        if contains_reference(verification.get(field)):
+            return True
+
+    kind = text_value(verification.get("kind"))
+    if kind:
+        kind_text = kind.casefold()
+        for phrase in (
+            f"{kind_text} verification",
+            f"{kind_text} check",
+            f"{kind_text} failed",
+            f"failed {kind_text}",
+            f"{kind_text} failure",
+        ):
+            if phrase in haystack:
+                return True
+    return False
+
+
+def has_later_overriding_consensus(
+    records: list[dict[str, object]],
+    start_index: int,
+    verification: dict[str, object],
+) -> bool:
     for record in records[start_index + 1 :]:
         if record.get("type") != "consensus":
             continue
         outcome = consensus_outcome_value(record)
-        if outcome in RESOLVING_CONSENSUS_OUTCOMES and record.get("requires_user") is not True:
+        if (
+            outcome in RESOLVING_CONSENSUS_OUTCOMES
+            and record.get("requires_user") is not True
+            and consensus_matches_verification(record, verification)
+        ):
             return True
     return False
 
@@ -1088,7 +1145,7 @@ def unresolved_verification_records(records: list[dict[str, object]]) -> list[di
             continue
         if record.get("result") not in UNRESOLVED_VERIFICATION_RESULTS:
             continue
-        if has_later_overriding_consensus(records, index):
+        if has_later_overriding_consensus(records, index, record):
             continue
         unresolved.append(record)
     return unresolved
@@ -1151,7 +1208,12 @@ def parse_recorded_at(value: object) -> datetime | None:
 
 
 def latest_recorded_at(records: list[dict[str, object]]) -> datetime | None:
-    timestamps = [parsed for record in records if (parsed := parse_recorded_at(record.get("recorded_at")))]
+    timestamps = [
+        parsed
+        for record in records
+        if record.get("type") != "gate_result"
+        if (parsed := parse_recorded_at(record.get("recorded_at")))
+    ]
     return max(timestamps) if timestamps else None
 
 
@@ -1193,14 +1255,12 @@ def gate_blocking_reasons(directory: Path, records: list[dict[str, object]], dia
         blocking.append(freshness_issue)
 
     tasks = task_states(records)
-    run_closed = any(record.get("type") == "run_closed" for record in records)
-    if not run_closed:
-        for task in tasks:
-            if not task.get("defined"):
-                continue
-            status = text_value(task.get("status")) or "unknown"
-            if status not in TERMINAL_TASK_STATUSES:
-                blocking.append(f"active-task: task {task['id']} status {status} is not terminal")
+    for task in tasks:
+        if not task.get("defined"):
+            continue
+        status = text_value(task.get("status")) or "unknown"
+        if status not in TERMINAL_TASK_STATUSES:
+            blocking.append(f"active-task: task {task['id']} status {status} is not terminal")
 
     for task in tasks:
         if not task.get("defined"):

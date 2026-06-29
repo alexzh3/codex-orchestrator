@@ -79,30 +79,34 @@ record `verification` + `consensus`; gate; commit. Resume the same session for s
 
 ## Current status (2026-06-29)
 
-Plugin **v0.3.1** (in progress). **Hold merges to `main`** per current direction — keep stacking PRs
-for review. 51+ tests green. Open PR stack:
+Plugin **v0.3.2** (in progress). **Hold merges to `main`** per direction — each release is consolidated
+onto its own `release/0.3.x` branch (approve PRs in the UI: GitHub blocks author self-approval). `main`
+stays untouched. ~65 tests green. Open PR stack (each branches off the previous):
 
-| PR | Branch | Contents | Tests |
-|----|--------|----------|-------|
-| [#8](https://github.com/alexzh3/codex-orchestrator/pull/8)  | `feat/0.3-benchmarkability`   | Release 0.3: run_meta/ensure-run, malformed-ledger warnings, report completeness score, benchmark.json, deterministic replay benchmark | 33 |
-| [#9](https://github.com/alexzh3/codex-orchestrator/pull/9)  | `feat/bench-local-mini-e2e`   | local-mini E2E head-to-head harness (`run_claude.py` + `--dry-run` mock; sidecar generation; `files_allowed` enforcement) | 40 |
-| [#12](https://github.com/alexzh3/codex-orchestrator/pull/12) | `feat/bench-tiers`            | tier-aware suite scaffolding (`tiers.json`, adapters, `--tier`; real mode fails loudly) | 46 |
+| PR | Branch | Release | Tests |
+|----|--------|---------|-------|
+| [#8](https://github.com/alexzh3/codex-orchestrator/pull/8)   | `feat/0.3-benchmarkability` | 0.3.0 benchmarkability & metadata | 33 |
+| [#9](https://github.com/alexzh3/codex-orchestrator/pull/9)   | `feat/bench-local-mini-e2e` | local-mini E2E head-to-head harness | 40 |
+| [#12](https://github.com/alexzh3/codex-orchestrator/pull/12) | `feat/bench-tiers`          | tier-aware benchmark suite | 46 |
+| [#13](https://github.com/alexzh3/codex-orchestrator/pull/13) | `docs/agents-and-roadmap`   | this file | 46 |
+| [#14](https://github.com/alexzh3/codex-orchestrator/pull/14) | `feat/0.3.1-task-protocol`  | 0.3.1 task protocol & enriched ledger | 55 |
+| _next_ | `feat/0.3.2-gate-prompts` | 0.3.2 gate, doctor, render-prompt, strict report | 63+ |
 
-Stacked: **#8 → #9 → #12**. Each landed via Codex implementation + independent `codex exec review` +
-recorded consensus. Reproducibility note: built with Claude Opus 4.8 + Codex CLI 0.131.0 +
-Claude Code 2.1.195.
+Consolidated: **`release/0.3.1`** = #8→#14 merged off `main`. Every PR's independent `codex exec review`
+found real bugs, all fixed via consensus loops. Built with Claude Opus 4.8 + Codex CLI 0.131.0 +
+Claude Code 2.1.195. Once 0.3.2–0.3.4 land they get `release/0.3.2`–`release/0.3.4` branches, then a
+cross-version daily benchmark compares `main` vs each.
 
 ## Roadmap
 
 ### Refactor releases (see `refactor_plan.md`)
 **Versioning policy:** stay on the **0.3.x** line — each release bumps the patch (0.3.1, 0.3.2, …),
 not the minor. Do not bump to 0.4+ without explicit instruction.
-- **0.3.0 Benchmarkability & metadata** — ✅ PR #8
-- **0.3.1 Task protocol** — typed events (`task_created`, `file_claimed`, `dispatch_started`,
-  `task_checkpoint`, `review`, `gate_result`, …), file claims + `check-conflicts`, report Task Graph,
-  benchmark score wired to the new events. *(in progress)*
-- **0.3.2 Gate & generated prompts** — `gate` + `doctor` commands, `render-prompt` + templates +
-  Codex output schema, strict report mode, revised session-reuse policy.
+- **0.3.0 Benchmarkability & metadata** — ✅ (on `release/0.3.1`, PR #8)
+- **0.3.1 Task protocol** — typed events, file claims + `check-conflicts`, report Task Graph,
+  benchmark score wired to the new events. ✅ (on `release/0.3.1`, PR #14)
+- **0.3.2 Gate & generated prompts** — `gate` + `doctor`, `render-prompt` + templates + Codex output
+  schema, strict report mode, Gate Result rendering. *(in progress, PR #15)*
 - **0.3.3 Skills & monitors** — migrate `commands/*` → `skills/<name>/SKILL.md`, `bin/codex-orch`,
   plugin-native monitors, finish `scripts/codex_orchestrator/` package split (highest conflict → last).
 - **0.3.4 External benchmark adapters** — see benchmark roadmap below.
