@@ -2,7 +2,7 @@
   "monitors": [
     {
       "name": "codex-orch-monitor",
-      "description": "Emit compact Codex session completion, failure, and stale notifications from run logs.",
+      "description": "Auto-discover the newest active run and emit compact Codex session completion, failure, and stale notifications from run logs.",
       "command": "bin/codex-orch-monitor"
     }
   ]

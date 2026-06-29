@@ -4,6 +4,7 @@
 Contract:
 - stdout is the notification stream; every emitted line is compact JSON.
 - Input is a run directory, --run-id resolved under --repo, or one or more --log paths.
+- With no args, auto-discovers the newest active run under .codex-orchestrator/runs.
 - Watches the newest captured Codex JSONL log(s) and emits material events:
   codex_session_complete, codex_session_failed, codex_session_stale.
 - Does not mutate the ledger. It exits after complete/failed, or after one scan with --once.
@@ -60,7 +61,45 @@ def run_dir_from_args(args: argparse.Namespace) -> Path | None:
         return Path(args.repo).expanduser() / ".codex-orchestrator" / "runs" / args.run_id
     if args.run_dir:
         return Path(args.run_dir).expanduser()
-    return None
+    return auto_discover_run_dir(Path(args.repo).expanduser(), args.max_logs)
+
+
+def run_status(run_dir: Path) -> str | None:
+    state_path = run_dir / "state.json"
+    if not state_path.exists():
+        return None
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    status = payload.get("status")
+    return status if isinstance(status, str) else None
+
+
+def newest_log_mtime(run_dir: Path, max_logs: int) -> float | None:
+    logs = newest_logs(run_dir, max_logs)
+    if not logs:
+        return None
+    return max(path.stat().st_mtime for path in logs)
+
+
+def auto_discover_run_dir(repo: Path, max_logs: int) -> Path | None:
+    runs_dir = repo / ".codex-orchestrator" / "runs"
+    if not runs_dir.exists():
+        return None
+    candidates: list[tuple[float, Path]] = []
+    for run_dir in runs_dir.iterdir():
+        if not run_dir.is_dir() or run_status(run_dir) != "active":
+            continue
+        mtime = newest_log_mtime(run_dir, max_logs)
+        if mtime is not None:
+            candidates.append((mtime, run_dir))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1].name), reverse=True)
+    return candidates[0][1]
 
 
 def newest_logs(run_dir: Path, max_logs: int) -> list[Path]:
@@ -86,10 +125,20 @@ def read_jsonl_delta(path: Path, offset: int) -> tuple[list[dict[str, Any]], int
     start = 0 if offset > size else max(0, offset)
     events: list[dict[str, Any]] = []
     parse_errors = 0
+    end = start
     with path.open("r", encoding="utf-8") as handle:
         handle.seek(start)
-        for line in handle:
+        while True:
+            line_start = handle.tell()
+            line = handle.readline()
+            if line == "":
+                break
+            if not line.endswith("\n"):
+                end = line_start
+                break
+            line_end = handle.tell()
             stripped = line.strip()
+            end = line_end
             if not stripped:
                 continue
             try:
@@ -101,7 +150,6 @@ def read_jsonl_delta(path: Path, offset: int) -> tuple[list[dict[str, Any]], int
                 events.append(event)
             else:
                 parse_errors += 1
-        end = handle.tell()
     return events, end, parse_errors
 
 
@@ -224,13 +272,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not args.run_dir and not args.run_id and not args.log:
-        parser.print_help()
-        return 0
+    auto_mode = not args.run_dir and not args.run_id and not args.log
 
     states: dict[Path, dict[str, Any]] = {}
     while True:
         paths = resolve_logs(args)
+        if auto_mode and not paths:
+            return 0
         for path in paths:
             state = states.setdefault(path, {"offset": 0, "status": "unknown"})
             terminal, failed = scan_path(path, state, args.stale_seconds)
