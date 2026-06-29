@@ -1,0 +1,34 @@
+{
+  "selection_default": "lowest_success_rate",
+  "tiers": {
+    "tiny": [
+      {
+        "benchmark": "rexbench",
+        "count": 3,
+        "selection": "lowest_success_rate"
+      },
+      {
+        "benchmark": "tblite",
+        "count": 10,
+        "selection": "lowest_success_rate"
+      }
+    ],
+    "normal": [
+      {
+        "benchmark": "rexbench",
+        "count": 6,
+        "selection": "lowest_success_rate"
+      },
+      {
+        "benchmark": "tblite",
+        "count": 15,
+        "selection": "lowest_success_rate"
+      },
+      {
+        "benchmark": "swebench_verified_mini",
+        "count": 7,
+        "selection": "lowest_success_rate"
+      }
+    ]
+  }
+}
