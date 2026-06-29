@@ -23,6 +23,10 @@ ALLOWED_VERIFICATION_RESULTS = (
 )
 
 TASK_STATUS_ORDER = ("complete", "active", "pending", "blocked", "failed")
+SESSION_STATUS_ORDER = ("active", "idle", "complete", "failed", "awaiting-approval", "unknown")
+STATE_STATUS_ORDER = ("active", "blocked", "complete", "needs_review", "accepted", "rejected")
+DISPATCH_MODE_ORDER = ("ide", "exec")
+REVIEW_KIND_ORDER = ("diff", "test", "manual", "custom")
 CONSENSUS_OUTCOME_ORDER = ("consensus", "claude_decision", "user_action_required")
 ALLOWED_RISK_LEVELS = ("none", "low", "medium", "high")
 

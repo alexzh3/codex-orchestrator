@@ -137,6 +137,33 @@
           "$ref": "#/$defs/task_event"
         },
         {
+          "$ref": "#/$defs/task_created_event"
+        },
+        {
+          "$ref": "#/$defs/task_updated_event"
+        },
+        {
+          "$ref": "#/$defs/file_claimed_event"
+        },
+        {
+          "$ref": "#/$defs/dispatch_started_event"
+        },
+        {
+          "$ref": "#/$defs/dispatch_completed_event"
+        },
+        {
+          "$ref": "#/$defs/task_checkpoint_event"
+        },
+        {
+          "$ref": "#/$defs/review_event"
+        },
+        {
+          "$ref": "#/$defs/gate_result_event"
+        },
+        {
+          "$ref": "#/$defs/run_closed_event"
+        },
+        {
           "$ref": "#/$defs/run_meta_event"
         },
         {
@@ -340,6 +367,400 @@
       },
       "additionalProperties": false
     },
+    "task_created_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "id",
+        "title",
+        "status"
+      ],
+      "properties": {
+        "type": {
+          "const": "task_created"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "active",
+            "pending",
+            "blocked",
+            "failed"
+          ]
+        },
+        "owner": {
+          "type": "string"
+        },
+        "depends_on": {
+          "$ref": "#/$defs/string_list"
+        },
+        "files_allowed": {
+          "$ref": "#/$defs/string_list"
+        },
+        "files_forbidden": {
+          "$ref": "#/$defs/string_list"
+        },
+        "acceptance": {
+          "$ref": "#/$defs/string_list"
+        },
+        "verification_required": {
+          "$ref": "#/$defs/string_list"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "task_updated_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "id",
+        "status"
+      ],
+      "properties": {
+        "type": {
+          "const": "task_updated"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "active",
+            "pending",
+            "blocked",
+            "failed"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "file_claimed_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "task_id",
+        "agent",
+        "allow"
+      ],
+      "properties": {
+        "type": {
+          "const": "file_claimed"
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allow": {
+          "$ref": "#/$defs/non_empty_string_list"
+        },
+        "forbid": {
+          "$ref": "#/$defs/string_list"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "dispatch_started_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "task_id",
+        "agent",
+        "mode",
+        "prompt_path",
+        "log_path"
+      ],
+      "properties": {
+        "type": {
+          "const": "dispatch_started"
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "ide",
+            "exec"
+          ]
+        },
+        "prompt_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "log_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fresh_session": {
+          "type": "boolean"
+        },
+        "reuse_reason": {
+          "type": "string"
+        },
+        "worktree": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "dispatch_completed_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "task_id",
+        "agent",
+        "status"
+      ],
+      "properties": {
+        "type": {
+          "const": "dispatch_completed"
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "description": "Dispatch completion status follows session lifecycle statuses.",
+          "type": "string",
+          "enum": [
+            "active",
+            "idle",
+            "complete",
+            "failed",
+            "awaiting-approval",
+            "unknown"
+          ]
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "task_checkpoint_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "task_id",
+        "agent",
+        "status",
+        "summary",
+        "files_changed"
+      ],
+      "properties": {
+        "type": {
+          "const": "task_checkpoint"
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "active",
+            "pending",
+            "blocked",
+            "failed"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "files_changed": {
+          "$ref": "#/$defs/string_list"
+        },
+        "tests_run": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "unresolved_blockers": {
+          "$ref": "#/$defs/string_list"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "review_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "task_id",
+        "reviewer",
+        "kind",
+        "result"
+      ],
+      "properties": {
+        "type": {
+          "const": "review"
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "diff",
+            "test",
+            "manual",
+            "custom"
+          ]
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed",
+            "skipped",
+            "inconclusive",
+            "needs_human_review"
+          ]
+        },
+        "command": {
+          "type": "string"
+        },
+        "prompt_path": {
+          "type": "string"
+        },
+        "log_path": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
+          "$ref": "#/$defs/string_list"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "gate_result_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "ok"
+      ],
+      "properties": {
+        "type": {
+          "const": "gate_result"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "passed": {
+          "description": "Deprecated compatibility alias. Prefer ok.",
+          "type": "boolean"
+        },
+        "blocking": {
+          "$ref": "#/$defs/string_list"
+        },
+        "warnings": {
+          "$ref": "#/$defs/string_list"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "run_closed_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "status"
+      ],
+      "properties": {
+        "type": {
+          "const": "run_closed"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "blocked",
+            "complete",
+            "needs_review",
+            "accepted",
+            "rejected"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
     "run_meta_event": {
       "type": "object",
       "required": [
@@ -461,6 +882,15 @@
               "verification",
               "consensus",
               "task",
+              "task_created",
+              "task_updated",
+              "file_claimed",
+              "dispatch_started",
+              "dispatch_completed",
+              "task_checkpoint",
+              "review",
+              "gate_result",
+              "run_closed",
               "run_meta"
             ]
           }
@@ -480,6 +910,14 @@
     },
     "string_list": {
       "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "non_empty_string_list": {
+      "type": "array",
+      "minItems": 1,
       "items": {
         "type": "string",
         "minLength": 1

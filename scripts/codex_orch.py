@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import shutil
@@ -16,9 +17,13 @@ from codex_orch_contract import (
     ALLOWED_VERIFICATION_KINDS,
     ALLOWED_VERIFICATION_RESULTS,
     CONSENSUS_OUTCOME_ORDER,
+    DISPATCH_MODE_ORDER,
     LEGACY_CONSENSUS_STATUS_OUTCOMES,
+    REVIEW_KIND_ORDER,
     RUN_META_CONFIG_BOOLEAN_FIELDS,
     RUN_META_CONFIG_FIELDS,
+    SESSION_STATUS_ORDER,
+    STATE_STATUS_ORDER,
     TASK_STATUS_ORDER,
 )
 from codex_orch_report import (
@@ -268,6 +273,97 @@ LEDGER_EVENT_SCHEMAS = {
         "strings": ("type", "id", "title", "owner", "created_at", "updated_at", "notes"),
         "enums": {"status": TASK_STATUS_ORDER},
     },
+    "task_created": {
+        "timestamp": True,
+        "required": ("type", "id", "title", "status"),
+        "strings": ("type", "id", "title", "owner", "recorded_at"),
+        "enums": {"status": TASK_STATUS_ORDER},
+        "string_arrays": (
+            "depends_on",
+            "files_allowed",
+            "files_forbidden",
+            "acceptance",
+            "verification_required",
+        ),
+    },
+    "task_updated": {
+        "timestamp": True,
+        "required": ("type", "id", "status"),
+        "strings": ("type", "id", "status", "notes", "recorded_at"),
+        "enums": {"status": TASK_STATUS_ORDER},
+    },
+    "file_claimed": {
+        "timestamp": True,
+        "required": ("type", "task_id", "agent", "allow"),
+        "strings": ("type", "task_id", "agent", "recorded_at"),
+        "non_empty_string_arrays": ("allow",),
+        "string_arrays": ("forbid",),
+    },
+    "dispatch_started": {
+        "timestamp": True,
+        "required": ("type", "task_id", "agent", "mode", "prompt_path", "log_path"),
+        "strings": (
+            "type",
+            "task_id",
+            "agent",
+            "mode",
+            "prompt_path",
+            "log_path",
+            "reuse_reason",
+            "worktree",
+            "recorded_at",
+        ),
+        "enums": {"mode": DISPATCH_MODE_ORDER},
+        "bools": ("fresh_session",),
+    },
+    "dispatch_completed": {
+        "timestamp": True,
+        "required": ("type", "task_id", "agent", "status"),
+        "strings": ("type", "task_id", "agent", "status", "recorded_at"),
+        "enums": {"status": SESSION_STATUS_ORDER},
+    },
+    "task_checkpoint": {
+        "timestamp": True,
+        "required": ("type", "task_id", "agent", "status", "summary", "files_changed"),
+        "strings": ("type", "task_id", "agent", "status", "summary", "recorded_at"),
+        "enums": {"status": TASK_STATUS_ORDER},
+        "string_arrays": ("files_changed", "unresolved_blockers"),
+        "object_arrays": ("tests_run",),
+    },
+    "review": {
+        "timestamp": True,
+        "required": ("type", "task_id", "reviewer", "kind", "result"),
+        "strings": (
+            "type",
+            "task_id",
+            "reviewer",
+            "kind",
+            "result",
+            "command",
+            "prompt_path",
+            "log_path",
+            "summary",
+            "recorded_at",
+        ),
+        "enums": {
+            "kind": REVIEW_KIND_ORDER,
+            "result": ALLOWED_VERIFICATION_RESULTS,
+        },
+        "string_arrays": ("findings",),
+    },
+    "gate_result": {
+        "timestamp": True,
+        "required": ("type", "ok"),
+        "strings": ("type", "recorded_at"),
+        "bools": ("ok", "passed"),
+        "string_arrays": ("blocking", "warnings"),
+    },
+    "run_closed": {
+        "timestamp": True,
+        "required": ("type", "status"),
+        "strings": ("type", "status", "summary", "recorded_at"),
+        "enums": {"status": STATE_STATUS_ORDER},
+    },
     "run_meta": {
         "timestamp": True,
         "required": ("type", "recorded_at", "run_id", "protocol_version", "schema_version"),
@@ -295,6 +391,7 @@ def event_schema_fields(schema: dict[str, object]) -> set[str]:
         "bools",
         "string_arrays",
         "non_empty_string_arrays",
+        "object_arrays",
         "scalar_maps",
         "run_meta_configs",
     ):
@@ -325,28 +422,53 @@ def validate_enum_fields(event_type: str, event: dict[str, object], schema: dict
 
 
 def validate_typed_fields(event_type: str, event: dict[str, object], schema: dict[str, object]) -> None:
+    required = set(schema.get("required", ()))
     for field in schema.get("nullable_strings", ()):
         value = event.get(field)
         if value is not None and not isinstance(value, str):
             raise SystemExit(f"ERROR: {event_type} field {field} must be a string or null")
     for field in schema.get("ints", ()):
         value = event.get(field)
+        if value is None:
+            if field in required:
+                raise SystemExit(f"ERROR: {event_type} field {field} must be an integer")
+            continue
         if value is not None and type(value) is not int:
             raise SystemExit(f"ERROR: {event_type} field {field} must be an integer or null")
     for field in schema.get("bools", ()):
         value = event.get(field)
+        if value is None:
+            if field in required:
+                raise SystemExit(f"ERROR: {event_type} field {field} must be a boolean")
+            continue
         if value is not None and not isinstance(value, bool):
             raise SystemExit(f"ERROR: {event_type} field {field} must be a boolean")
     for field in schema.get("string_arrays", ()):
         value = event.get(field)
+        if value is None:
+            if field in required:
+                raise SystemExit(f"ERROR: {event_type} field {field} must be a string array")
+            continue
         if value is not None and (
             not isinstance(value, list) or not all(isinstance(item, str) for item in value)
         ):
             raise SystemExit(f"ERROR: {event_type} field {field} must be a string array")
     for field in schema.get("non_empty_string_arrays", ()):
         value = event.get(field)
-        if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+        if value is None:
+            if field in required:
+                raise SystemExit(f"ERROR: {event_type} field {field} must be a non-empty string array")
+            continue
+        if not isinstance(value, list) or not value or not all(isinstance(item, str) and item for item in value):
             raise SystemExit(f"ERROR: {event_type} field {field} must be a non-empty string array")
+    for field in schema.get("object_arrays", ()):
+        value = event.get(field)
+        if value is None:
+            if field in required:
+                raise SystemExit(f"ERROR: {event_type} field {field} must be an object array")
+            continue
+        if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+            raise SystemExit(f"ERROR: {event_type} field {field} must be an object array")
     for field in schema.get("scalar_maps", ()):
         value = event.get(field)
         if value is not None and not isinstance(value, dict):
@@ -379,6 +501,8 @@ def validate_typed_event(event_type: str, event: dict[str, object], schema: dict
         mapped_outcome = LEGACY_CONSENSUS_STATUS_OUTCOMES.get(str(event.get("status")))
         if mapped_outcome:
             event["outcome"] = mapped_outcome
+    if event_type == "gate_result" and "ok" not in event and isinstance(event.get("passed"), bool):
+        event["ok"] = event["passed"]
 
     missing = [field for field in schema.get("required", ()) if field not in event]
     if missing:
@@ -700,6 +824,159 @@ def command_append_event(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_claim_files(args: argparse.Namespace) -> int:
+    directory = run_dir(args.repo, args.run_id)
+    load_json(state_path(directory))
+    record: dict[str, object] = {
+        "type": "file_claimed",
+        "task_id": args.task_id,
+        "agent": args.agent,
+        "allow": args.allow,
+    }
+    if args.forbid:
+        record["forbid"] = args.forbid
+    validate_ledger_event(record)
+    append_jsonl(ledger_path(directory), record)
+    print_json({"ok": True, "ledger_path": str(ledger_path(directory)), "event": record})
+    return 0
+
+
+TERMINAL_TASK_STATUSES = {"complete", "blocked", "failed"}
+GLOB_META_CHARS = "*?["
+
+
+def normalize_glob(pattern: str) -> str:
+    normalized = pattern.replace("\\", "/").strip()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+def has_glob_meta(pattern: str) -> bool:
+    return any(char in pattern for char in GLOB_META_CHARS)
+
+
+def glob_literal_prefix(pattern: str) -> str:
+    positions = [pattern.find(char) for char in GLOB_META_CHARS if char in pattern]
+    return pattern[: min(positions)] if positions else pattern
+
+
+def glob_sample(pattern: str) -> str:
+    output: list[str] = []
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "*":
+            if index + 1 < len(pattern) and pattern[index + 1] == "*":
+                index += 1
+            output.append("sample")
+        elif char == "?":
+            output.append("x")
+        elif char == "[":
+            close = pattern.find("]", index + 1)
+            if close == -1:
+                output.append(char)
+            else:
+                choices = pattern[index + 1 : close].lstrip("!^")
+                output.append(choices[:1] or "x")
+                index = close
+        else:
+            output.append(char)
+        index += 1
+    sample = "".join(output)
+    return sample + "sample" if sample.endswith("/") else sample
+
+
+def is_path_prefix(prefix: str, path: str) -> bool:
+    prefix = prefix.rstrip("/")
+    return bool(prefix) and (path == prefix or path.startswith(f"{prefix}/"))
+
+
+def glob_patterns_overlap(first: str, second: str) -> bool:
+    first = normalize_glob(first)
+    second = normalize_glob(second)
+    if not first or not second:
+        return False
+    if first == second:
+        return True
+
+    first_sample = glob_sample(first)
+    second_sample = glob_sample(second)
+    if fnmatch.fnmatchcase(first_sample, second) or fnmatch.fnmatchcase(second_sample, first):
+        return True
+
+    first_has_meta = has_glob_meta(first)
+    second_has_meta = has_glob_meta(second)
+    if not first_has_meta and not second_has_meta:
+        return is_path_prefix(first, second) or is_path_prefix(second, first)
+    if not first_has_meta:
+        return fnmatch.fnmatchcase(first, second) or is_path_prefix(first, glob_literal_prefix(second))
+    if not second_has_meta:
+        return fnmatch.fnmatchcase(second, first) or is_path_prefix(second, glob_literal_prefix(first))
+    return False
+
+
+def claimed_task_statuses(records: list[dict[str, object]]) -> tuple[dict[str, str], set[str]]:
+    statuses: dict[str, str] = {}
+    completed_dispatches: set[str] = set()
+    for record in records:
+        record_type = record.get("type")
+        if record_type in {"task", "task_created", "task_updated"}:
+            task_id = record.get("id")
+            status = record.get("status")
+        elif record_type == "task_checkpoint":
+            task_id = record.get("task_id")
+            status = record.get("status")
+        elif record_type == "dispatch_completed":
+            task_id = record.get("task_id")
+            if isinstance(task_id, str) and task_id:
+                completed_dispatches.add(task_id)
+            continue
+        else:
+            continue
+        if isinstance(task_id, str) and task_id and isinstance(status, str):
+            statuses[task_id] = status
+    return statuses, completed_dispatches
+
+
+def file_claim_conflict_report(records: list[dict[str, object]]) -> dict[str, object]:
+    statuses, completed_dispatches = claimed_task_statuses(records)
+    claims_by_task: dict[str, list[str]] = {}
+    for record in records:
+        if record.get("type") != "file_claimed":
+            continue
+        task_id = record.get("task_id")
+        allow = record.get("allow")
+        if not isinstance(task_id, str) or not task_id or not isinstance(allow, list):
+            continue
+        if task_id in completed_dispatches or statuses.get(task_id) in TERMINAL_TASK_STATUSES:
+            continue
+        task_claims = claims_by_task.setdefault(task_id, [])
+        task_claims.extend(pattern for pattern in allow if isinstance(pattern, str) and pattern)
+
+    conflicts: list[dict[str, object]] = []
+    task_ids = sorted(claims_by_task)
+    for left_index, task_a in enumerate(task_ids):
+        for task_b in task_ids[left_index + 1 :]:
+            overlap = [
+                {"allow_a": pattern_a, "allow_b": pattern_b}
+                for pattern_a in claims_by_task[task_a]
+                for pattern_b in claims_by_task[task_b]
+                if glob_patterns_overlap(pattern_a, pattern_b)
+            ]
+            if overlap:
+                conflicts.append({"task_a": task_a, "task_b": task_b, "overlap": overlap})
+    return {"ok": not conflicts, "conflicts": conflicts}
+
+
+def command_check_conflicts(args: argparse.Namespace) -> int:
+    directory = run_dir(args.repo, args.run_id)
+    load_json(state_path(directory))
+    report = file_claim_conflict_report(read_jsonl(ledger_path(directory)))
+    print_json(report)
+    return 0 if report["ok"] else 1
+
+
 def command_status(args: argparse.Namespace) -> int:
     directory = run_dir(args.repo, args.run_id)
     state = load_json(state_path(directory))
@@ -786,6 +1063,9 @@ def latest_gate_passed(ledger: list[dict[str, object]]) -> bool | None:
     gate_result = latest_record(ledger, "gate_result")
     if not gate_result:
         return None
+    ok = gate_result.get("ok")
+    if isinstance(ok, bool):
+        return ok
     passed = gate_result.get("passed")
     if isinstance(passed, bool):
         return passed
@@ -925,6 +1205,20 @@ def build_parser() -> argparse.ArgumentParser:
     append_parser.add_argument("event_json", nargs="?", help="JSON object to append. If omitted, stdin is read.")
     append_parser.add_argument("--event", dest="event_option", help="JSON object to append.")
     append_parser.set_defaults(func=command_append_event)
+
+    claim_parser = subparsers.add_parser("claim-files", help="Append a writable file-claim event.")
+    claim_parser.add_argument("--repo", default=".", help="Repository root.")
+    claim_parser.add_argument("--run-id", required=True, type=run_id_type)
+    claim_parser.add_argument("--task-id", required=True)
+    claim_parser.add_argument("--agent", required=True)
+    claim_parser.add_argument("--allow", required=True, action="append", help="Writable glob. Repeat for multiple globs.")
+    claim_parser.add_argument("--forbid", action="append", default=[], help="Forbidden glob. Repeat for multiple globs.")
+    claim_parser.set_defaults(func=command_claim_files)
+
+    conflicts_parser = subparsers.add_parser("check-conflicts", help="Check active file claims for writable overlap.")
+    conflicts_parser.add_argument("--repo", default=".", help="Repository root.")
+    conflicts_parser.add_argument("--run-id", required=True, type=run_id_type)
+    conflicts_parser.set_defaults(func=command_check_conflicts)
 
     worktree_parser = subparsers.add_parser("worktree", help="Create a Codex worktree and register it.")
     worktree_parser.add_argument("--name", required=True, type=name_type, help="Session name, for example codex-a.")
