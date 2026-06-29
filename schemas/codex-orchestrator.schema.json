@@ -137,6 +137,9 @@
           "$ref": "#/$defs/task_event"
         },
         {
+          "$ref": "#/$defs/run_meta_event"
+        },
+        {
           "$ref": "#/$defs/generic_event"
         }
       ]
@@ -337,6 +340,114 @@
       },
       "additionalProperties": false
     },
+    "run_meta_event": {
+      "type": "object",
+      "required": [
+        "type",
+        "recorded_at",
+        "run_id",
+        "protocol_version",
+        "schema_version"
+      ],
+      "properties": {
+        "type": {
+          "const": "run_meta"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "plugin_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "plugin_git_sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "protocol_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "claude_code_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "codex_cli_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo_commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "benchmark_suite": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "benchmark_case_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "config": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/run_meta_config"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "run_meta_config": {
+      "type": "object",
+      "properties": {
+        "session_reuse_policy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "require_final_codex_review": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "require_file_claims": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "generic_event": {
       "type": "object",
       "required": [
@@ -349,7 +460,8 @@
             "enum": [
               "verification",
               "consensus",
-              "task"
+              "task",
+              "run_meta"
             ]
           }
         },

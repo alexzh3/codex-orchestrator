@@ -6,6 +6,7 @@ from codex_orch_contract import (
     ALLOWED_VERIFICATION_RESULTS,
     CONSENSUS_OUTCOME_ORDER,
     LEGACY_CONSENSUS_STATUS_OUTCOMES,
+    RUN_META_CONFIG_FIELDS,
     TASK_STATUS_ORDER,
 )
 
@@ -15,10 +16,22 @@ SUMMARY_PLACEHOLDER = "No authored summary recorded."
 CHANGES_PLACEHOLDER = "No authored changes recorded."
 EVIDENCE_PLACEHOLDER = "No evidence recorded."
 RISKS_PLACEHOLDER = "No unresolved risks or follow-ups recorded."
+RUN_META_PLACEHOLDER = "No run metadata recorded."
 REVIEW_KINDS = {"manual_review", "git_diff"}
+FINAL_REVIEW_KINDS = {"review", "manual_review", "git_diff"}
 SUMMARY_OPEN_ITEM_LIMIT = 140
 TASK_RISK_STATUSES = {"blocked", "failed"}
 UNRESOLVED_VERIFICATION_RESULTS = {"failed", "inconclusive", "needs_human_review"}
+COMPLETENESS_COMPONENTS = (
+    ("run_meta_present", "run_meta present", 0.15),
+    ("tasks_listed", "all tasks listed", 0.15),
+    ("changed_files_attributed", "all changed files attributed", 0.15),
+    ("verification_records_complete", "verification records complete", 0.15),
+    ("final_review_present", "final review present", 0.15),
+    ("risks_reflect_failed_checks", "risks reflect failed/inconclusive checks", 0.10),
+    ("gate_result_present", "gate result present", 0.10),
+    ("prompt_log_pairs_complete", "prompt/log pairs complete", 0.05),
+)
 CONSENSUS_OUTCOME_LABELS = {
     "consensus": "consensus",
     "claude_decision": "Claude decision",
@@ -132,6 +145,161 @@ def text_field(value: object) -> str:
 def inline_code(value: object) -> str:
     text = str(value).replace("`", "\\`")
     return f"`{text}`"
+
+
+def clamp_unit(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def string_list(value: object) -> list[str]:
+    if isinstance(value, str) and value:
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item]
+    return []
+
+
+def latest_record(ledger: list[dict[str, object]], record_type: str) -> dict[str, object] | None:
+    records = [record for record in ledger if record.get("type") == record_type]
+    return records[-1] if records else None
+
+
+def is_final_review_verification(record: dict[str, object]) -> bool:
+    return record.get("type") == "verification" and record.get("kind") in FINAL_REVIEW_KINDS
+
+
+def task_completion_ratio(task_records: list[dict[str, object]]) -> float:
+    if not task_records:
+        return 0.0
+    complete = 0
+    for record in task_records:
+        if all(text_field(record.get(field)) for field in ("id", "title", "status")):
+            complete += 1
+    return complete / len(task_records)
+
+
+def changed_file_attribution_ratio(
+    ledger: list[dict[str, object]],
+    task_records: list[dict[str, object]],
+) -> float:
+    task_ids = {text_field(record.get("id")) for record in task_records if text_field(record.get("id"))}
+    total_files = 0
+    attributed_files = 0
+    for record in ledger:
+        files = []
+        files.extend(string_list(record.get("changed_files")))
+        files.extend(string_list(record.get("files")))
+        files.extend(string_list(record.get("file")))
+        if not files:
+            continue
+        total_files += len(files)
+        task_ref = text_field(record.get("task_id") or record.get("task") or record.get("task_ref"))
+        if task_ref and (not task_ids or task_ref in task_ids):
+            attributed_files += len(files)
+    if total_files == 0:
+        return 0.0
+    return attributed_files / total_files
+
+
+def verification_completion_ratio(verification_records: list[dict[str, object]]) -> float:
+    if not verification_records:
+        return 0.0
+    complete = 0
+    for record in verification_records:
+        if all(text_field(record.get(field)) for field in ("kind", "result", "recorded_at", "summary")):
+            complete += 1
+    return complete / len(verification_records)
+
+
+def risks_reflect_failed_checks_ratio(verification_records: list[dict[str, object]]) -> float:
+    if not verification_records:
+        return 0.0
+    unresolved = [
+        record
+        for record in verification_records
+        if text_field(record.get("result")) in UNRESOLVED_VERIFICATION_RESULTS
+    ]
+    if not unresolved:
+        return 1.0
+    reflected = unresolved_items([], unresolved, [], [])
+    return len(reflected) / len(unresolved)
+
+
+def artifact_pair_key(path: str, prefix: str) -> str:
+    relative = path[len(prefix) :]
+    return relative.rsplit(".", 1)[0] if "." in relative else relative
+
+
+def prompt_log_pair_ratio(ledger: list[dict[str, object]]) -> float:
+    prompts: set[str] = set()
+    logs: set[str] = set()
+    for record in ledger:
+        for artifact in string_list(record.get("artifacts")):
+            if artifact.startswith("prompts/"):
+                prompts.add(artifact_pair_key(artifact, "prompts/"))
+            elif artifact.startswith("logs/"):
+                logs.add(artifact_pair_key(artifact, "logs/"))
+    if not prompts and not logs:
+        return 0.0
+    return len(prompts & logs) / max(len(prompts), len(logs))
+
+
+def prompt_log_pairs_complete(ledger: list[dict[str, object]]) -> bool:
+    return prompt_log_pair_ratio(ledger) == 1.0
+
+
+def gate_result_present(ledger: list[dict[str, object]]) -> bool:
+    return latest_record(ledger, "gate_result") is not None
+
+
+def report_completeness_score(state: dict[str, object], ledger: list[dict[str, object]]) -> dict[str, object]:
+    del state
+    run_meta = latest_record(ledger, "run_meta")
+    task_records = [record for record in ledger if record.get("type") == "task"]
+    verification_records = [record for record in ledger if record.get("type") == "verification"]
+    ratios = {
+        "run_meta_present": 1.0 if run_meta else 0.0,
+        "tasks_listed": task_completion_ratio(task_records),
+        "changed_files_attributed": changed_file_attribution_ratio(ledger, task_records),
+        "verification_records_complete": verification_completion_ratio(verification_records),
+        "final_review_present": 1.0 if any(is_final_review_verification(record) for record in ledger) else 0.0,
+        "risks_reflect_failed_checks": risks_reflect_failed_checks_ratio(verification_records),
+        "gate_result_present": 1.0 if gate_result_present(ledger) else 0.0,
+        "prompt_log_pairs_complete": prompt_log_pair_ratio(ledger),
+    }
+    components: dict[str, dict[str, object]] = {}
+    for key, label, weight in COMPLETENESS_COMPONENTS:
+        score = clamp_unit(float(ratios.get(key, 0.0)))
+        earned = round(weight * score, 4)
+        components[key] = {
+            "label": label,
+            "weight": weight,
+            "score": round(score, 4),
+            "earned": earned,
+        }
+    total = round(sum(float(component["earned"]) for component in components.values()), 4)
+    return {"total": total, "components": components}
+
+
+def score_total(score: dict[str, object]) -> float:
+    total = score.get("total")
+    return float(total) if isinstance(total, (int, float)) else 0.0
+
+
+def score_component_lines(score: dict[str, object]) -> list[str]:
+    components = score.get("components")
+    if not isinstance(components, dict):
+        return []
+    lines: list[str] = []
+    for key, _, _ in COMPLETENESS_COMPONENTS:
+        component = components.get(key)
+        if not isinstance(component, dict):
+            continue
+        label = text_field(component.get("label")) or key
+        earned = float(component.get("earned") or 0.0)
+        weight = float(component.get("weight") or 0.0)
+        lines.append(f"  - {label}: {earned:.2f}/{weight:.2f}")
+    return lines
 
 
 def verification_kind_label(kind: object) -> str:
@@ -259,6 +427,52 @@ def acceptance_decision(status: object, open_risks: list[str]) -> str:
     return "No acceptance decision recorded; this run needs review."
 
 
+def metadata_value(value: object) -> str:
+    text = text_field(value)
+    return inline_code(text) if text else "not recorded"
+
+
+def render_task_records(lines: list[str], task_records: list[dict[str, object]]) -> None:
+    lines.extend(["### Ledger Records", ""])
+    for record in task_records:
+        lines.append(f"- **{task_title(record)}** ({text_field(record.get('status')) or 'unknown'})")
+        for field, label in (("owner", "Owner"), ("notes", "Notes")):
+            value = text_field(record.get(field))
+            if value:
+                lines.append(f"  - {label}: {value}")
+    lines.append("")
+
+
+def render_reproducibility(
+    lines: list[str],
+    run_meta: dict[str, object] | None,
+    completeness: dict[str, object],
+) -> None:
+    lines.extend(["## Reproducibility", ""])
+    if run_meta:
+        for field, label in (
+            ("plugin_version", "Plugin Version"),
+            ("plugin_git_sha", "Plugin Git SHA"),
+            ("protocol_version", "Protocol Version"),
+            ("schema_version", "Schema Version"),
+            ("repo_commit", "Repo Commit"),
+            ("benchmark_suite", "Benchmark Suite"),
+            ("benchmark_case_id", "Benchmark Case"),
+        ):
+            lines.append(f"- {label}: {metadata_value(run_meta.get(field))}")
+        config = run_meta.get("config")
+        if isinstance(config, dict):
+            lines.append("- Config:")
+            for field in RUN_META_CONFIG_FIELDS:
+                lines.append(f"  - {field}: {metadata_value(config.get(field))}")
+    else:
+        lines.append(RUN_META_PLACEHOLDER)
+    lines.extend(["", "### Report Completeness", ""])
+    lines.append(f"- Report Completeness: {score_total(completeness):.2f}")
+    lines.extend(score_component_lines(completeness))
+    lines.append("")
+
+
 def render_report(
     *,
     state: dict[str, object],
@@ -272,6 +486,8 @@ def render_report(
     evidence_records = [record for record in verifications if record.get("kind") not in REVIEW_KINDS]
     consensus_records = [record for record in ledger if record.get("type") == "consensus"]
     task_records = [record for record in ledger if record.get("type") == "task"]
+    run_meta = latest_record(ledger, "run_meta")
+    completeness = report_completeness_score(state, ledger)
     open_risks = unresolved_items(warnings, verifications, consensus_records, task_records)
     sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
 
@@ -289,6 +505,7 @@ def render_report(
             f"- Status: {state.get('status')}",
             f"- Generated at: {generated_at}",
             f"- Acceptance: {acceptance_decision(state.get('status'), open_risks)}",
+            f"- Report Completeness: {score_total(completeness):.2f}",
         ])
         if task_records:
             lines.append(f"- Changes: {len(task_records)} ({task_status_tally(task_records)})")
@@ -309,19 +526,17 @@ def render_report(
             lines.append("- Open items: none")
         lines.append("")
 
+    render_reproducibility(lines, run_meta, completeness)
+
     lines.extend(["## Changes", ""])
     authored_changes = authored_changes_section(existing_report)
     if authored_changes:
         lines.extend([authored_changes, ""])
+        if task_records:
+            render_task_records(lines, task_records)
     elif task_records:
-        lines.extend([CHANGES_PLACEHOLDER, "", "### Ledger Records", ""])
-        for record in task_records:
-            lines.append(f"- **{task_title(record)}** ({text_field(record.get('status')) or 'unknown'})")
-            for field, label in (("owner", "Owner"), ("notes", "Notes")):
-                value = text_field(record.get(field))
-                if value:
-                    lines.append(f"  - {label}: {value}")
-        lines.append("")
+        lines.extend([CHANGES_PLACEHOLDER, ""])
+        render_task_records(lines, task_records)
     else:
         lines.extend([CHANGES_PLACEHOLDER, ""])
 

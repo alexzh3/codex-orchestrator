@@ -10,8 +10,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from codex_orch_report import report_completeness_score  # noqa: E402
+
 REPORT_HEADINGS = [
     "## Summary",
+    "## Reproducibility",
     "## Changes",
     "## Evidence",
     "## Consensus",
@@ -228,11 +233,14 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIn("- Run ID: run", summary_section)
         self.assertIn("- Status: active", summary_section)
         self.assertIn("- Acceptance: No acceptance decision recorded; this run needs review.", summary_section)
+        self.assertIn("- Report Completeness: 0.00", summary_section)
         self.assertIn("- Changes: none", summary_section)
         self.assertIn("- Evidence: none recorded", summary_section)
         self.assertIn("- Reviews: 0", summary_section)
         self.assertIn("- Consensus: none", summary_section)
         self.assertIn("- Open items: none", summary_section)
+        self.assertIn("No run metadata recorded.", self.report_section(report, "## Reproducibility"))
+        self.assertIn("- Report Completeness: 0.00", self.report_section(report, "## Reproducibility"))
         self.assertIn("No authored changes recorded.", self.report_section(report, "## Changes"))
         self.assertIn("No evidence recorded.", report)
         self.assertNotIn("## Final Report", report)
@@ -510,6 +518,86 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIn("  - Owner: human", changes_section)
         self.assertIn("  - Notes: Waiting on credentials.", changes_section)
         self.assertIn(f"- {blocked_title} (blocked)", risks_section)
+
+    def test_report_score_function_and_benchmark_output(self) -> None:
+        self.init_run()
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "task",
+                    "id": "task-1",
+                    "title": "Implement benchmark result output",
+                    "status": "complete",
+                }
+            ),
+        )
+        self.run_cli(
+            "add-verification",
+            "--run-id",
+            "run",
+            "--kind",
+            "test",
+            "--result",
+            "passed",
+            "--summary",
+            "Unit tests passed",
+            "--artifact",
+            "prompts/test.md",
+            "--artifact",
+            "logs/test.jsonl",
+        )
+        self.run_cli(
+            "add-verification",
+            "--run-id",
+            "run",
+            "--kind",
+            "manual_review",
+            "--result",
+            "passed",
+            "--summary",
+            "Final review passed",
+        )
+
+        state = json.loads((self.ledger_dir() / "state.json").read_text(encoding="utf-8"))
+        ledger = [
+            json.loads(line)
+            for line in (self.ledger_dir() / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        score = report_completeness_score(state, ledger)
+        self.assertEqual(score["components"]["run_meta_present"]["earned"], 0.0)
+        self.assertEqual(score["components"]["tasks_listed"]["earned"], 0.15)
+        self.assertEqual(score["components"]["prompt_log_pairs_complete"]["earned"], 0.05)
+        self.assertAlmostEqual(score["total"], 0.6)
+
+        self.run_cli(
+            "benchmark",
+            "--run-id",
+            "run",
+            "--suite",
+            "suite-a",
+            "--case-id",
+            "case-1",
+            "--plugin-ref",
+            "plugin-ref",
+            "--passed",
+            "true",
+        )
+        benchmark = json.loads((self.ledger_dir() / "benchmark.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(benchmark["suite"], "suite-a")
+        self.assertEqual(benchmark["case_id"], "case-1")
+        self.assertEqual(benchmark["plugin_ref"], "plugin-ref")
+        self.assertIsNone(benchmark["repo_commit"])
+        self.assertIs(benchmark["passed"], True)
+        self.assertEqual(benchmark["codex_sessions"], 0)
+        self.assertEqual(benchmark["codex_reviews"], 1)
+        self.assertIs(benchmark["prompt_log_pairs_complete"], True)
+        self.assertEqual(benchmark["ledger_errors"], 0)
+        self.assertAlmostEqual(benchmark["report_score"], score["total"])
 
     def test_report_preserves_authored_sections_across_runs(self) -> None:
         self.init_run()

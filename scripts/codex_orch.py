@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -16,11 +17,21 @@ from codex_orch_contract import (
     ALLOWED_VERIFICATION_RESULTS,
     CONSENSUS_OUTCOME_ORDER,
     LEGACY_CONSENSUS_STATUS_OUTCOMES,
+    RUN_META_CONFIG_BOOLEAN_FIELDS,
+    RUN_META_CONFIG_FIELDS,
     TASK_STATUS_ORDER,
 )
-from codex_orch_report import render_report
+from codex_orch_report import (
+    is_final_review_verification,
+    latest_record,
+    prompt_log_pairs_complete,
+    report_completeness_score,
+    render_report,
+)
 
 
+PROTOCOL_VERSION = "1.0"
+SCHEMA_VERSION = "1.0"
 RUN_SUBDIRS = ("prompts", "logs", "artifacts")
 
 
@@ -64,6 +75,10 @@ def report_path(directory: Path) -> Path:
     return directory / "report.md"
 
 
+def benchmark_path(directory: Path) -> Path:
+    return directory / "benchmark.json"
+
+
 def run_subdir(directory: Path, name: str) -> Path:
     return directory / name
 
@@ -98,24 +113,35 @@ def load_json(path: Path) -> dict[str, object]:
 
 
 def read_jsonl(path: Path) -> list[dict[str, object]]:
+    records, _diagnostics = read_jsonl_with_warnings(path)
+    return records
+
+
+def read_jsonl_with_warnings(path: Path) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     records: list[dict[str, object]] = []
+    diagnostics: list[dict[str, object]] = []
     if not path.exists():
-        return records
-    for line in path.read_text(encoding="utf-8").splitlines():
+        return records, diagnostics
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             continue
         try:
             record = json.loads(line)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            diagnostics.append({"line_no": line_no, "error": str(exc)})
             continue
         if isinstance(record, dict):
             records.append(record)
-    return records
+    return records, diagnostics
+
+
+def encode_jsonl_record(record: dict[str, object]) -> str:
+    return json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
 
 
 def append_jsonl(path: Path, record: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    encoded = (json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    encoded = encode_jsonl_record(record).encode("utf-8")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     try:
         written = os.write(fd, encoded)
@@ -136,6 +162,34 @@ def initial_state(repo: Path, run_id: str) -> dict[str, object]:
     }
 
 
+def initial_report_text() -> str:
+    return (
+        "# Report\n\n"
+        "## Summary\n\n"
+        "## Reproducibility\n\n"
+        "## Changes\n\n"
+        "## Evidence\n\n"
+        "## Consensus\n\n"
+        "## Risks / Follow-ups\n\n"
+    )
+
+
+def ensure_run_scaffold(repo: Path, run_id: str, *, force: bool = False) -> tuple[Path, dict[str, bool]]:
+    directory = repo / ".codex-orchestrator" / "runs" / run_id
+    directory.mkdir(parents=True, exist_ok=True)
+    created = {
+        "state.json": write_json(state_path(directory), initial_state(repo, run_id), force=force),
+        "ledger.jsonl": write_text(ledger_path(directory), "", force=force),
+        "report.md": write_text(report_path(directory), initial_report_text(), force=force),
+    }
+    for name in RUN_SUBDIRS:
+        subdir = run_subdir(directory, name)
+        already_exists = subdir.exists()
+        subdir.mkdir(parents=True, exist_ok=True)
+        created[f"{name}/"] = not already_exists
+    return directory, created
+
+
 def ledger_records(directory: Path, record_type: str | None = None) -> list[dict[str, object]]:
     records = read_jsonl(ledger_path(directory))
     if record_type is None:
@@ -143,9 +197,29 @@ def ledger_records(directory: Path, record_type: str | None = None) -> list[dict
     return [record for record in records if record.get("type") == record_type]
 
 
+def records_of_type(records: list[dict[str, object]], record_type: str) -> list[dict[str, object]]:
+    return [record for record in records if record.get("type") == record_type]
+
+
 def latest_verification(directory: Path) -> dict[str, object] | None:
     records = ledger_records(directory, "verification")
     return records[-1] if records else None
+
+
+def latest_verification_from_records(records: list[dict[str, object]]) -> dict[str, object] | None:
+    verifications = records_of_type(records, "verification")
+    return verifications[-1] if verifications else None
+
+
+def ledger_warning_messages(diagnostics: list[dict[str, object]]) -> list[str]:
+    if not diagnostics:
+        return []
+    messages = [f"Ledger contains {len(diagnostics)} malformed JSON line(s)."]
+    for diagnostic in diagnostics:
+        line_no = diagnostic.get("line_no")
+        error = diagnostic.get("error")
+        messages.append(f"ledger.jsonl line {line_no}: {error}")
+    return messages
 
 
 def load_event(raw: str) -> dict[str, object]:
@@ -189,12 +263,36 @@ LEDGER_EVENT_SCHEMAS = {
         "strings": ("type", "id", "title", "owner", "created_at", "updated_at", "notes"),
         "enums": {"status": TASK_STATUS_ORDER},
     },
+    "run_meta": {
+        "timestamp": True,
+        "required": ("type", "recorded_at", "run_id", "protocol_version", "schema_version"),
+        "strings": ("type", "recorded_at", "run_id", "protocol_version", "schema_version"),
+        "nullable_strings": (
+            "plugin_version",
+            "plugin_git_sha",
+            "claude_code_version",
+            "codex_cli_version",
+            "repo_commit",
+            "benchmark_suite",
+            "benchmark_case_id",
+        ),
+        "run_meta_configs": ("config",),
+    },
 }
 
 
 def event_schema_fields(schema: dict[str, object]) -> set[str]:
     fields: set[str] = set(schema.get("required", ()))
-    for key in ("strings", "ints", "bools", "string_arrays", "non_empty_string_arrays", "scalar_maps"):
+    for key in (
+        "strings",
+        "nullable_strings",
+        "ints",
+        "bools",
+        "string_arrays",
+        "non_empty_string_arrays",
+        "scalar_maps",
+        "run_meta_configs",
+    ):
         fields.update(schema.get(key, ()))
     fields.update(schema.get("enums", {}).keys())
     return fields
@@ -222,6 +320,10 @@ def validate_enum_fields(event_type: str, event: dict[str, object], schema: dict
 
 
 def validate_typed_fields(event_type: str, event: dict[str, object], schema: dict[str, object]) -> None:
+    for field in schema.get("nullable_strings", ()):
+        value = event.get(field)
+        if value is not None and not isinstance(value, str):
+            raise SystemExit(f"ERROR: {event_type} field {field} must be a string or null")
     for field in schema.get("ints", ()):
         value = event.get(field)
         if value is not None and type(value) is not int:
@@ -248,6 +350,21 @@ def validate_typed_fields(event_type: str, event: dict[str, object], schema: dic
             for key, item in value.items():
                 if not isinstance(key, str) or not isinstance(item, (int, float, str, bool, type(None))):
                     raise SystemExit(f"ERROR: {event_type} field {field} must map strings to scalar values")
+    for field in schema.get("run_meta_configs", ()):
+        value = event.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, dict):
+            raise SystemExit(f"ERROR: {event_type} field {field} must be an object or null")
+        unknown = sorted(key for key in value if key not in RUN_META_CONFIG_FIELDS)
+        if unknown:
+            raise SystemExit(f"ERROR: {event_type} field {field} has unknown key(s): {', '.join(unknown)}")
+        for key, item in value.items():
+            if key in RUN_META_CONFIG_BOOLEAN_FIELDS:
+                if item is not None and not isinstance(item, bool):
+                    raise SystemExit(f"ERROR: {event_type} field {field}.{key} must be a boolean or null")
+            elif item is not None and not isinstance(item, str):
+                raise SystemExit(f"ERROR: {event_type} field {field}.{key} must be a string or null")
 
 
 def validate_typed_event(event_type: str, event: dict[str, object], schema: dict[str, object]) -> None:
@@ -344,7 +461,10 @@ def upsert_session(
     write_json(path, state, force=True)
 
 
-def collect_warnings(state: dict[str, object]) -> list[str]:
+def collect_warnings(
+    state: dict[str, object],
+    ledger_diagnostics: list[dict[str, object]] | None = None,
+) -> list[str]:
     warnings: list[str] = []
     sessions = state.get("sessions")
     if isinstance(sessions, list):
@@ -356,11 +476,18 @@ def collect_warnings(state: dict[str, object]) -> list[str]:
                 warnings.append(f"Session {name} has unknown status.")
             if session.get("parse_confidence") == "low":
                 warnings.append(f"Session {name} has low parser confidence.")
+    if ledger_diagnostics:
+        warnings.extend(ledger_warning_messages(ledger_diagnostics))
     return warnings
 
 
-def recommended_next_action(state: dict[str, object], verification: dict[str, object] | None) -> str:
-    if collect_warnings(state):
+def recommended_next_action(
+    state: dict[str, object],
+    verification: dict[str, object] | None,
+    warnings: list[str] | None = None,
+) -> str:
+    active_warnings = warnings if warnings is not None else collect_warnings(state)
+    if active_warnings:
         return "Inspect parser warnings or raw logs before trusting session status."
     if verification is None:
         return "Review the diff and record verification evidence."
@@ -369,35 +496,161 @@ def recommended_next_action(state: dict[str, object], verification: dict[str, ob
     return "No further action recorded."
 
 
+def detect_git_sha(repo: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    sha = result.stdout.strip()
+    return sha or None
+
+
+def detect_plugin_version(repo: Path) -> str | None:
+    plugin_json = repo / ".claude-plugin" / "plugin.json"
+    if not plugin_json.exists():
+        return None
+    try:
+        payload = json.loads(plugin_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    version = payload.get("version")
+    return version if isinstance(version, str) and version else None
+
+
+def detect_command_version(command: str) -> str | None:
+    if shutil.which(command) is None:
+        return None
+    try:
+        result = subprocess.run(
+            [command, "--version"],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    output = (result.stdout or result.stderr).strip()
+    return output.splitlines()[0] if output else None
+
+
+def default_run_config() -> dict[str, object]:
+    return {
+        "session_reuse_policy": None,
+        "require_final_codex_review": None,
+        "require_file_claims": None,
+    }
+
+
+def build_run_meta(
+    *,
+    repo: Path,
+    run_id: str,
+    plugin_ref: str | None = None,
+    benchmark_suite: str | None = None,
+    benchmark_case_id: str | None = None,
+) -> dict[str, object]:
+    repo_commit = detect_git_sha(repo)
+    record: dict[str, object] = {
+        "type": "run_meta",
+        "recorded_at": utc_now(),
+        "run_id": run_id,
+        "plugin_version": detect_plugin_version(repo),
+        "plugin_git_sha": plugin_ref or repo_commit,
+        "protocol_version": PROTOCOL_VERSION,
+        "schema_version": SCHEMA_VERSION,
+        "claude_code_version": None,
+        "codex_cli_version": detect_command_version("codex"),
+        "repo_commit": repo_commit,
+        "benchmark_suite": benchmark_suite,
+        "benchmark_case_id": benchmark_case_id,
+        "config": default_run_config(),
+    }
+    validate_ledger_event(record)
+    return record
+
+
+def upsert_run_meta(path: Path, run_meta: dict[str, object]) -> dict[str, object]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing_lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    output_lines: list[str] = []
+    replaced = False
+    removed_duplicates = 0
+    encoded = encode_jsonl_record(run_meta).rstrip("\n")
+    for line in existing_lines:
+        if not line.strip():
+            output_lines.append(line)
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            output_lines.append(line)
+            continue
+        if isinstance(record, dict) and record.get("type") == "run_meta":
+            if not replaced:
+                output_lines.append(encoded)
+                replaced = True
+            else:
+                removed_duplicates += 1
+            continue
+        output_lines.append(line)
+    if not replaced:
+        output_lines.append(encoded)
+    atomic_write_text(path, "\n".join(output_lines) + "\n")
+    return {
+        "action": "updated" if replaced else "created",
+        "removed_duplicates": removed_duplicates,
+    }
+
+
 def command_init(args: argparse.Namespace) -> int:
     repo = repo_root(args.repo)
     if not repo.exists() or not repo.is_dir():
         raise SystemExit(f"ERROR: repo does not exist or is not a directory: {repo}")
 
-    directory = run_dir(args.repo, args.run_id)
-    directory.mkdir(parents=True, exist_ok=True)
-    created = {
-        "state.json": write_json(state_path(directory), initial_state(repo, args.run_id), force=args.force),
-        "ledger.jsonl": write_text(ledger_path(directory), "", force=args.force),
-        "report.md": write_text(
-            report_path(directory),
-            (
-                "# Report\n\n"
-                "## Summary\n\n"
-                "## Changes\n\n"
-                "## Evidence\n\n"
-                "## Consensus\n\n"
-                "## Risks / Follow-ups\n\n"
-            ),
-            force=args.force,
-        ),
-    }
-    for name in RUN_SUBDIRS:
-        subdir = run_subdir(directory, name)
-        already_exists = subdir.exists()
-        subdir.mkdir(parents=True, exist_ok=True)
-        created[f"{name}/"] = not already_exists
+    directory, created = ensure_run_scaffold(repo, args.run_id, force=args.force)
     print_json({"ok": True, "run_id": args.run_id, "run_dir": str(directory), "created_or_replaced": created})
+    return 0
+
+
+def command_ensure_run(args: argparse.Namespace) -> int:
+    repo = repo_root(args.repo)
+    if not repo.exists() or not repo.is_dir():
+        raise SystemExit(f"ERROR: repo does not exist or is not a directory: {repo}")
+
+    directory, created = ensure_run_scaffold(repo, args.run_id, force=False)
+    run_meta = build_run_meta(
+        repo=repo,
+        run_id=args.run_id,
+        plugin_ref=args.plugin_ref,
+        benchmark_suite=args.benchmark_suite,
+        benchmark_case_id=args.benchmark_case_id,
+    )
+    upsert = upsert_run_meta(ledger_path(directory), run_meta)
+    print_json(
+        {
+            "ok": True,
+            "run_id": args.run_id,
+            "run_dir": str(directory),
+            "created_or_replaced": created,
+            "run_meta_action": upsert["action"],
+            "removed_run_meta_duplicates": upsert["removed_duplicates"],
+            "run_meta": run_meta,
+        }
+    )
     return 0
 
 
@@ -445,8 +698,9 @@ def command_status(args: argparse.Namespace) -> int:
     directory = run_dir(args.repo, args.run_id)
     state = load_json(state_path(directory))
     sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
-    verification = latest_verification(directory)
-    warnings = collect_warnings(state)
+    ledger, ledger_diagnostics = read_jsonl_with_warnings(ledger_path(directory))
+    verification = latest_verification_from_records(ledger)
+    warnings = collect_warnings(state, ledger_diagnostics)
     payload = {
         "run_id": state.get("run_id"),
         "status": state.get("status"),
@@ -455,7 +709,7 @@ def command_status(args: argparse.Namespace) -> int:
         "sessions": sessions[-5:],
         "latest_verification": verification,
         "warnings": warnings,
-        "recommended_next_action": recommended_next_action(state, verification),
+        "recommended_next_action": recommended_next_action(state, verification, warnings),
     }
     print_json(payload)
     return 0
@@ -491,18 +745,134 @@ def command_report(args: argparse.Namespace) -> int:
     directory = run_dir(args.repo, args.run_id)
     state = load_json(state_path(directory))
     existing_report = report_path(directory).read_text(encoding="utf-8") if report_path(directory).exists() else ""
+    ledger, ledger_diagnostics = read_jsonl_with_warnings(ledger_path(directory))
     path = report_path(directory)
     atomic_write_text(
         path,
         render_report(
             state=state,
-            ledger=ledger_records(directory),
+            ledger=ledger,
             existing_report=existing_report,
-            warnings=collect_warnings(state),
+            warnings=collect_warnings(state, ledger_diagnostics),
             generated_at=utc_now(),
         ),
     )
     print_json({"ok": True, "run_id": args.run_id, "report_path": str(path)})
+    return 0
+
+
+def nullable_bool_type(value: str) -> bool | None:
+    lowered = value.lower()
+    if lowered in {"1", "true", "yes", "y", "pass", "passed"}:
+        return True
+    if lowered in {"0", "false", "no", "n", "fail", "failed"}:
+        return False
+    if lowered in {"null", "none", "unknown"}:
+        return None
+    raise argparse.ArgumentTypeError("value must be true, false, or null")
+
+
+def string_or_none(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def latest_gate_passed(ledger: list[dict[str, object]]) -> bool | None:
+    gate_result = latest_record(ledger, "gate_result")
+    if not gate_result:
+        return None
+    passed = gate_result.get("passed")
+    if isinstance(passed, bool):
+        return passed
+    result = gate_result.get("result") or gate_result.get("status")
+    if isinstance(result, str):
+        lowered = result.lower()
+        if lowered in {"pass", "passed", "success", "succeeded"}:
+            return True
+        if lowered in {"fail", "failed", "failure"}:
+            return False
+    return None
+
+
+def validate_benchmark_result(payload: dict[str, object]) -> None:
+    required = (
+        "suite",
+        "case_id",
+        "plugin_ref",
+        "repo_commit",
+        "passed",
+        "wall_seconds",
+        "claude_turns",
+        "codex_sessions",
+        "codex_reviews",
+        "manual_interventions",
+        "prompt_log_pairs_complete",
+        "ledger_errors",
+        "gate_passed",
+        "report_score",
+        "external_score",
+    )
+    missing = [field for field in required if field not in payload]
+    if missing:
+        raise SystemExit(f"ERROR: benchmark result missing field(s): {', '.join(missing)}")
+    for field in ("suite", "case_id", "plugin_ref", "repo_commit"):
+        value = payload.get(field)
+        if value is not None and not isinstance(value, str):
+            raise SystemExit(f"ERROR: benchmark field {field} must be a string or null")
+    for field in ("passed", "prompt_log_pairs_complete", "gate_passed"):
+        value = payload.get(field)
+        if field == "prompt_log_pairs_complete":
+            if not isinstance(value, bool):
+                raise SystemExit(f"ERROR: benchmark field {field} must be a boolean")
+        elif value is not None and not isinstance(value, bool):
+            raise SystemExit(f"ERROR: benchmark field {field} must be a boolean or null")
+    for field in ("wall_seconds",):
+        value = payload.get(field)
+        if value is not None and (not isinstance(value, (int, float)) or value < 0):
+            raise SystemExit(f"ERROR: benchmark field {field} must be a non-negative number or null")
+    for field in ("claude_turns", "codex_sessions", "codex_reviews", "manual_interventions", "ledger_errors"):
+        value = payload.get(field)
+        if field in {"claude_turns", "manual_interventions"} and value is None:
+            continue
+        if type(value) is not int or value < 0:
+            raise SystemExit(f"ERROR: benchmark field {field} must be a non-negative integer")
+    report_score = payload.get("report_score")
+    if not isinstance(report_score, (int, float)) or not 0 <= report_score <= 1:
+        raise SystemExit("ERROR: benchmark field report_score must be a number from 0 to 1")
+    external_score = payload.get("external_score")
+    if external_score is not None and not isinstance(external_score, dict):
+        raise SystemExit("ERROR: benchmark field external_score must be an object or null")
+
+
+def command_benchmark(args: argparse.Namespace) -> int:
+    directory = run_dir(args.repo, args.run_id)
+    state = load_json(state_path(directory))
+    ledger, ledger_diagnostics = read_jsonl_with_warnings(ledger_path(directory))
+    run_meta = latest_record(ledger, "run_meta") or {}
+    repo = repo_root(args.repo)
+    sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
+    gate_passed = latest_gate_passed(ledger)
+    score = report_completeness_score(state, ledger)
+    payload: dict[str, object] = {
+        "suite": args.suite or string_or_none(run_meta.get("benchmark_suite")),
+        "case_id": args.case_id or string_or_none(run_meta.get("benchmark_case_id")),
+        "plugin_ref": args.plugin_ref or string_or_none(run_meta.get("plugin_git_sha")) or detect_git_sha(repo),
+        "repo_commit": string_or_none(run_meta.get("repo_commit")) or detect_git_sha(repo),
+        "passed": args.passed if args.passed is not None else gate_passed,
+        "wall_seconds": None,
+        "claude_turns": None,
+        "codex_sessions": len(sessions),
+        "codex_reviews": sum(1 for record in ledger if is_final_review_verification(record)),
+        "manual_interventions": None,
+        "prompt_log_pairs_complete": prompt_log_pairs_complete(ledger),
+        "ledger_errors": len(ledger_diagnostics),
+        "gate_passed": gate_passed,
+        "report_score": score["total"],
+        "external_score": None,
+    }
+    validate_benchmark_result(payload)
+    path = benchmark_path(directory)
+    write_json(path, payload, force=True)
+    print_json({"ok": True, "run_id": args.run_id, "benchmark_path": str(path), "benchmark": payload})
     return 0
 
 
@@ -515,6 +885,14 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--run-id", required=True, type=run_id_type, help="Run id / directory name.")
     init_parser.add_argument("--force", action="store_true", help="Overwrite scaffold files.")
     init_parser.set_defaults(func=command_init)
+
+    ensure_parser = subparsers.add_parser("ensure-run", help="Create a run scaffold and upsert run metadata.")
+    ensure_parser.add_argument("--repo", default=".", help="Repository root.")
+    ensure_parser.add_argument("--run-id", required=True, type=run_id_type, help="Run id / directory name.")
+    ensure_parser.add_argument("--plugin-ref", help="Plugin git SHA or ref to record.")
+    ensure_parser.add_argument("--benchmark-suite", help="Benchmark suite name.")
+    ensure_parser.add_argument("--benchmark-case-id", help="Benchmark case id.")
+    ensure_parser.set_defaults(func=command_ensure_run)
 
     status_parser = subparsers.add_parser("status", help="Print compact run status.")
     status_parser.add_argument("--repo", default=".", help="Repository root.")
@@ -555,6 +933,15 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--repo", default=".", help="Repository root.")
     report_parser.add_argument("--run-id", required=True, type=run_id_type)
     report_parser.set_defaults(func=command_report)
+
+    benchmark_parser = subparsers.add_parser("benchmark", help="Write benchmark.json for a run.")
+    benchmark_parser.add_argument("--repo", default=".", help="Repository root.")
+    benchmark_parser.add_argument("--run-id", required=True, type=run_id_type)
+    benchmark_parser.add_argument("--suite", help="Benchmark suite name.")
+    benchmark_parser.add_argument("--case-id", help="Benchmark case id.")
+    benchmark_parser.add_argument("--plugin-ref", help="Plugin git SHA or ref.")
+    benchmark_parser.add_argument("--passed", type=nullable_bool_type, help="Benchmark pass status: true, false, or null.")
+    benchmark_parser.set_defaults(func=command_benchmark)
 
     return parser
 

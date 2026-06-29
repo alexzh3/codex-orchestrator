@@ -33,3 +33,13 @@ LEGACY_CONSENSUS_STATUS_OUTCOMES = {
     "rejected": "user_action_required",
 }
 ALLOWED_LEGACY_CONSENSUS_STATUSES = set(LEGACY_CONSENSUS_STATUS_OUTCOMES)
+
+RUN_META_CONFIG_FIELDS = (
+    "session_reuse_policy",
+    "require_final_codex_review",
+    "require_file_claims",
+)
+RUN_META_CONFIG_BOOLEAN_FIELDS = (
+    "require_final_codex_review",
+    "require_file_claims",
+)
