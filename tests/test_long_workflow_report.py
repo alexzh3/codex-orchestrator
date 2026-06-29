@@ -37,6 +37,7 @@ class LongWorkflowReportTests(unittest.TestCase):
 
         risks_section = self.report_section(result.generated_report, "## Risks / Follow-ups")
         consensus_section = self.report_section(result.generated_report, "## Consensus")
+        gate_section = self.report_section(result.generated_report, "## Gate Result")
         task_graph_section = self.report_section(result.generated_report, "## Task Graph")
         ledger = self.fixture_ledger()
         session_dispatch = [record for record in ledger if record.get("type") == "session_dispatch"]
@@ -69,6 +70,11 @@ class LongWorkflowReportTests(unittest.TestCase):
             "Final Codex review passed with the failed verification documented",
             consensus_section,
         )
+        self.assertIn("- OK: `false`", gate_section)
+        self.assertIn("- Blocking:", gate_section)
+        self.assertIn("  - failed verification remains", gate_section)
+        self.assertIn("  - user-action consensus item remains", gate_section)
+        self.assertIn("- Warnings: none", gate_section)
 
 
 if __name__ == "__main__":

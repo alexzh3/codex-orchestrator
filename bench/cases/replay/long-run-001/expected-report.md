@@ -153,6 +153,14 @@ No authored changes recorded.
     - Session codex-ide-review has low parser confidence.
     - Manual review verified the failed test remains documented.
 
+## Gate Result
+
+- OK: `false`
+- Blocking:
+  - failed verification remains
+  - user-action consensus item remains
+- Warnings: none
+
 ## Risks / Follow-ups
 
 - Session codex-ide-review has low parser confidence.

@@ -18,6 +18,7 @@ EVIDENCE_PLACEHOLDER = "No evidence recorded."
 RISKS_PLACEHOLDER = "No unresolved risks or follow-ups recorded."
 RUN_META_PLACEHOLDER = "No run metadata recorded."
 TASK_GRAPH_PLACEHOLDER = "No task graph records recorded."
+GATE_RESULT_PLACEHOLDER = "No gate result recorded."
 REVIEW_KINDS = {"manual_review", "git_diff"}
 FINAL_REVIEW_KINDS = {"review", "manual_review", "git_diff"}
 SUMMARY_OPEN_ITEM_LIMIT = 140
@@ -163,6 +164,23 @@ def string_list(value: object) -> list[str]:
 def latest_record(ledger: list[dict[str, object]], record_type: str) -> dict[str, object] | None:
     records = [record for record in ledger if record.get("type") == record_type]
     return records[-1] if records else None
+
+
+def gate_result_ok(record: dict[str, object]) -> bool | None:
+    ok = record.get("ok")
+    if isinstance(ok, bool):
+        return ok
+    passed = record.get("passed")
+    if isinstance(passed, bool):
+        return passed
+    result = record.get("result") or record.get("status")
+    if isinstance(result, str):
+        lowered = result.lower()
+        if lowered in {"pass", "passed", "success", "succeeded"}:
+            return True
+        if lowered in {"fail", "failed", "failure"}:
+            return False
+    return None
 
 
 def is_final_review_verification(record: dict[str, object]) -> bool:
@@ -615,6 +633,76 @@ def render_reproducibility(
     lines.append("")
 
 
+def render_gate_result(lines: list[str], ledger: list[dict[str, object]]) -> None:
+    lines.extend(["## Gate Result", ""])
+    record = latest_record(ledger, "gate_result")
+    if not record:
+        lines.extend([GATE_RESULT_PLACEHOLDER, ""])
+        return
+
+    ok = gate_result_ok(record)
+    ok_text = "unknown" if ok is None else str(ok).lower()
+    lines.append(f"- OK: {inline_code(ok_text)}")
+
+    blocking = string_list(record.get("blocking"))
+    if blocking:
+        lines.append("- Blocking:")
+        lines.extend(f"  - {item}" for item in blocking)
+    else:
+        lines.append("- Blocking: none")
+
+    warnings = string_list(record.get("warnings"))
+    if warnings:
+        lines.append("- Warnings:")
+        lines.extend(f"  - {item}" for item in warnings)
+    else:
+        lines.append("- Warnings: none")
+    lines.append("")
+
+
+def has_change_evidence(ledger: list[dict[str, object]]) -> bool:
+    for record in ledger:
+        record_type = record.get("type")
+        if record_type in {"change", "task"}:
+            return True
+        if record_type == "task_checkpoint" and string_list(record.get("files_changed")):
+            return True
+    return False
+
+
+def has_completed_task(ledger: list[dict[str, object]]) -> bool:
+    return any(
+        record.get("type") in {"task", "task_created", "task_updated", "task_checkpoint"}
+        and record.get("status") == "complete"
+        for record in ledger
+    )
+
+
+def strict_report_missing_evidence(
+    *,
+    state: dict[str, object],
+    ledger: list[dict[str, object]],
+    report: str,
+) -> list[str]:
+    del state
+    missing: list[str] = []
+    if RUN_META_PLACEHOLDER in report:
+        missing.append("run metadata")
+    if TASK_GRAPH_PLACEHOLDER in report:
+        missing.append("task graph")
+    if CHANGES_PLACEHOLDER in report and not has_change_evidence(ledger):
+        missing.append("changes evidence")
+    if EVIDENCE_PLACEHOLDER in report:
+        missing.append("verification evidence")
+    if REVIEW_PLACEHOLDER in report:
+        missing.append("review notes")
+    if CONSENSUS_PLACEHOLDER in report:
+        missing.append("consensus or review evidence")
+    if GATE_RESULT_PLACEHOLDER in report and has_completed_task(ledger):
+        missing.append("gate result")
+    return missing
+
+
 def render_report(
     *,
     state: dict[str, object],
@@ -742,6 +830,8 @@ def render_report(
         wrote_consensus_content = True
     if not wrote_consensus_content:
         lines.extend([CONSENSUS_PLACEHOLDER, ""])
+
+    render_gate_result(lines, ledger)
 
     lines.extend(["## Risks / Follow-ups", ""])
     lines.extend(f"- {item}" for item in open_risks) if open_risks else lines.append(RISKS_PLACEHOLDER)

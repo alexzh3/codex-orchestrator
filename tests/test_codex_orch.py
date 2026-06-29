@@ -20,6 +20,7 @@ REPORT_HEADINGS = [
     "## Changes",
     "## Evidence",
     "## Consensus",
+    "## Gate Result",
     "## Risks / Follow-ups",
 ]
 GENERATED_REPORT_HEADINGS = [
@@ -29,6 +30,7 @@ GENERATED_REPORT_HEADINGS = [
     "## Task Graph",
     "## Evidence",
     "## Consensus",
+    "## Gate Result",
     "## Risks / Follow-ups",
 ]
 
@@ -295,6 +297,7 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIn("No authored changes recorded.", self.report_section(report, "## Changes"))
         self.assertIn("No task graph records recorded.", self.report_section(report, "## Task Graph"))
         self.assertIn("No evidence recorded.", report)
+        self.assertIn("No gate result recorded.", self.report_section(report, "## Gate Result"))
         self.assertNotIn("## Final Report", report)
 
         self.run_cli(
@@ -779,6 +782,65 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIn("Manual review note.", self.report_section(second_report, "## Consensus"))
         self.assertIn("Manual consensus note.", self.report_section(second_report, "## Consensus"))
         self.assertEqual(self.normalized_report(first_report), self.normalized_report(second_report))
+
+    def test_report_strict_fails_on_incomplete_run(self) -> None:
+        self.init_run()
+
+        result = self.run_cli("report", "--run-id", "run", "--strict", check=False)
+
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertIn("run metadata", payload["missing"])
+        self.assertIn("task graph", payload["missing"])
+        self.assertIn("changes evidence", payload["missing"])
+        self.assertIn("verification evidence", payload["missing"])
+        self.assertIn("consensus or review evidence", payload["missing"])
+        self.assertNotIn("gate result", payload["missing"])
+
+    def test_report_strict_requires_gate_result_for_completed_task(self) -> None:
+        self.init_run()
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "task_created",
+                    "id": "task-1",
+                    "title": "Complete task without gate",
+                    "status": "complete",
+                }
+            ),
+        )
+
+        result = self.run_cli("report", "--run-id", "run", "--strict", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(payload["ok"])
+        self.assertIn("gate result", payload["missing"])
+
+    def test_report_strict_passes_on_replay_fixture(self) -> None:
+        fixture_dir = ROOT / "bench" / "cases" / "replay" / "long-run-001"
+        run_id = "long-run-001"
+        directory = self.ledger_dir(run_id)
+        directory.mkdir(parents=True)
+        for name in ("state.json", "ledger.jsonl"):
+            (directory / name).write_text((fixture_dir / name).read_text(encoding="utf-8"), encoding="utf-8")
+        (directory / "report.md").write_text("# Report\n\n", encoding="utf-8")
+
+        result = self.run_cli("report", "--run-id", run_id, "--strict")
+        payload = json.loads(result.stdout)
+        report = (directory / "report.md").read_text(encoding="utf-8")
+
+        self.assertTrue(payload["ok"])
+        self.assertNotIn("missing", payload)
+        gate_section = self.report_section(report, "## Gate Result")
+        self.assertIn("- OK: `false`", gate_section)
+        self.assertIn("- Blocking:", gate_section)
+        self.assertIn("  - failed verification remains", gate_section)
+        self.assertIn("- Warnings: none", gate_section)
 
     def normalized_report(self, report: str) -> str:
         return "\n".join(
