@@ -988,6 +988,347 @@ def command_check_conflicts(args: argparse.Namespace) -> int:
     return 0 if report["ok"] else 1
 
 
+UNRESOLVED_VERIFICATION_RESULTS = {"failed", "inconclusive", "needs_human_review"}
+RESOLVING_CONSENSUS_OUTCOMES = {"consensus", "claude_decision"}
+GENERIC_LEDGER_EVENT_TYPES = {"event", "session_dispatch"}
+
+
+def text_value(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def task_id_from_record(record: dict[str, object]) -> str | None:
+    if record.get("type") == "task_checkpoint":
+        return text_value(record.get("task_id"))
+    return text_value(record.get("id"))
+
+
+def task_states(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    tasks: dict[str, dict[str, object]] = {}
+    order: list[str] = []
+
+    def task_for(task_id: str) -> dict[str, object]:
+        if task_id not in tasks:
+            tasks[task_id] = {
+                "id": task_id,
+                "defined": False,
+                "checkpoint_count": 0,
+                "verification_required": [],
+            }
+            order.append(task_id)
+        return tasks[task_id]
+
+    for record in records:
+        record_type = record.get("type")
+        if record_type in {"task", "task_created"}:
+            task_id = task_id_from_record(record)
+            if not task_id:
+                continue
+            task = task_for(task_id)
+            task["defined"] = True
+            for field in ("title", "status", "owner"):
+                value = text_value(record.get(field))
+                if value:
+                    task[field] = value
+            if record_type == "task_created":
+                requirements = record.get("verification_required")
+                if isinstance(requirements, list):
+                    task["verification_required"] = [
+                        item for item in requirements if isinstance(item, str) and item
+                    ]
+        elif record_type == "task_updated":
+            task_id = task_id_from_record(record)
+            if not task_id:
+                continue
+            status = text_value(record.get("status"))
+            if status:
+                task_for(task_id)["status"] = status
+        elif record_type == "task_checkpoint":
+            task_id = task_id_from_record(record)
+            if not task_id:
+                continue
+            task = task_for(task_id)
+            task["checkpoint_count"] = int(task.get("checkpoint_count", 0)) + 1
+            task["latest_checkpoint"] = record
+            task.setdefault("owner", text_value(record.get("agent")))
+            status = text_value(record.get("status"))
+            if status:
+                task["status"] = status
+    return [tasks[task_id] for task_id in order]
+
+
+def consensus_outcome_value(record: dict[str, object]) -> str | None:
+    outcome = text_value(record.get("outcome"))
+    if outcome:
+        return outcome
+    status = text_value(record.get("status"))
+    return LEGACY_CONSENSUS_STATUS_OUTCOMES.get(status or "")
+
+
+def consensus_requires_user(record: dict[str, object]) -> bool:
+    return consensus_outcome_value(record) == "user_action_required" or record.get("requires_user") is True
+
+
+def has_later_overriding_consensus(records: list[dict[str, object]], start_index: int) -> bool:
+    for record in records[start_index + 1 :]:
+        if record.get("type") != "consensus":
+            continue
+        outcome = consensus_outcome_value(record)
+        if outcome in RESOLVING_CONSENSUS_OUTCOMES and record.get("requires_user") is not True:
+            return True
+    return False
+
+
+def unresolved_verification_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    unresolved: list[dict[str, object]] = []
+    for index, record in enumerate(records):
+        if record.get("type") != "verification":
+            continue
+        if record.get("result") not in UNRESOLVED_VERIFICATION_RESULTS:
+            continue
+        if has_later_overriding_consensus(records, index):
+            continue
+        unresolved.append(record)
+    return unresolved
+
+
+def verification_label(record: dict[str, object]) -> str:
+    kind = text_value(record.get("kind")) or "verification"
+    result = text_value(record.get("result")) or "unknown"
+    summary = text_value(record.get("summary"))
+    if summary:
+        return f"{kind} verification ({result}): {summary}"
+    return f"{kind} verification ({result})"
+
+
+def requirement_satisfied(records: list[dict[str, object]], task_id: str, requirement: str) -> bool:
+    for record in records:
+        if record.get("result") != "passed":
+            continue
+        record_type = record.get("type")
+        if record_type == "verification":
+            if requirement in {
+                text_value(record.get("kind")),
+                text_value(record.get("command")),
+                text_value(record.get("summary")),
+            }:
+                return True
+        elif record_type == "review":
+            review_task_id = text_value(record.get("task_id"))
+            if review_task_id and review_task_id != task_id:
+                continue
+            if requirement in {
+                text_value(record.get("kind")),
+                text_value(record.get("command")),
+                text_value(record.get("summary")),
+            }:
+                return True
+    return False
+
+
+def has_passing_final_review(records: list[dict[str, object]]) -> bool:
+    for record in records:
+        if record.get("type") == "review" and record.get("result") == "passed":
+            return True
+        if is_final_review_verification(record) and record.get("result") == "passed":
+            return True
+    return False
+
+
+def parse_recorded_at(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def latest_recorded_at(records: list[dict[str, object]]) -> datetime | None:
+    timestamps = [parsed for record in records if (parsed := parse_recorded_at(record.get("recorded_at")))]
+    return max(timestamps) if timestamps else None
+
+
+def report_freshness_issue(directory: Path, records: list[dict[str, object]]) -> str | None:
+    latest = latest_recorded_at(records)
+    if latest is None:
+        return None
+    path = report_path(directory)
+    if not path.exists():
+        return "missing-report: report.md does not exist"
+    report_mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    if report_mtime < latest:
+        return "stale-report: report.md is older than the latest ledger event"
+    return None
+
+
+def low_confidence_warnings(state: dict[str, object]) -> list[str]:
+    warnings: list[str] = []
+    sessions = state.get("sessions")
+    if not isinstance(sessions, list):
+        return warnings
+    for session in sessions:
+        if not isinstance(session, dict) or session.get("parse_confidence") != "low":
+            continue
+        name = text_value(session.get("name")) or "<unnamed>"
+        warnings.append(f"low-parser-confidence: session {name} has low parser confidence")
+    return warnings
+
+
+def gate_blocking_reasons(directory: Path, records: list[dict[str, object]], diagnostics: list[dict[str, object]]) -> list[str]:
+    blocking: list[str] = []
+    for diagnostic in diagnostics:
+        blocking.append(
+            f"malformed-ledger: ledger.jsonl line {diagnostic.get('line_no')}: {diagnostic.get('error')}"
+        )
+
+    freshness_issue = report_freshness_issue(directory, records)
+    if freshness_issue:
+        blocking.append(freshness_issue)
+
+    tasks = task_states(records)
+    run_closed = any(record.get("type") == "run_closed" for record in records)
+    if not run_closed:
+        for task in tasks:
+            if not task.get("defined"):
+                continue
+            status = text_value(task.get("status")) or "unknown"
+            if status not in TERMINAL_TASK_STATUSES:
+                blocking.append(f"active-task: task {task['id']} status {status} is not terminal")
+
+    for task in tasks:
+        if not task.get("defined"):
+            continue
+        if task.get("status") == "complete" and int(task.get("checkpoint_count", 0)) == 0:
+            blocking.append(f"missing-checkpoint: completed task {task['id']} has no task_checkpoint")
+
+    for task in tasks:
+        if task.get("status") != "complete":
+            continue
+        task_id = str(task["id"])
+        for requirement in task.get("verification_required", []):
+            if isinstance(requirement, str) and not requirement_satisfied(records, task_id, requirement):
+                blocking.append(f"unmet-verification: task {task_id} requires {requirement}")
+
+    for record in unresolved_verification_records(records):
+        blocking.append(f"unresolved-verification: {verification_label(record)} has no overriding consensus")
+
+    for record in records:
+        if record.get("type") != "consensus" or not consensus_requires_user(record):
+            continue
+        finding = text_value(record.get("finding") or record.get("summary")) or "consensus record"
+        blocking.append(f"unresolved-consensus: {finding} requires user action")
+
+    if not has_passing_final_review(records):
+        blocking.append("missing-final-review: no passing review or manual_review/git_diff verification recorded")
+    return blocking
+
+
+def command_gate(args: argparse.Namespace) -> int:
+    directory = run_dir(args.repo, args.run_id)
+    state = load_json(state_path(directory))
+    records, diagnostics = read_jsonl_with_warnings(ledger_path(directory))
+    blocking = gate_blocking_reasons(directory, records, diagnostics)
+    payload = {
+        "ok": not blocking,
+        "blocking": blocking,
+        "warnings": low_confidence_warnings(state),
+    }
+    record = {"type": "gate_result", "ok": payload["ok"], "blocking": blocking, "warnings": payload["warnings"]}
+    validate_ledger_event(record)
+    append_jsonl(ledger_path(directory), record)
+    print_json(payload)
+    return 0 if payload["ok"] else 1
+
+
+def task_has_verification(records: list[dict[str, object]], task_id: str) -> bool:
+    for record in records:
+        if record.get("type") == "verification":
+            return True
+        if record.get("type") == "review" and text_value(record.get("task_id")) == task_id:
+            return True
+    return False
+
+
+def accepted_run(state: dict[str, object], records: list[dict[str, object]]) -> bool:
+    if state.get("status") == "accepted":
+        return True
+    for record in reversed(records):
+        if record.get("type") == "run_closed":
+            return record.get("status") == "accepted"
+    return False
+
+
+def schema_event_issues(records: list[dict[str, object]]) -> list[str]:
+    issues: list[str] = []
+    for index, record in enumerate(records, start=1):
+        event_type = record.get("type")
+        if not isinstance(event_type, str) or not event_type:
+            issues.append(f"invalid-event: record {index} has no event type")
+            continue
+        if event_type in LEDGER_EVENT_SCHEMAS:
+            try:
+                validate_ledger_event(dict(record))
+            except SystemExit as exc:
+                issues.append(f"invalid-event: record {index} ({event_type}): {exc}")
+        elif event_type not in GENERIC_LEDGER_EVENT_TYPES:
+            issues.append(f"unknown-event: record {index} has unknown event type {event_type}")
+    return issues
+
+
+def dispatch_path_issues(records: list[dict[str, object]]) -> list[str]:
+    issues: list[str] = []
+    for record in records:
+        if record.get("type") not in {"dispatch_started", "session_dispatch"}:
+            continue
+        missing = [field for field in ("prompt_path", "log_path") if not text_value(record.get(field))]
+        if not missing:
+            continue
+        task_id = text_value(record.get("task_id")) or text_value(record.get("session")) or "<unknown>"
+        issues.append(f"dispatch-missing-paths: dispatch {task_id} missing {', '.join(missing)}")
+    return issues
+
+
+def doctor_issues(directory: Path, state: dict[str, object], records: list[dict[str, object]], diagnostics: list[dict[str, object]]) -> list[str]:
+    issues: list[str] = []
+    for diagnostic in diagnostics:
+        issues.append(
+            f"malformed-ledger: ledger.jsonl line {diagnostic.get('line_no')}: {diagnostic.get('error')}"
+        )
+    issues.extend(schema_event_issues(records))
+    issues.extend(dispatch_path_issues(records))
+
+    tasks = task_states(records)
+    for task in tasks:
+        if task.get("defined") and int(task.get("checkpoint_count", 0)) == 0:
+            issues.append(f"missing-checkpoint: task {task['id']} has no task_checkpoint")
+    for task in tasks:
+        if task.get("status") == "complete" and not task_has_verification(records, str(task["id"])):
+            issues.append(f"missing-verification: completed task {task['id']} has no verification/review evidence")
+
+    if accepted_run(state, records):
+        for record in unresolved_verification_records(records):
+            issues.append(f"accepted-run-unresolved-check: {verification_label(record)}")
+
+    freshness_issue = report_freshness_issue(directory, records)
+    if freshness_issue:
+        issues.append(freshness_issue)
+    return issues
+
+
+def command_doctor(args: argparse.Namespace) -> int:
+    directory = run_dir(args.repo, args.run_id)
+    state = load_json(state_path(directory))
+    records, diagnostics = read_jsonl_with_warnings(ledger_path(directory))
+    issues = doctor_issues(directory, state, records, diagnostics)
+    print_json({"ok": not issues, "issues": issues})
+    return 0 if not issues else 1
+
+
 def command_status(args: argparse.Namespace) -> int:
     directory = run_dir(args.repo, args.run_id)
     state = load_json(state_path(directory))
@@ -1230,6 +1571,16 @@ def build_parser() -> argparse.ArgumentParser:
     conflicts_parser.add_argument("--repo", default=".", help="Repository root.")
     conflicts_parser.add_argument("--run-id", required=True, type=run_id_type)
     conflicts_parser.set_defaults(func=command_check_conflicts)
+
+    gate_parser = subparsers.add_parser("gate", help="Evaluate whether a run is ready for acceptance.")
+    gate_parser.add_argument("--repo", default=".", help="Repository root.")
+    gate_parser.add_argument("--run-id", required=True, type=run_id_type)
+    gate_parser.set_defaults(func=command_gate)
+
+    doctor_parser = subparsers.add_parser("doctor", help="Check run ledger integrity without mutating it.")
+    doctor_parser.add_argument("--repo", default=".", help="Repository root.")
+    doctor_parser.add_argument("--run-id", required=True, type=run_id_type)
+    doctor_parser.set_defaults(func=command_doctor)
 
     worktree_parser = subparsers.add_parser("worktree", help="Create a Codex worktree and register it.")
     worktree_parser.add_argument("--name", required=True, type=name_type, help="Session name, for example codex-a.")
