@@ -1,3 +1,4 @@
 .codex-orchestrator/
 __pycache__/
 *.pyc
+refactor_plan.md
