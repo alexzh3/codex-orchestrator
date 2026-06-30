@@ -209,6 +209,72 @@ class TaskProtocolTests(unittest.TestCase):
         self.assertEqual(records[-1]["forbid"], ["scripts/codex_orch_report.py"])
         self.assertIn("recorded_at", records[-1])
 
+    def test_add_verification_task_scope_only_satisfies_matching_task(self) -> None:
+        self.init_run()
+        for task_id in ("task-a", "task-b"):
+            self.append_event(
+                {
+                    "type": "task_created",
+                    "id": task_id,
+                    "title": f"Task {task_id}",
+                    "status": "complete",
+                    "verification_required": ["test"],
+                }
+            )
+            self.append_event(
+                {
+                    "type": "task_checkpoint",
+                    "task_id": task_id,
+                    "agent": "codex",
+                    "status": "complete",
+                    "summary": f"Completed {task_id}.",
+                    "files_changed": [],
+                }
+            )
+        self.run_cli(
+            "add-verification",
+            "--repo",
+            str(self.repo),
+            "--run-id",
+            "run",
+            "--kind",
+            "test",
+            "--result",
+            "passed",
+            "--summary",
+            "Scoped unit tests passed",
+            "--task-id",
+            "task-a",
+            "--scope",
+            "task",
+        )
+        self.run_cli(
+            "add-verification",
+            "--repo",
+            str(self.repo),
+            "--run-id",
+            "run",
+            "--kind",
+            "manual_review",
+            "--result",
+            "passed",
+            "--summary",
+            "Final review passed",
+        )
+
+        verification = [record for record in self.ledger_records() if record.get("summary") == "Scoped unit tests passed"]
+        self.assertEqual(len(verification), 1)
+        self.assertEqual(verification[0]["task_id"], "task-a")
+        self.assertEqual(verification[0]["scope"], "task")
+
+        self.run_cli("report", "--repo", str(self.repo), "--run-id", "run")
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assertIn("unmet-verification: task task-b requires test", payload["blocking"])
+        self.assertNotIn("unmet-verification: task task-a requires test", payload["blocking"])
+
     def test_check_conflicts_reports_ok_for_disjoint_active_claims(self) -> None:
         self.init_run()
         self.run_cli(

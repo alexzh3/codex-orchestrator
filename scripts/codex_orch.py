@@ -809,6 +809,12 @@ def command_add_verification(args: argparse.Namespace) -> int:
         record["artifacts"] = args.artifact
     if args.notes:
         record["notes"] = args.notes
+    if args.task_id:
+        record["task_id"] = args.task_id
+    if args.covers_tasks:
+        record["covers_tasks"] = args.covers_tasks
+    if args.scope:
+        record["scope"] = args.scope
     append_jsonl(ledger_path(directory), record)
     print_json({"ok": True, "verification": record})
     return 0
@@ -1784,6 +1790,14 @@ def build_parser() -> argparse.ArgumentParser:
     verification_parser.add_argument("--exit-code", type=int)
     verification_parser.add_argument("--artifact", action="append", default=[])
     verification_parser.add_argument("--notes")
+    verification_parser.add_argument("--task-id", help="Scope this verification to a task id.")
+    verification_parser.add_argument(
+        "--covers-tasks",
+        action="append",
+        default=[],
+        help="Extra task id this verification also covers; repeatable.",
+    )
+    verification_parser.add_argument("--scope", choices=VERIFICATION_SCOPE_ORDER)
     verification_parser.set_defaults(func=command_add_verification)
 
     append_parser = subparsers.add_parser("append-event", help="Append a schema-checked JSON event to ledger.jsonl.")
