@@ -112,6 +112,7 @@ def build_claude_argv(case: dict[str, object], plugin_ref: str, *, work_dir: Pat
         str(max_budget),
         "--output-format",
         "stream-json",
+        "--verbose",
         f"/codex-orchestrator:workflow {prompt}",
     ]
 
