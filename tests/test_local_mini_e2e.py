@@ -76,6 +76,7 @@ class LocalMiniE2ETests(unittest.TestCase):
         self.assertIn("--plugin-dir", argv)
         self.assertIn("--permission-mode", argv)
         self.assertEqual(argv[argv.index("--permission-mode") + 1], "bypassPermissions")
+        # Claude exposes no --max-turns flag; max_turns only bounds the dry-run simulation.
         self.assertNotIn("--max-turns", argv)
         self.assertIn("--max-budget-usd", argv)
         self.assertIn(str(case["max_budget_usd"]), argv)

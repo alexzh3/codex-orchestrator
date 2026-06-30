@@ -199,6 +199,17 @@ class RealAdapterTests(unittest.TestCase):
         self.assertEqual(target_repo, cached_repo.resolve())
         self.assertEqual(target_ref, "HEAD")
 
+    def test_base_commit_without_repo_locator_falls_back_to_repo_root(self) -> None:
+        case = {
+            "id": "metadata-only",
+            "base_commit": "abc123",
+        }
+
+        target_repo, target_ref = resolve_target_repo(case, ROOT)
+
+        self.assertEqual(target_repo, ROOT)
+        self.assertEqual(target_ref, "abc123")
+
     def test_adapter_passes_suite_to_run_claude_case(self) -> None:
         adapter = RExBenchAdapter()
         case = {

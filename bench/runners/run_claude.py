@@ -165,7 +165,7 @@ def _case_requires_target_repo(case: dict[str, object]) -> bool:
 def _case_declares_target_repo(case: dict[str, object]) -> bool:
     return any(
         _string_value(case.get(field))
-        for field in ("repo", "repo_url", "target_repo_path", "base_commit", "environment_setup_commit")
+        for field in ("repo", "repo_url", "target_repo_path")
     )
 
 

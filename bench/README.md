@@ -57,7 +57,12 @@ Each task descriptor may provide:
 - `difficulty`, `difficulty_score`, or `difficulty_band` as the fallback sort
 - `files_allowed` for the runner allowlist; defaults to `*` and `**/*`
 - `acceptance.command` or `grader_command` for the external grader command
-- optional `start_ref`, `timeout_seconds`, `max_turns`, and `max_budget_usd`
+- optional run controls: `start_ref`, `timeout_seconds`, `max_budget_usd`,
+  and `max_turns`
+  - `max_budget_usd` is forwarded to real `claude` as `--max-budget-usd`
+  - `max_turns` only bounds the simulated `claude_turns` count in dry-run
+    mode; it is not forwarded to real `claude` because the CLI exposes no
+    turn-limit flag
 - target checkout fields for real external runs:
   - `target_repo_path`: local clone to use directly; relative paths resolve
     from the dataset directory
