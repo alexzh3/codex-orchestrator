@@ -163,6 +163,12 @@ class Adapter:
         task["selection"] = selection
         task["prompt"] = prompt
         task["_dataset_dir"] = str(dataset_dir)
+        target_repo_path = _string_value(task.get("target_repo_path"))
+        if target_repo_path:
+            path = Path(target_repo_path).expanduser()
+            if not path.is_absolute():
+                path = dataset_dir / path
+            task["target_repo_path"] = str(path)
         if "files_allowed" not in task:
             allowed = task.get("allowed_files")
             task["files_allowed"] = allowed if isinstance(allowed, list) else ["*", "**/*"]
@@ -211,10 +217,15 @@ class Adapter:
         files_allowed = task.get("files_allowed")
         if files_allowed is None:
             files_allowed = ["*", "**/*"]
-        return {
+        case = {
             "id": task_id,
             "suite": self.name,
-            "start_ref": _string_value(task.get("start_ref")) or _string_value(task.get("base_ref")) or self.default_start_ref,
+            "start_ref": (
+                _string_value(task.get("start_ref"))
+                or _string_value(task.get("base_ref"))
+                or _string_value(task.get("base_commit"))
+                or self.default_start_ref
+            ),
             "prompt": _string_field(task, "prompt"),
             "files_allowed": _string_list_value(files_allowed, field="files_allowed"),
             "acceptance": {
@@ -223,7 +234,21 @@ class Adapter:
             "timeout_seconds": _int_value(task.get("timeout_seconds"), self.default_timeout_seconds),
             "max_turns": _int_value(task.get("max_turns"), self.default_max_turns),
             "max_budget_usd": _number_value(task.get("max_budget_usd"), self.max_budget_usd),
+            "requires_target_repo": True,
         }
+        for field in (
+            "repo",
+            "repo_url",
+            "target_repo_path",
+            "base_commit",
+            "base_ref",
+            "instance_id",
+            "environment_setup_commit",
+        ):
+            value = _string_value(task.get(field))
+            if value:
+                case[field] = value
+        return case
 
     def _acceptance_command(self, task: TaskDescriptor, work_dir: Path) -> str:
         template = ""
@@ -257,7 +282,7 @@ class Adapter:
         repo_root: Path,
         work_dir: Path,
     ) -> dict[str, object]:
-        return run_claude_case(case, plugin_ref, dry_run=False, repo_root=repo_root, work_dir=work_dir)
+        return run_claude_case(case, plugin_ref, dry_run=False, repo_root=repo_root, work_dir=work_dir, suite=self.name)
 
     def _grade(
         self,

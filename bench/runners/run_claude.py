@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import fnmatch
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -22,6 +23,7 @@ from codex_orch import validate_benchmark_result  # noqa: E402
 
 BENCHMARK_SCHEMA = ROOT / "schemas" / "benchmark-result.schema.json"
 LOCAL_MINI_SUITE = "local-mini"
+TARGET_REPO_CACHE_ENV = "CODEX_ORCH_BENCH_REPO_CACHE"
 
 
 def load_case(path: Path) -> dict[str, object]:
@@ -138,6 +140,143 @@ def _git_lines(args: list[str], *, cwd: Path) -> list[str]:
     return [line.strip() for line in output.splitlines() if line.strip()]
 
 
+def _string_value(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _case_requires_target_repo(case: dict[str, object]) -> bool:
+    value = case.get("requires_target_repo")
+    if type(value) is bool:
+        return value
+    suite = case.get("suite")
+    return isinstance(suite, str) and bool(suite) and suite != LOCAL_MINI_SUITE
+
+
+def _case_declares_target_repo(case: dict[str, object]) -> bool:
+    return any(
+        _string_value(case.get(field))
+        for field in ("repo", "repo_url", "target_repo_path", "base_commit", "environment_setup_commit")
+    )
+
+
+def _target_ref(case: dict[str, object]) -> str:
+    return (
+        _string_value(case.get("base_commit"))
+        or _string_value(case.get("base_ref"))
+        or _string_field(case, "start_ref")
+    )
+
+
+def _is_git_repo(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    return (
+        _git_output(["rev-parse", "--is-inside-work-tree"], cwd=path) == "true"
+        or _git_output(["rev-parse", "--is-bare-repository"], cwd=path) == "true"
+    )
+
+
+def _target_repo_error(case: dict[str, object], detail: str) -> str:
+    case_id = _string_field(case, "id")
+    return (
+        f"target repo for case {case_id!r} cannot be resolved: {detail}. "
+        f"Set target_repo_path to a local clone or prepare {TARGET_REPO_CACHE_ENV}. "
+        "Required infra: target repository checkout."
+    )
+
+
+def _target_repo_path_source(case: dict[str, object]) -> Path | None:
+    raw_path = _string_value(case.get("target_repo_path"))
+    if not raw_path:
+        return None
+    path = Path(raw_path).expanduser()
+    if not path.is_dir():
+        raise RuntimeError(_target_repo_error(case, f"target_repo_path is not a directory: {path}"))
+    if not _is_git_repo(path):
+        raise RuntimeError(_target_repo_error(case, f"target_repo_path is not a git repository: {path}"))
+    return path.resolve()
+
+
+def _repo_path_source(case: dict[str, object]) -> Path | None:
+    for field in ("repo_url", "repo"):
+        raw_value = _string_value(case.get(field))
+        if not raw_value:
+            continue
+        path = Path(raw_value).expanduser()
+        if (path.is_absolute() or path.exists()) and _is_git_repo(path):
+            return path.resolve()
+    return None
+
+
+def _cache_candidates(repo: str | None, repo_url: str | None, cache_dir: Path) -> list[Path]:
+    candidates: list[Path] = []
+    for raw_value in (repo, repo_url):
+        if not raw_value:
+            continue
+        normalized = raw_value.rstrip("/")
+        if normalized.endswith(".git"):
+            normalized = normalized[:-4]
+        name = Path(normalized).name
+        if "://" not in raw_value:
+            candidates.append(cache_dir / raw_value)
+        candidates.append(cache_dir / raw_value.replace("/", "__").replace(":", "_"))
+        if name:
+            candidates.append(cache_dir / name)
+        candidates.append(cache_dir / _safe_name(raw_value))
+
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key not in seen:
+            seen.add(key)
+            unique.append(candidate)
+    return unique
+
+
+def _cached_repo_source(case: dict[str, object]) -> Path | None:
+    repo = _string_value(case.get("repo"))
+    repo_url = _string_value(case.get("repo_url"))
+    if not (repo or repo_url):
+        return None
+
+    raw_cache_dir = os.environ.get(TARGET_REPO_CACHE_ENV, "")
+    if not raw_cache_dir:
+        raise NotImplementedError(
+            _target_repo_error(case, f"descriptor declares repo={repo!r} repo_url={repo_url!r} but no cache is configured")
+        )
+
+    cache_dir = Path(raw_cache_dir).expanduser()
+    if not cache_dir.is_dir():
+        raise RuntimeError(_target_repo_error(case, f"{TARGET_REPO_CACHE_ENV} is not a directory: {cache_dir}"))
+
+    for candidate in _cache_candidates(repo, repo_url, cache_dir):
+        if _is_git_repo(candidate):
+            return candidate.resolve()
+    raise NotImplementedError(
+        _target_repo_error(
+            case,
+            f"{TARGET_REPO_CACHE_ENV} contains no prepared clone for repo={repo!r} repo_url={repo_url!r}",
+        )
+    )
+
+
+def resolve_target_repo(case: dict[str, object], repo_root: Path) -> tuple[Path, str]:
+    ref = _target_ref(case)
+    source = _target_repo_path_source(case) or _repo_path_source(case)
+    if source is not None:
+        return source, ref
+
+    if _string_value(case.get("repo")) or _string_value(case.get("repo_url")):
+        cached = _cached_repo_source(case)
+        if cached is not None:
+            return cached, ref
+
+    if _case_requires_target_repo(case) or _case_declares_target_repo(case):
+        raise NotImplementedError(_target_repo_error(case, "descriptor has no resolvable target repository"))
+    return repo_root, ref
+
+
 def _normalize_relative_path(path: str) -> str:
     normalized = path.replace("\\", "/")
     while normalized.startswith("./"):
@@ -181,7 +320,7 @@ def _add_worktree(repo_root: Path, ref: str, *, prefix: str, work_dir: Path) -> 
         stderr=subprocess.PIPE,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"git worktree add failed for {ref}: {result.stderr.strip()}")
+        raise RuntimeError(f"git worktree add failed for {ref} from {repo_root}: {result.stderr.strip()}")
     return destination
 
 
@@ -212,6 +351,7 @@ def _generate_benchmark_sidecar(
     case_id: str,
     plugin_ref: str,
     timeout_seconds: int,
+    suite: str = LOCAL_MINI_SUITE,
 ) -> tuple[Path | None, str | None]:
     run_dir = _newest_run_dir(target_dir)
     if run_dir is None:
@@ -232,7 +372,7 @@ def _generate_benchmark_sidecar(
                 "--run-id",
                 run_dir.name,
                 "--suite",
-                LOCAL_MINI_SUITE,
+                suite,
                 "--case-id",
                 case_id,
                 "--plugin-ref",
@@ -304,6 +444,7 @@ def assemble_real_result(
     case: dict[str, object],
     plugin_ref: str,
     *,
+    suite: str = LOCAL_MINI_SUITE,
     repo_commit: str | None,
     wall_seconds: float,
     sidecar: dict[str, object],
@@ -339,7 +480,7 @@ def assemble_real_result(
         failure_reasons.append(f"forbidden-file violation: {', '.join(forbidden_paths)}")
 
     payload: dict[str, object] = {
-        "suite": LOCAL_MINI_SUITE,
+        "suite": suite,
         "case_id": _string_field(case, "id"),
         "plugin_ref": plugin_ref,
         "repo_commit": repo_commit,
@@ -420,12 +561,14 @@ def _real_payload(
     *,
     repo_root: Path,
     work_dir: Path,
+    suite: str = LOCAL_MINI_SUITE,
 ) -> dict[str, object]:
     case_id = _string_field(case, "id")
     timeout_seconds = _int_field(case, "timeout_seconds")
     acceptance_command = _acceptance_command(case)
-    start_ref = _string_field(case, "start_ref")
+    target_repo, target_ref = resolve_target_repo(case, repo_root)
     target_dir: Path | None = None
+    target_repo_for_cleanup: Path | None = None
     plugin_dir: Path | None = None
     remove_plugin_worktree = False
     started = time.perf_counter()
@@ -436,11 +579,12 @@ def _real_payload(
 
     try:
         target_dir = _add_worktree(
-            repo_root,
-            start_ref,
+            target_repo,
+            target_ref,
             prefix=f"target-{_safe_name(case_id)}-",
             work_dir=work_dir,
         )
+        target_repo_for_cleanup = target_repo
         if Path(plugin_ref).expanduser().exists():
             plugin_dir = plugin_ref_dir(plugin_ref, work_dir)
         else:
@@ -494,12 +638,14 @@ def _real_payload(
             case_id=case_id,
             plugin_ref=plugin_ref,
             timeout_seconds=timeout_seconds,
+            suite=suite,
         )
         sidecar = _load_sidecar(sidecar_path)
         repo_commit = _git_output(["rev-parse", "HEAD"], cwd=target_dir)
         return assemble_real_result(
             case,
             plugin_ref,
+            suite=suite,
             repo_commit=repo_commit,
             wall_seconds=time.perf_counter() - started,
             sidecar=sidecar,
@@ -517,8 +663,8 @@ def _real_payload(
     finally:
         if remove_plugin_worktree and plugin_dir is not None:
             _remove_worktree(repo_root, plugin_dir)
-        if target_dir is not None:
-            _remove_worktree(repo_root, target_dir)
+        if target_dir is not None and target_repo_for_cleanup is not None:
+            _remove_worktree(target_repo_for_cleanup, target_dir)
 
 
 def run_case(
@@ -528,8 +674,9 @@ def run_case(
     dry_run: bool,
     repo_root: Path,
     work_dir: Path,
+    suite: str = LOCAL_MINI_SUITE,
 ) -> dict[str, object]:
     loaded_case = _case_dict(case)
     if dry_run:
         return _dry_run_payload(loaded_case, plugin_ref, work_dir=work_dir)
-    return _real_payload(loaded_case, plugin_ref, repo_root=repo_root, work_dir=work_dir)
+    return _real_payload(loaded_case, plugin_ref, repo_root=repo_root, work_dir=work_dir, suite=suite)

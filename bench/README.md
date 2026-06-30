@@ -45,6 +45,8 @@ through the orchestrator workflow and spends Claude+Codex budget. The adapters
 only read local dataset files; they do not download datasets or install graders.
 If a dataset or grader is missing, real mode raises a clear `RuntimeError`
 naming the env var, expected layout, required infra, and tracking issue.
+External real-mode tasks run in the benchmark target repository, not in this
+plugin repository. The plugin repository is still used as `--plugin-dir`.
 
 Each task descriptor may provide:
 
@@ -56,6 +58,23 @@ Each task descriptor may provide:
 - `files_allowed` for the runner allowlist; defaults to `*` and `**/*`
 - `acceptance.command` or `grader_command` for the external grader command
 - optional `start_ref`, `timeout_seconds`, `max_turns`, and `max_budget_usd`
+- target checkout fields for real external runs:
+  - `target_repo_path`: local clone to use directly; relative paths resolve
+    from the dataset directory
+  - `base_commit`: preferred target checkout ref, such as a SWE-bench base
+    commit
+  - `repo_url`: repository URL used to locate a prepared local clone
+  - `repo`: repository identifier or local path, such as `owner/name`
+  - `instance_id` and `environment_setup_commit`: preserved for SWE-bench
+    descriptors and grader command placeholders
+
+When `target_repo_path` is absent, `repo_url` or `repo` can be resolved through
+`CODEX_ORCH_BENCH_REPO_CACHE`, which must point at a directory containing
+prepared local clones. The resolver checks common cache names such as
+`owner/name`, `owner__name`, the repository basename, and a stable safe name. If
+an external task declares a target that cannot be resolved or checked out, real
+mode raises `NotImplementedError` or `RuntimeError`; it never falls back to
+running the task in the plugin repository.
 
 Grader commands run from the temporary target worktree created by the runner.
 They may use `{task_id}`, `{id}`, `{case_id}`, `{work_dir}`, and

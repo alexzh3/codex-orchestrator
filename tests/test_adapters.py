@@ -140,6 +140,59 @@ class RealAdapterTests(unittest.TestCase):
 
         self.assertEqual(case["files_allowed"], [])
 
+    def test_case_from_task_carries_target_repo_descriptor_fields(self) -> None:
+        adapter = SWEBenchVerifiedMiniAdapter()
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_dir = Path(tmp) / "dataset"
+            work_dir = Path(tmp) / "work"
+            dataset_dir.mkdir()
+            work_dir.mkdir()
+            task = adapter._normalize_task(
+                {
+                    "instance_id": "swe-1",
+                    "repo": "example/project",
+                    "repo_url": "https://example.invalid/example/project.git",
+                    "target_repo_path": "target-project",
+                    "base_commit": "abc123",
+                    "environment_setup_commit": "def456",
+                    "problem_statement": "Fix the target repo.",
+                    "acceptance": {"command": "true"},
+                },
+                dataset_dir,
+                "lowest_success_rate",
+            )
+            case = adapter._case_from_task(task, work_dir)
+
+        self.assertEqual(case["id"], "swe-1")
+        self.assertEqual(case["instance_id"], "swe-1")
+        self.assertEqual(case["repo"], "example/project")
+        self.assertEqual(case["repo_url"], "https://example.invalid/example/project.git")
+        self.assertEqual(case["target_repo_path"], str(dataset_dir / "target-project"))
+        self.assertEqual(case["base_commit"], "abc123")
+        self.assertEqual(case["start_ref"], "abc123")
+        self.assertEqual(case["environment_setup_commit"], "def456")
+        self.assertIs(case["requires_target_repo"], True)
+
+    def test_adapter_passes_suite_to_run_claude_case(self) -> None:
+        adapter = RExBenchAdapter()
+        case = {
+            "id": "suite-task",
+            "suite": adapter.name,
+            "start_ref": "main",
+            "prompt": "Run the task.",
+            "files_allowed": ["*"],
+            "acceptance": {"command": "true"},
+            "timeout_seconds": 1,
+            "max_turns": 1,
+            "max_budget_usd": 1,
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("bench.adapters.base.run_claude_case", return_value=self.runner_result("suite-task")) as run_mock:
+                adapter._run_claude_case(case, "demo", repo_root=ROOT, work_dir=Path(tmp))
+
+        self.assertEqual(run_mock.call_args.kwargs["suite"], adapter.name)
+
     def test_run_task_uses_runner_and_grader_hooks_for_schema_valid_result(self) -> None:
         for adapter, filename, id_field, prompt_field in ADAPTERS:
             with self.subTest(adapter=adapter.name), tempfile.TemporaryDirectory() as tmp:
