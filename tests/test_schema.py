@@ -20,6 +20,7 @@ from codex_orch_contract import (  # noqa: E402
     SESSION_STATUS_ORDER,
     STATE_STATUS_ORDER,
     TASK_STATUS_ORDER,
+    VERIFICATION_SCOPE_ORDER,
 )
 
 SCHEMA = ROOT / "schemas" / "codex-orchestrator.schema.json"
@@ -110,6 +111,10 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(
             defs["verification_event"]["properties"]["result"]["enum"],
             list(ALLOWED_VERIFICATION_RESULTS),
+        )
+        self.assertEqual(
+            defs["verification_event"]["properties"]["scope"]["enum"],
+            list(VERIFICATION_SCOPE_ORDER),
         )
         self.assertEqual(
             defs["consensus_event"]["properties"]["outcome"]["enum"],

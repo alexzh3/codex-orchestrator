@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from codex_orch_contract import (
     ALLOWED_LEGACY_CONSENSUS_STATUSES,
@@ -25,6 +25,7 @@ from codex_orch_contract import (
     SESSION_STATUS_ORDER,
     STATE_STATUS_ORDER,
     TASK_STATUS_ORDER,
+    VERIFICATION_SCOPE_ORDER,
 )
 from codex_orch_report import (
     is_final_review_verification,
@@ -248,14 +249,15 @@ LEDGER_EVENT_SCHEMAS = {
     "verification": {
         "timestamp": True,
         "required": ("type", "kind", "result", "recorded_at", "summary"),
-        "strings": ("type", "recorded_at", "summary", "command", "notes"),
+        "strings": ("type", "recorded_at", "summary", "command", "notes", "task_id"),
         "enums": {
             "kind": ALLOWED_VERIFICATION_KINDS,
             "result": ALLOWED_VERIFICATION_RESULTS,
+            "scope": VERIFICATION_SCOPE_ORDER,
         },
         "ints": ("exit_code",),
         "bools": ("stochastic",),
-        "string_arrays": ("artifacts",),
+        "string_arrays": ("artifacts", "covers_tasks"),
         "scalar_maps": ("thresholds",),
     },
     "consensus": {
@@ -278,7 +280,7 @@ LEDGER_EVENT_SCHEMAS = {
     "task_created": {
         "timestamp": True,
         "required": ("type", "id", "title", "status"),
-        "strings": ("type", "id", "title", "owner", "recorded_at"),
+        "strings": ("type", "id", "title", "owner", "recorded_at", "goal"),
         "enums": {"status": TASK_STATUS_ORDER},
         "string_arrays": (
             "depends_on",
@@ -286,6 +288,8 @@ LEDGER_EVENT_SCHEMAS = {
             "files_forbidden",
             "acceptance",
             "verification_required",
+            "context",
+            "constraints",
         ),
     },
     "task_updated": {
@@ -351,6 +355,7 @@ LEDGER_EVENT_SCHEMAS = {
             "kind": REVIEW_KIND_ORDER,
             "result": ALLOWED_VERIFICATION_RESULTS,
         },
+        "bools": ("final",),
         "string_arrays": ("findings",),
     },
     "gate_result": {
@@ -999,6 +1004,12 @@ def text_value(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def string_list_items(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item]
+
+
 def task_id_from_record(record: dict[str, object]) -> str | None:
     if record.get("type") == "task_checkpoint":
         return text_value(record.get("task_id"))
@@ -1160,12 +1171,23 @@ def verification_label(record: dict[str, object]) -> str:
     return f"{kind} verification ({result})"
 
 
+def verification_applies_to_task(record: dict[str, object], task_id: str) -> bool:
+    record_task_id = text_value(record.get("task_id"))
+    scope = text_value(record.get("scope"))
+    covers_tasks = string_list_items(record.get("covers_tasks"))
+    if not record_task_id and not scope and not covers_tasks:
+        return True
+    return record_task_id == task_id or task_id in covers_tasks or scope == "global"
+
+
 def requirement_satisfied(records: list[dict[str, object]], task_id: str, requirement: str) -> bool:
     for record in records:
         if record.get("result") != "passed":
             continue
         record_type = record.get("type")
         if record_type == "verification":
+            if not verification_applies_to_task(record, task_id):
+                continue
             if requirement in {
                 text_value(record.get("kind")),
                 text_value(record.get("command")),
@@ -1188,7 +1210,8 @@ def requirement_satisfied(records: list[dict[str, object]], task_id: str, requir
 def has_passing_final_review(records: list[dict[str, object]]) -> bool:
     for record in records:
         if record.get("type") == "review" and record.get("result") == "passed":
-            return True
+            if record.get("final") is True or record.get("kind") in {"diff", "manual"}:
+                return True
         if is_final_review_verification(record) and record.get("result") == "passed":
             return True
     return False
@@ -1243,6 +1266,79 @@ def low_confidence_warnings(state: dict[str, object]) -> list[str]:
     return warnings
 
 
+def file_claim_conflict_blocking_reasons(records: list[dict[str, object]]) -> list[str]:
+    conflicts = file_claim_conflict_report(records).get("conflicts")
+    if not isinstance(conflicts, list):
+        return []
+
+    reasons: list[str] = []
+    for conflict in conflicts:
+        if not isinstance(conflict, dict):
+            continue
+        task_a = text_value(conflict.get("task_a")) or "<unknown>"
+        task_b = text_value(conflict.get("task_b")) or "<unknown>"
+        claimed = "overlapping allowlists"
+        overlap = conflict.get("overlap")
+        if isinstance(overlap, list) and overlap and isinstance(overlap[0], dict):
+            allow_a = text_value(overlap[0].get("allow_a"))
+            allow_b = text_value(overlap[0].get("allow_b"))
+            if allow_a and allow_b:
+                claimed = allow_a if allow_a == allow_b else f"{allow_a} / {allow_b}"
+        reasons.append(f"file-claim-conflict: {task_a} and {task_b} both claim {claimed}")
+    return reasons
+
+
+def task_change_allowlists(records: list[dict[str, object]]) -> dict[str, list[str]]:
+    allowlists: dict[str, list[str]] = {}
+    for record in records:
+        if record.get("type") == "task_created":
+            task_id = text_value(record.get("id"))
+            allow = string_list_items(record.get("files_allowed"))
+        elif record.get("type") == "file_claimed":
+            task_id = text_value(record.get("task_id"))
+            allow = string_list_items(record.get("allow"))
+        else:
+            continue
+        if task_id and allow:
+            allowlists.setdefault(task_id, []).extend(allow)
+    return allowlists
+
+
+def path_matches_allowlist(path: str, allowlist: list[str]) -> bool:
+    normalized_path = normalize_glob(path)
+    for pattern in allowlist:
+        normalized_pattern = normalize_glob(pattern)
+        if not normalized_pattern:
+            continue
+        if not has_glob_meta(normalized_pattern) and is_path_prefix(normalized_pattern, normalized_path):
+            return True
+        if fnmatch.fnmatchcase(normalized_path, normalized_pattern):
+            return True
+        if PurePath(normalized_path).match(normalized_pattern):
+            return True
+    return False
+
+
+def unclaimed_change_blocking_reasons(records: list[dict[str, object]]) -> list[str]:
+    allowlists = task_change_allowlists(records)
+    reasons: list[str] = []
+    for record in records:
+        if record.get("type") != "task_checkpoint":
+            continue
+        task_id = text_value(record.get("task_id"))
+        if not task_id:
+            continue
+        allowlist = allowlists.get(task_id, [])
+        if not allowlist:
+            continue
+        for path in string_list_items(record.get("files_changed")):
+            if not path_matches_allowlist(path, allowlist):
+                reasons.append(
+                    f"unclaimed-change: task {task_id} changed {path} outside its files_allowed/file_claimed allowlist"
+                )
+    return reasons
+
+
 def gate_blocking_reasons(directory: Path, records: list[dict[str, object]], diagnostics: list[dict[str, object]]) -> list[str]:
     blocking: list[str] = []
     for diagnostic in diagnostics:
@@ -1253,6 +1349,9 @@ def gate_blocking_reasons(directory: Path, records: list[dict[str, object]], dia
     freshness_issue = report_freshness_issue(directory, records)
     if freshness_issue:
         blocking.append(freshness_issue)
+
+    blocking.extend(file_claim_conflict_blocking_reasons(records))
+    blocking.extend(unclaimed_change_blocking_reasons(records))
 
     tasks = task_states(records)
     for task in tasks:
@@ -1309,7 +1408,7 @@ def command_gate(args: argparse.Namespace) -> int:
 
 def task_has_verification(records: list[dict[str, object]], task_id: str) -> bool:
     for record in records:
-        if record.get("type") == "verification":
+        if record.get("type") == "verification" and verification_applies_to_task(record, task_id):
             return True
         if record.get("type") == "review" and text_value(record.get("task_id")) == task_id:
             return True
@@ -1501,6 +1600,8 @@ def prompt_context(record: dict[str, object]) -> dict[str, str]:
         "files_forbidden": markdown_list(record.get("files_forbidden")),
         "acceptance": markdown_list(record.get("acceptance")),
         "verification_required": markdown_list(record.get("verification_required")),
+        "context": markdown_list(record.get("context")),
+        "constraints": markdown_list(record.get("constraints")),
         "goal": goal,
     }
 

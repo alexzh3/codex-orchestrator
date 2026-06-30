@@ -217,6 +217,19 @@
           "type": "string",
           "minLength": 1
         },
+        "task_id": {
+          "type": "string"
+        },
+        "covers_tasks": {
+          "$ref": "#/$defs/string_list"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "task",
+            "global"
+          ]
+        },
         "command": {
           "type": "string"
         },
@@ -400,7 +413,16 @@
         "owner": {
           "type": "string"
         },
+        "goal": {
+          "type": "string"
+        },
         "depends_on": {
+          "$ref": "#/$defs/string_list"
+        },
+        "context": {
+          "$ref": "#/$defs/string_list"
+        },
+        "constraints": {
           "$ref": "#/$defs/string_list"
         },
         "files_allowed": {
@@ -692,6 +714,9 @@
         },
         "findings": {
           "$ref": "#/$defs/string_list"
+        },
+        "final": {
+          "type": "boolean"
         },
         "recorded_at": {
           "type": "string",

@@ -27,6 +27,7 @@ SESSION_STATUS_ORDER = ("active", "idle", "complete", "failed", "awaiting-approv
 STATE_STATUS_ORDER = ("active", "blocked", "complete", "needs_review", "accepted", "rejected")
 DISPATCH_MODE_ORDER = ("ide", "exec")
 REVIEW_KIND_ORDER = ("diff", "test", "manual", "custom")
+VERIFICATION_SCOPE_ORDER = ("task", "global")
 CONSENSUS_OUTCOME_ORDER = ("consensus", "claude_decision", "user_action_required")
 ALLOWED_RISK_LEVELS = ("none", "low", "medium", "high")
 

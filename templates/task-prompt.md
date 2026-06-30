@@ -6,6 +6,14 @@ You are the implementation agent for task `{{ task_id }}`.
 
 {{ goal }}
 
+## Context
+
+{{ context }}
+
+## Constraints
+
+{{ constraints }}
+
 ## Files Allowed
 
 {{ files_allowed }}

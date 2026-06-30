@@ -70,6 +70,35 @@ class RenderPromptTests(unittest.TestCase):
         self.assertNotIn("{{", prompt)
         self.assertNotIn("}}", prompt)
 
+    def test_render_prompt_uses_task_goal_context_and_constraints(self) -> None:
+        self.run_cli(
+            "append-event",
+            "--repo",
+            str(self.repo),
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "task_created",
+                    "id": "T101",
+                    "title": "Fallback title",
+                    "status": "active",
+                    "goal": "Implement the scoped protocol behavior.",
+                    "context": ["Review found task leakage in verification matching."],
+                    "constraints": ["Keep event fields optional for old ledgers."],
+                }
+            ),
+        )
+
+        result = self.run_cli("render-prompt", "--repo", str(self.repo), "--run-id", "run", "--task-id", "T101", "--kind", "impl")
+        prompt = result.stdout
+        goal_section = prompt.split("## Goal", 1)[1].split("\n## Context", 1)[0]
+
+        self.assertIn("Implement the scoped protocol behavior.", goal_section)
+        self.assertNotIn("Fallback title", goal_section)
+        self.assertIn("## Context\n\n- Review found task leakage in verification matching.", prompt)
+        self.assertIn("## Constraints\n\n- Keep event fields optional for old ledgers.", prompt)
+
     def test_render_prompt_writes_review_prompt_to_out(self) -> None:
         out_path = self.repo / ".codex-orchestrator" / "runs" / "run" / "prompts" / "T100-review.md"
 
