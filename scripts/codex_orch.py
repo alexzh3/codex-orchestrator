@@ -1216,11 +1216,15 @@ def requirement_satisfied(records: list[dict[str, object]], task_id: str, requir
 def has_passing_final_review(records: list[dict[str, object]]) -> bool:
     for record in records:
         if record.get("type") == "review" and record.get("result") == "passed":
-            if record.get("final") is True or record.get("kind") in {"diff", "manual"}:
+            if is_run_wide_record(record) and (record.get("final") is True or record.get("kind") in {"diff", "manual"}):
                 return True
-        if is_final_review_verification(record) and record.get("result") == "passed":
+        if is_run_wide_record(record) and is_final_review_verification(record) and record.get("result") == "passed":
             return True
     return False
+
+
+def is_run_wide_record(record: dict[str, object]) -> bool:
+    return not text_value(record.get("task_id")) and text_value(record.get("scope")) != "task"
 
 
 def parse_recorded_at(value: object) -> datetime | None:
@@ -1300,12 +1304,14 @@ def task_change_allowlists(records: list[dict[str, object]]) -> dict[str, list[s
         if record.get("type") == "task_created":
             task_id = text_value(record.get("id"))
             allow = string_list_items(record.get("files_allowed"))
+            declared = "files_allowed" in record
         elif record.get("type") == "file_claimed":
             task_id = text_value(record.get("task_id"))
             allow = string_list_items(record.get("allow"))
+            declared = bool(allow)
         else:
             continue
-        if task_id and allow:
+        if task_id and declared:
             allowlists.setdefault(task_id, []).extend(allow)
     return allowlists
 
@@ -1334,9 +1340,9 @@ def unclaimed_change_blocking_reasons(records: list[dict[str, object]]) -> list[
         task_id = text_value(record.get("task_id"))
         if not task_id:
             continue
-        allowlist = allowlists.get(task_id, [])
-        if not allowlist:
+        if task_id not in allowlists:
             continue
+        allowlist = allowlists[task_id]
         for path in string_list_items(record.get("files_changed")):
             if not path_matches_allowlist(path, allowlist):
                 reasons.append(

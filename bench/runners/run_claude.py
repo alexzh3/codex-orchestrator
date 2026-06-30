@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -91,6 +92,15 @@ def _safe_name(value: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-") or "ref"
     digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:8]
     return f"{slug[:60]}-{digest}"
+
+
+def _repo_path_from_url(value: str) -> str | None:
+    if "://" not in value:
+        return None
+    path = urlsplit(value).path.strip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    return path or None
 
 
 def plugin_ref_dir(plugin_ref: str, work_dir: Path) -> Path:
@@ -217,8 +227,12 @@ def _cache_candidates(repo: str | None, repo_url: str | None, cache_dir: Path) -
         if normalized.endswith(".git"):
             normalized = normalized[:-4]
         name = Path(normalized).name
+        url_repo_path = _repo_path_from_url(raw_value)
         if "://" not in raw_value:
             candidates.append(cache_dir / raw_value)
+        if url_repo_path:
+            candidates.append(cache_dir / url_repo_path)
+            candidates.append(cache_dir / url_repo_path.replace("/", "__"))
         candidates.append(cache_dir / raw_value.replace("/", "__").replace(":", "_"))
         if name:
             candidates.append(cache_dir / name)

@@ -136,16 +136,11 @@ class GateDoctorTests(unittest.TestCase):
     def add_final_review(self) -> None:
         self.append_event(
             {
-                "type": "review",
-                "task_id": "task-a",
-                "reviewer": "claude",
-                "kind": "diff",
+                "type": "verification",
+                "kind": "manual_review",
                 "result": "passed",
-                "command": "codex exec review --base main",
-                "prompt_path": "prompts/final-review.md",
-                "log_path": "logs/final-review.jsonl",
-                "summary": "No blocking findings.",
-                "findings": [],
+                "scope": "global",
+                "summary": "No blocking findings in the run-wide final review.",
             }
         )
 
@@ -435,7 +430,46 @@ class GateDoctorTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assert_blocking_contains(payload, "missing-final-review")
 
-    def test_gate_does_not_treat_nonfinal_typed_review_as_final_review(self) -> None:
+    def test_gate_requires_run_wide_final_review_verification(self) -> None:
+        self.make_complete_run(final_review=False, verification_required=[TEST_COMMAND])
+        self.append_event(
+            {
+                "type": "verification",
+                "kind": "manual_review",
+                "result": "passed",
+                "task_id": "task-a",
+                "scope": "task",
+                "summary": "Task-scoped review passed.",
+            }
+        )
+        self.refresh_report_mtime()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "missing-final-review")
+
+        self.append_event(
+            {
+                "type": "verification",
+                "kind": "manual_review",
+                "result": "passed",
+                "scope": "global",
+                "summary": "Run-wide final review passed.",
+            }
+        )
+        self.refresh_report_mtime()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["blocking"], [])
+
+    def test_gate_does_not_treat_task_scoped_typed_review_as_run_wide_final_review(self) -> None:
         self.make_complete_run(final_review=False, verification_required=[TEST_COMMAND])
         self.append_event(
             {
@@ -469,6 +503,16 @@ class GateDoctorTests(unittest.TestCase):
                 "findings": [],
             }
         )
+        self.refresh_report_mtime()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "missing-final-review")
+
+        self.add_final_review()
         self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
@@ -525,6 +569,36 @@ class GateDoctorTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(payload["ok"])
         self.assert_blocking_contains(payload, "unclaimed-change: task task-a changed docs/outside.md")
+
+    def test_gate_blocks_changes_for_explicit_empty_file_allowlist(self) -> None:
+        self.make_complete_run(verification_required=[TEST_COMMAND])
+        self.append_event(
+            {
+                "type": "task_created",
+                "id": "task-no-edits",
+                "title": "Inspect without editing",
+                "status": "complete",
+                "files_allowed": [],
+            }
+        )
+        self.append_event(
+            {
+                "type": "task_checkpoint",
+                "task_id": "task-no-edits",
+                "agent": "codex-b",
+                "status": "complete",
+                "summary": "Changed files despite no-edit scope.",
+                "files_changed": ["README.md"],
+            }
+        )
+        self.refresh_report_mtime()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "unclaimed-change: task task-no-edits changed README.md")
 
     def test_gate_allows_claimed_changes_and_legacy_unscoped_task_changes(self) -> None:
         self.make_complete_run(verification_required=[TEST_COMMAND])

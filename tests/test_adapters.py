@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -16,6 +17,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from bench.adapters.rexbench import RExBenchAdapter  # noqa: E402
 from bench.adapters.swebench_verified_mini import SWEBenchVerifiedMiniAdapter  # noqa: E402
 from bench.adapters.tblite import TBLiteAdapter  # noqa: E402
+from bench.runners.run_claude import TARGET_REPO_CACHE_ENV, resolve_target_repo  # noqa: E402
 from codex_orch import validate_benchmark_result  # noqa: E402
 
 
@@ -172,6 +174,30 @@ class RealAdapterTests(unittest.TestCase):
         self.assertEqual(case["start_ref"], "abc123")
         self.assertEqual(case["environment_setup_commit"], "def456")
         self.assertIs(case["requires_target_repo"], True)
+
+    def test_repo_url_only_descriptor_resolves_owner_qualified_cache_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_dir = Path(tmp) / "cache"
+            cached_repo = cache_dir / "owner" / "name"
+            cached_repo.mkdir(parents=True)
+            subprocess.run(
+                ["git", "init", "--quiet", str(cached_repo)],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            case = {
+                "id": "url-only",
+                "start_ref": "HEAD",
+                "repo_url": "https://github.com/owner/name.git",
+            }
+
+            with patch.dict(os.environ, {TARGET_REPO_CACHE_ENV: str(cache_dir)}):
+                target_repo, target_ref = resolve_target_repo(case, ROOT)
+
+        self.assertEqual(target_repo, cached_repo.resolve())
+        self.assertEqual(target_ref, "HEAD")
 
     def test_adapter_passes_suite_to_run_claude_case(self) -> None:
         adapter = RExBenchAdapter()
