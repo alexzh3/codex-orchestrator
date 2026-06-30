@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Run replay benchmark
+        run: python3 -m bench.run --suite replay
+
+      - name: Run tiny dry-run benchmark
+        run: python3 -m bench.run --tier tiny --plugin-ref dry-run --dry-run
+
+      - name: Run normal dry-run benchmark
+        run: python3 -m bench.run --tier normal --plugin-ref dry-run --dry-run

@@ -28,11 +28,11 @@ report.md
 Default command:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" report --run-id <run-id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" report --strict --run-id <run-id>
 ```
 
-The report should stay compact: authored `Summary` and `Changes`, generated `Evidence`, generated
-`Consensus`, and generated `Risks / Follow-ups`. The report helper preserves authored sections while
-regenerating evidence from durable records.
+The report should stay compact. The compiler emits authored `Summary` and `Changes`, plus generated
+`Evidence`, `Consensus`, `Risks / Follow-ups`, `Reproducibility`, `Task Graph`, and `Gate Result`.
+The report helper preserves authored sections while regenerating evidence from durable records.
 
 Reference: `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md`.

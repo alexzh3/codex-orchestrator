@@ -5,9 +5,12 @@ Contract:
 - stdout is the notification stream; every emitted line is compact JSON.
 - Input is a run directory, --run-id resolved under --repo, or one or more --log paths.
 - With no args, auto-discovers the newest active run under .codex-orchestrator/runs.
+- In auto mode, keeps scanning for future logs when none exist yet unless --once is set.
 - Watches the newest captured Codex JSONL log(s) and emits material events:
   codex_session_complete, codex_session_failed, codex_session_stale.
-- Does not mutate the ledger. It exits after complete/failed, or after one scan with --once.
+- With multiple watched logs, exits after all watched paths are complete, failed, or stale.
+- With --fail-on-session-failure, exits nonzero after all watched paths are done if any failed.
+- Does not mutate the ledger. With --once, it exits after one scan.
 - Stdlib only; parsing follows scripts/codex_orch_parse.py's exec event conventions.
 """
 
@@ -210,14 +213,15 @@ def terminal_event(path: Path, event: dict[str, Any], offset: int) -> dict[str, 
     return None
 
 
-def scan_path(path: Path, state: dict[str, Any], stale_seconds: int) -> tuple[bool, bool]:
+def scan_path(path: Path, state: dict[str, Any], stale_seconds: int) -> tuple[bool, bool, bool]:
     if not path.exists() or not path.is_file():
-        return False, False
+        return False, False, False
 
     events, next_offset, parse_errors = read_jsonl_delta(path, int(state.get("offset", 0)))
     state["offset"] = next_offset
     terminal = False
     failed = False
+    stale = False
     for event in events:
         kind = event_type(event)
         if kind == "thread.started":
@@ -232,7 +236,7 @@ def scan_path(path: Path, state: dict[str, Any], stale_seconds: int) -> tuple[bo
                     notification["parse_errors"] = parse_errors
                 emit(notification)
                 terminal = True
-                failed = notification["type"] == "codex_session_failed"
+                failed = failed or notification["type"] == "codex_session_failed"
             state["status"] = "failed" if failed else "complete"
 
     idle_seconds = int(time.time() - path.stat().st_mtime)
@@ -246,7 +250,9 @@ def scan_path(path: Path, state: dict[str, Any], stale_seconds: int) -> tuple[bo
                 payload["parse_errors"] = parse_errors
             emit(payload)
             state["stale_marker"] = stale_marker
-    return terminal, failed
+            state["status"] = "stale"
+            stale = True
+    return terminal, failed, stale
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -278,14 +284,29 @@ def main(argv: list[str] | None = None) -> int:
     while True:
         paths = resolve_logs(args)
         if auto_mode and not paths:
-            return 0
+            if args.once:
+                return 0
+            time.sleep(max(0.1, args.poll_interval))
+            continue
+        any_failed = any(bool(state.get("failed")) for state in states.values())
+        watched_done = bool(paths)
         for path in paths:
             state = states.setdefault(path, {"offset": 0, "status": "unknown"})
-            terminal, failed = scan_path(path, state, args.stale_seconds)
-            if terminal:
-                return 1 if failed and args.fail_on_session_failure else 0
+            if state.get("done"):
+                continue
+            terminal, failed, stale = scan_path(path, state, args.stale_seconds)
+            if terminal or stale:
+                state["done"] = True
+                state["done_reason"] = "terminal" if terminal else "stale"
+                state["failed"] = failed
+            if failed:
+                any_failed = True
+            if not state.get("done"):
+                watched_done = False
         if args.once:
-            return 0
+            return 1 if any_failed and args.fail_on_session_failure else 0
+        if paths and watched_done:
+            return 1 if any_failed and args.fail_on_session_failure else 0
         time.sleep(max(0.1, args.poll_interval))
 
 

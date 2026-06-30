@@ -17,26 +17,29 @@ Do not use this skill for a single focused phase such as monitoring, review, con
 compute gating. Use `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for those. For explicit
 ledger-only setup, run the internal CLI init helper and stop.
 
-Default workflow:
+Default typed protocol workflow:
 
-1. Create or reuse a run id.
-2. Initialize `state.json`, `ledger.jsonl`, `report.md`, `prompts/`, `logs/`, and `artifacts/` if
-   needed.
-3. Inspect existing named Codex agents in state/ledger and classify their current status.
-4. If no usable plan exists, create a minimal orchestration plan for Codex agents.
-5. Have Codex review any new Claude-created plan before execution; if planning disagreement remains,
-   record `consensus`, `claude_decision`, or `user_action_required`.
-6. Scope tasks and dispatch implementation/repair/refactor/test-writing to Codex, reusing matching
-   agents when role/context fits.
-7. Start a new headless Codex agent with `codex exec --json` only for unrelated work, full or
-   irrelevant context, required isolation, or explicit user request.
-8. Save each Codex prompt under `prompts/` and capture each Codex JSONL stream under `logs/` using
-   matching stems.
-9. Monitor each session with parser state/tail offsets without loading full rollout logs.
-10. Review code, diffs, logs, and artifacts yourself after Codex yields or completes.
-11. Obtain an independent Codex review of the diff before acceptance.
-12. Run or inspect verification checks and record verification, consensus, and final report state.
-13. Generate or update `report.md`.
+1. Run `ensure-run` to create or reuse the durable run and record the plugin ref.
+2. Append a `task_created` event for each task with a real `goal` plus useful `context` and
+   `constraints` string arrays.
+3. Run `claim-files` so each task has an explicit `files_allowed` or `file_claimed` allowlist.
+4. Run `check-conflicts` before dispatch; resolve overlapping claims before agents edit.
+5. Run `render-prompt` so the Codex prompt includes the task goal, context, constraints, and file
+   claims.
+6. Dispatch Codex for implementation, repair, refactor, or test-writing, reusing a matching session
+   when role and context fit.
+7. Append `dispatch_started` when the session begins and `dispatch_completed` when it yields,
+   completes, or fails.
+8. Append `task_checkpoint` with `files_changed` after inspecting the diff and artifacts.
+9. Run `add-verification` with `task_id`; use `covers_tasks` and `scope` (`task` or `global`) when
+   evidence covers multiple tasks or the whole run.
+10. Append a `review` event for the acceptance review. The final-review check accepts only a passing
+    `diff` or `manual` review, or a review explicitly marked `final`.
+11. Run `report --strict` to render evidence and catch missing required protocol records.
+12. Run `gate`; it must block missing task-scoped verification, file-claim conflicts, and unclaimed
+    changes outside a task allowlist.
+13. Run `report --strict` again so `report.md` includes the latest `gate_result`.
+14. Run `doctor` before handoff to catch ledger, prompt, log, and artifact inconsistencies.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for the full operating contract and
 concrete procedures.

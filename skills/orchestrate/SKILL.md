@@ -49,20 +49,37 @@ Use a durable run ledger for orchestration state:
 Keep durable facts in these files, not only in model context. Runtime records follow
 `schemas/codex-orchestrator.schema.json`. Claude authors the `Summary` and `Changes` sections of
 `report.md` after inspecting the diff, ledger, prompts, logs, and verification; the report helper
-preserves those sections and regenerates `Evidence`, `Consensus`, and `Risks / Follow-ups`.
+preserves those sections and regenerates `Evidence`, `Consensus`, `Risks / Follow-ups`,
+`Reproducibility`, `Task Graph`, and `Gate Result`.
 
 Useful helpers:
 
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" status --run-id <run-id>
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" add-verification --run-id <run-id> --kind test --command "<cmd>" --exit-code <n> --result passed --summary "<summary>"
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" append-event --run-id <run-id> '{"type":"note"}'
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" report --run-id <run-id>
-```
+- `init`: create the run ledger skeleton when a caller explicitly asks only to open a ledger.
+- `ensure-run`: create or reuse a run and record the plugin ref before task work starts.
+- `status`: inspect compact run state and recent ledger evidence.
+- `append-event`: record typed protocol facts such as `task_created`, `dispatch_started`,
+  `dispatch_completed`, `task_checkpoint`, `review`, `consensus`, or notes.
+- `claim-files`: bind a task to its allowed file set before dispatch.
+- `check-conflicts`: detect overlapping task claims before agents edit.
+- `render-prompt`: render a task prompt from `task_created.goal`, `context`, `constraints`, and file
+  claims.
+- `add-verification`: record verification evidence, preferably task-scoped with `task_id`,
+  `covers_tasks`, and `scope`.
+- `gate`: compute acceptance from verification, final review, file-claim conflicts, and unclaimed
+  changes.
+- `doctor`: run post-gate consistency checks for the run ledger and artifacts.
+- `worktree`: create or inspect isolated worktrees for concurrent scoped agents.
+- `report --strict`: regenerate the report and fail when required evidence is missing.
+- `benchmark`: run deterministic or configured benchmark suites for the recorded plugin ref.
 
 Use `append-event` only as an advanced escape hatch for custom material facts that do not yet have a
 typed command. Known ledger event types are schema-validated; custom event types are recorded as
 generic ledger events.
+
+Protocol tasks should carry a real `goal`; optional `context` and `constraints` arrays are rendered
+into the Codex prompt by `render-prompt`. Verification can be task-scoped, and the gate matches it to
+the requiring task. A passing final-review requirement is satisfied only by a passing `diff` or
+`manual` review, or by a review explicitly marked `final`.
 
 Use matching stems for prompts and logs, for example `prompts/final-review.md` and
 `logs/final-review.jsonl`. Do this for plan reviews, implementation prompts, diff reviews, consensus
@@ -87,7 +104,8 @@ prompts, rereviews, and handoffs, and reference both paths from the relevant led
    owns them; wait until Codex yields, completes, or a serialized handoff is recorded.
 8. After Codex yields or completes, review artifacts and run the consensus-gated review loop.
 9. Record verification evidence, consensus decisions, and final report state durably.
-10. Generate or update `report.md` for handoff or approval.
+10. Generate or update `report.md` for handoff or approval, then run `gate`, rerun
+    `report --strict` so the latest `gate_result` is rendered, and finish with `doctor`.
 
 ## Reference Map
 
