@@ -90,6 +90,7 @@ class PrepareDatasetsTests(unittest.TestCase):
         ):
             self.assertIn(field, parsed[0])
 
+    @unittest.skipUnless(prepare_datasets.tomllib is not None, "tomllib requires Python 3.11+")
     def test_tblite_converter_maps_difficulty_and_ranks_by_time(self) -> None:
         task_toml = """
 [metadata]

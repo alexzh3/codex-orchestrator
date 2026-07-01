@@ -48,6 +48,19 @@ naming the env var, expected layout, required infra, and tracking issue.
 External real-mode tasks run in the benchmark target repository, not in this
 plugin repository. The plugin repository is still used as `--plugin-dir`.
 
+Benchmark result records may include a top-level `token_usage` object with
+`input_tokens`, `output_tokens`, `cache_read_input_tokens`,
+`cache_creation_input_tokens`, `total_tokens`, `cost_usd`, and
+`num_turns_reported`. Real runs source these values from Claude's
+`--output-format stream-json` terminal `result` event (`total_cost_usd` becomes
+`cost_usd`); fields are `null` when unavailable, including dry-run, timeouts,
+or streams without usage data. Local-mini and tier runs also print a summary
+line:
+
+```text
+Summary tokens: input=<n> output=<n> total=<n> cost_usd=<f>
+```
+
 Each task descriptor may provide:
 
 - `id`, `task_id`, or `instance_id`

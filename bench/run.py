@@ -7,6 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from bench.runners.run_claude import empty_token_usage
 from bench.runners.run_claude import load_case as load_local_mini_case
 from bench.runners.run_claude import run_case as run_local_mini_case
 from bench.runners.run_replay import run_case as run_replay_case
@@ -18,6 +19,7 @@ CASE_ROOT = ROOT / "bench" / "cases"
 TIERS_PATH = ROOT / "bench" / "tiers.json"
 DRY_RUN_WORK_DIR = Path("/tmp/codex-orch-local-mini-dry-run")
 TIER_DRY_RUN_WORK_DIR = Path("/tmp/codex-orch-tier-dry-run")
+TOKEN_TOTAL_FIELDS = ("input_tokens", "output_tokens", "total_tokens")
 
 
 def discover_cases(suite: str) -> list[Path]:
@@ -53,6 +55,58 @@ def write_jsonl(path: Path, results: list[dict[str, object]]) -> None:
     path.write_text(
         "".join(json.dumps(result, sort_keys=True) + "\n" for result in results),
         encoding="utf-8",
+    )
+
+
+def _token_usage_from_result(result: dict[str, object]) -> dict[str, object] | None:
+    token_usage = result.get("token_usage")
+    if isinstance(token_usage, dict):
+        return token_usage
+    external_score = result.get("external_score")
+    if isinstance(external_score, dict):
+        nested_score = external_score.get("run_claude_external_score")
+        if isinstance(nested_score, dict):
+            nested_usage = nested_score.get("token_usage")
+            if isinstance(nested_usage, dict):
+                return nested_usage
+    return None
+
+
+def _ensure_token_usage(result: dict[str, object]) -> None:
+    token_usage = _token_usage_from_result(result)
+    result["token_usage"] = dict(token_usage) if token_usage is not None else empty_token_usage()
+
+
+def _token_summary(results: list[dict[str, object]]) -> dict[str, int | float]:
+    totals: dict[str, int | float] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "cost_usd": 0.0,
+    }
+    for result in results:
+        token_usage = _token_usage_from_result(result)
+        if not isinstance(token_usage, dict):
+            continue
+        for field in TOKEN_TOTAL_FIELDS:
+            value = token_usage.get(field)
+            if type(value) is int and value >= 0:
+                totals[field] += value
+        cost = token_usage.get("cost_usd")
+        if isinstance(cost, bool):
+            continue
+        if isinstance(cost, (int, float)) and cost >= 0:
+            totals["cost_usd"] += float(cost)
+    return totals
+
+
+def print_token_summary(results: list[dict[str, object]], stream: object) -> None:
+    totals = _token_summary(results)
+    print(
+        f"Summary tokens: input={totals['input_tokens']} "
+        f"output={totals['output_tokens']} total={totals['total_tokens']} "
+        f"cost_usd={float(totals['cost_usd']):.6f}",
+        file=stream,
     )
 
 
@@ -146,6 +200,7 @@ def run_local_mini_suite(args: argparse.Namespace, cases: list[Path]) -> int:
                     print(f"ERROR local-mini/{case_path.stem} repeat={repeat}: {exc}", file=summary_stream)
                     continue
 
+                _ensure_token_usage(result)
                 results.append(result)
                 status = "PASS" if result.get("passed") is True else "FAIL"
                 print(
@@ -175,6 +230,7 @@ def run_local_mini_suite(args: argparse.Namespace, cases: list[Path]) -> int:
         f"hard_failures={hard_failures}, expected_runs={total}",
         file=summary_stream,
     )
+    print_token_summary(results, summary_stream)
     return 1 if hard_failures else 0
 
 
@@ -235,6 +291,7 @@ def run_tier(args: argparse.Namespace) -> int:
                         print(f"ERROR {benchmark}/{task_id} repeat={repeat}: {exc}", file=summary_stream)
                         continue
 
+                    _ensure_token_usage(result)
                     results.append(result)
                     per_benchmark_total[benchmark] += 1
                     if result.get("passed") is True:
@@ -273,6 +330,7 @@ def run_tier(args: argparse.Namespace) -> int:
         f"hard_failures={hard_failures}, expected_runs={expected_runs}",
         file=summary_stream,
     )
+    print_token_summary(results, summary_stream)
     return exit_code or (1 if hard_failures else 0)
 
 

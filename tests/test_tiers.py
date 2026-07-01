@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections import Counter
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -136,22 +138,25 @@ class TierBenchmarkTests(unittest.TestCase):
 
     def test_real_mode_adapter_methods_raise_runtime_error(self) -> None:
         for adapter in ADAPTERS.values():
-            with self.assertRaises(RuntimeError) as selection_error:
-                adapter.iter_tasks(1, "lowest_success_rate", dry_run=False)
-            self.assertNotIsInstance(selection_error.exception, NotImplementedError)
-            self.assertIn(adapter.real_infra, str(selection_error.exception))
+            with self.subTest(adapter=adapter.name), tempfile.TemporaryDirectory() as tmp:
+                empty_dataset_dir = Path(tmp)
+                with patch.dict(os.environ, {adapter.dataset_env_var: str(empty_dataset_dir)}):
+                    with self.assertRaises(RuntimeError) as selection_error:
+                        adapter.iter_tasks(1, "lowest_success_rate", dry_run=False)
+                    self.assertNotIsInstance(selection_error.exception, NotImplementedError)
+                    self.assertIn(adapter.real_infra, str(selection_error.exception))
 
-            task = adapter.iter_tasks(1, "lowest_success_rate", dry_run=True)[0]
-            with self.assertRaises(RuntimeError) as run_error:
-                adapter.run_task(
-                    task,
-                    "demo",
-                    dry_run=False,
-                    repo_root=ROOT,
-                    work_dir=Path("/tmp/codex-orch-tier-test"),
-                )
-            self.assertNotIsInstance(run_error.exception, NotImplementedError)
-            self.assertIn(adapter.real_infra, str(run_error.exception))
+                    task = adapter.iter_tasks(1, "lowest_success_rate", dry_run=True)[0]
+                    with self.assertRaises(RuntimeError) as run_error:
+                        adapter.run_task(
+                            task,
+                            "demo",
+                            dry_run=False,
+                            repo_root=ROOT,
+                            work_dir=Path("/tmp/codex-orch-tier-test"),
+                        )
+                    self.assertNotIsInstance(run_error.exception, NotImplementedError)
+                    self.assertIn(adapter.real_infra, str(run_error.exception))
 
     def test_dry_run_output_is_byte_identical(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

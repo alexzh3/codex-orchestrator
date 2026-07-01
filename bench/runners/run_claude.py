@@ -25,6 +25,15 @@ from codex_orch import validate_benchmark_result  # noqa: E402
 BENCHMARK_SCHEMA = ROOT / "schemas" / "benchmark-result.schema.json"
 LOCAL_MINI_SUITE = "local-mini"
 TARGET_REPO_CACHE_ENV = "CODEX_ORCH_BENCH_REPO_CACHE"
+TOKEN_USAGE_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+    "total_tokens",
+    "cost_usd",
+    "num_turns_reported",
+)
 
 
 def load_case(path: Path) -> dict[str, object]:
@@ -51,6 +60,97 @@ def _validate_payload(payload: dict[str, object]) -> None:
     if extra:
         raise ValueError(f"benchmark result has schema-extra field(s): {', '.join(extra)}")
     validate_benchmark_result(payload)
+
+
+def empty_token_usage() -> dict[str, object]:
+    return {field: None for field in TOKEN_USAGE_FIELDS}
+
+
+def _usage_int(value: object) -> int | None:
+    if type(value) is int and value >= 0:
+        return value
+    return None
+
+
+def _usage_number(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and value >= 0:
+        return float(value)
+    return None
+
+
+def _event_usage(event: dict[str, object]) -> dict[str, object] | None:
+    usage = event.get("usage")
+    if isinstance(usage, dict):
+        return usage
+    message = event.get("message")
+    if isinstance(message, dict):
+        usage = message.get("usage")
+        if isinstance(usage, dict):
+            return usage
+    return None
+
+
+def _has_input_output_tokens(usage: dict[str, object]) -> bool:
+    return (
+        _usage_int(usage.get("input_tokens")) is not None
+        and _usage_int(usage.get("output_tokens")) is not None
+    )
+
+
+def parse_claude_usage(stdout: str) -> dict[str, object]:
+    result_event: dict[str, object] | None = None
+    last_usage: dict[str, object] | None = None
+    last_cost_event: dict[str, object] | None = None
+    last_turn_event: dict[str, object] | None = None
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        usage = _event_usage(event)
+        if usage is not None and _has_input_output_tokens(usage):
+            last_usage = usage
+        if "total_cost_usd" in event:
+            last_cost_event = event
+        if "num_turns" in event:
+            last_turn_event = event
+        if event.get("type") == "result":
+            result_event = event
+
+    result_usage = _event_usage(result_event) if result_event is not None else None
+    usage = result_usage if result_usage is not None and _has_input_output_tokens(result_usage) else last_usage
+    if usage is None:
+        usage = {}
+    input_tokens = _usage_int(usage.get("input_tokens"))
+    output_tokens = _usage_int(usage.get("output_tokens"))
+    total_tokens = input_tokens + output_tokens if input_tokens is not None and output_tokens is not None else None
+    cost_event = result_event if result_event is not None and "total_cost_usd" in result_event else last_cost_event
+    turn_event = result_event if result_event is not None and "num_turns" in result_event else last_turn_event
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cache_read_input_tokens": _usage_int(usage.get("cache_read_input_tokens")),
+        "cache_creation_input_tokens": _usage_int(usage.get("cache_creation_input_tokens")),
+        "total_tokens": total_tokens,
+        "cost_usd": _usage_number(cost_event.get("total_cost_usd")) if cost_event is not None else None,
+        "num_turns_reported": _usage_int(turn_event.get("num_turns")) if turn_event is not None else None,
+    }
+
+
+def _normalize_token_usage(token_usage: dict[str, object] | None) -> dict[str, object]:
+    if not isinstance(token_usage, dict):
+        return empty_token_usage()
+    normalized = empty_token_usage()
+    for field in TOKEN_USAGE_FIELDS:
+        if field == "cost_usd":
+            normalized[field] = _usage_number(token_usage.get(field))
+        else:
+            normalized[field] = _usage_int(token_usage.get(field))
+    return normalized
 
 
 def _string_field(case: dict[str, object], field: str) -> str:
@@ -472,6 +572,7 @@ def assemble_real_result(
     claude_argv: list[str],
     changed_paths: list[str],
     forbidden_paths: list[str],
+    token_usage: dict[str, object] | None = None,
 ) -> dict[str, object]:
     sidecar_validation_error: str | None = None
     if sidecar_path is not None and sidecar:
@@ -492,6 +593,7 @@ def assemble_real_result(
         failure_reasons.append(f"missing sidecar: {sidecar_error}")
     if forbidden_violation:
         failure_reasons.append(f"forbidden-file violation: {', '.join(forbidden_paths)}")
+    normalized_token_usage = _normalize_token_usage(token_usage)
 
     payload: dict[str, object] = {
         "suite": suite,
@@ -508,8 +610,10 @@ def assemble_real_result(
         "ledger_errors": _non_negative_int(metric_source.get("ledger_errors"), 0) + (1 if sidecar_failure else 0),
         "gate_passed": _bool_or_none(metric_source.get("gate_passed")),
         "report_score": _score(metric_source.get("report_score")),
+        "token_usage": normalized_token_usage,
         "external_score": {
             "tests_passed": tests_passed,
+            "token_usage": normalized_token_usage,
             "acceptance_command": acceptance_command,
             "acceptance_exit_code": acceptance_returncode,
             "acceptance_timed_out": acceptance_timed_out,
@@ -558,6 +662,7 @@ def _dry_run_payload(
         "ledger_errors": ledger_errors,
         "gate_passed": gate_passed,
         "report_score": round(0.8 + ((fingerprint % 16) / 100), 4),
+        "token_usage": empty_token_usage(),
         "external_score": {
             "tests_passed": tests_passed,
             "dry_run": True,
@@ -590,6 +695,7 @@ def _real_payload(
     acceptance_returncode: int | None = None
     timed_out = False
     acceptance_timed_out = False
+    token_usage = empty_token_usage()
 
     try:
         target_dir = _add_worktree(
@@ -623,6 +729,7 @@ def _real_payload(
                 timeout=timeout_seconds,
             )
             claude_returncode = claude.returncode
+            token_usage = parse_claude_usage(claude.stdout or "")
         except subprocess.TimeoutExpired:
             timed_out = True
 
@@ -673,6 +780,7 @@ def _real_payload(
             claude_argv=argv,
             changed_paths=run_changed_files,
             forbidden_paths=forbidden_paths,
+            token_usage=token_usage,
         )
     finally:
         if remove_plugin_worktree and plugin_dir is not None:

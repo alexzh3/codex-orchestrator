@@ -17,7 +17,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from bench.adapters.rexbench import RExBenchAdapter  # noqa: E402
 from bench.adapters.swebench_verified_mini import SWEBenchVerifiedMiniAdapter  # noqa: E402
 from bench.adapters.tblite import TBLiteAdapter  # noqa: E402
-from bench.runners.run_claude import TARGET_REPO_CACHE_ENV, resolve_target_repo  # noqa: E402
+from bench.runners.run_claude import TARGET_REPO_CACHE_ENV  # noqa: E402
+from bench.runners.run_claude import parse_claude_usage  # noqa: E402
+from bench.runners.run_claude import resolve_target_repo  # noqa: E402
+from bench.runners.run_claude import run_case as run_claude_case  # noqa: E402
 from codex_orch import validate_benchmark_result  # noqa: E402
 
 
@@ -100,6 +103,119 @@ class RealAdapterTests(unittest.TestCase):
                 "claude_argv": ["claude", "-p"],
             },
         }
+
+    def test_parse_claude_usage_reads_stream_json_result_event(self) -> None:
+        stdout = "\n".join(
+            [
+                "not-json",
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "usage": {
+                            "input_tokens": 1,
+                            "output_tokens": 2,
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "result",
+                        "usage": {
+                            "input_tokens": 123,
+                            "output_tokens": 45,
+                            "cache_read_input_tokens": 6,
+                            "cache_creation_input_tokens": 7,
+                        },
+                        "total_cost_usd": 0.0123,
+                        "num_turns": 4,
+                        "duration_ms": 2500,
+                    }
+                ),
+            ]
+        )
+
+        usage = parse_claude_usage(stdout)
+
+        self.assertEqual(usage["input_tokens"], 123)
+        self.assertEqual(usage["output_tokens"], 45)
+        self.assertEqual(usage["cache_read_input_tokens"], 6)
+        self.assertEqual(usage["cache_creation_input_tokens"], 7)
+        self.assertEqual(usage["total_tokens"], 168)
+        self.assertEqual(usage["cost_usd"], 0.0123)
+        self.assertEqual(usage["num_turns_reported"], 4)
+
+    def test_parse_claude_usage_reads_assistant_message_usage_with_result_metadata(self) -> None:
+        stdout = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "id": "msg_1",
+                            "usage": {
+                                "input_tokens": 234,
+                                "output_tokens": 56,
+                                "cache_read_input_tokens": 78,
+                                "cache_creation_input_tokens": 9,
+                            },
+                        },
+                        "session_id": "session-1",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "result",
+                        "total_cost_usd": 0.0456,
+                        "num_turns": 5,
+                        "duration_ms": 3200,
+                    }
+                ),
+            ]
+        )
+
+        usage = parse_claude_usage(stdout)
+
+        self.assertEqual(usage["input_tokens"], 234)
+        self.assertEqual(usage["output_tokens"], 56)
+        self.assertEqual(usage["cache_read_input_tokens"], 78)
+        self.assertEqual(usage["cache_creation_input_tokens"], 9)
+        self.assertEqual(usage["total_tokens"], 290)
+        self.assertEqual(usage["cost_usd"], 0.0456)
+        self.assertEqual(usage["num_turns_reported"], 5)
+
+    def test_run_claude_dry_run_payload_contains_null_token_usage(self) -> None:
+        case = {
+            "id": "token-dry-run",
+            "suite": "local-mini",
+            "start_ref": "HEAD",
+            "prompt": "Exercise token usage dry-run shape.",
+            "files_allowed": ["*"],
+            "acceptance": {"command": "true"},
+            "timeout_seconds": 1,
+            "max_turns": 2,
+            "max_budget_usd": 1,
+        }
+        expected_usage = {
+            "input_tokens": None,
+            "output_tokens": None,
+            "cache_read_input_tokens": None,
+            "cache_creation_input_tokens": None,
+            "total_tokens": None,
+            "cost_usd": None,
+            "num_turns_reported": None,
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_claude_case(
+                case,
+                "demo",
+                dry_run=True,
+                repo_root=ROOT,
+                work_dir=Path(tmp),
+            )
+
+        validate_benchmark_result(result)
+        self.assertEqual(result["token_usage"], expected_usage)
 
     def test_iter_tasks_loads_real_dataset_and_selects_lowest_success_rate(self) -> None:
         for adapter, filename, id_field, prompt_field in ADAPTERS:

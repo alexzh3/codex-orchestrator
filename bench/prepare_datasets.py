@@ -7,10 +7,14 @@ import argparse
 import json
 import os
 from pathlib import Path
-import tomllib
 import urllib.parse
 import urllib.request
 import zipfile
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10.
+    tomllib = None
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -284,6 +288,8 @@ def tblite_difficulty_score(difficulty: object) -> float | None:
 
 
 def convert_tblite_task(task_id: str, task_toml: str, instruction: str) -> dict[str, object]:
+    if tomllib is None:
+        raise RuntimeError("parsing TBLite task.toml requires Python 3.11+ (stdlib tomllib)")
     payload = tomllib.loads(task_toml)
     metadata = mapping(payload.get("metadata"))
     verifier = mapping(payload.get("verifier"))
