@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"
+PARSE_MODULE = ROOT / "scripts" / "codex_orchestrator" / "parse.py"
 FIXTURES = ROOT / "tests" / "fixtures"
 
 
@@ -148,7 +149,7 @@ class ParseCliTests(unittest.TestCase):
         self.assertIsNone(payload["path"])
 
     def test_ide_reader_uses_seek_tail_pattern(self) -> None:
-        source = SCRIPT.read_text(encoding="utf-8")
+        source = PARSE_MODULE.read_text(encoding="utf-8")
         self.assertIn("seek(max(0, size - TAIL_LIMIT_BYTES))", source)
         self.assertNotIn(".readlines(", source)
         self.assertNotIn(".read()", source)
