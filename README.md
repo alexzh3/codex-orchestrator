@@ -96,7 +96,7 @@ Review what Codex is doing, detect when it finishes or blocks, verify the diff a
 
 ---
 
-## Commands
+## Skills and slash commands
 
 Available slash commands:
 
@@ -106,9 +106,11 @@ Available slash commands:
 | `/codex-orchestrator:workflow` | Run the full end-to-end workflow: ledger, planning, Codex plan review when needed, dispatch, monitoring, review, verification, consensus, and report. |
 | `/codex-orchestrator:report` | Generate or update `report.md` from evidence already recorded in the run ledger. |
 
-The general orchestration playbook lives in [`commands/orchestrate.md`](./commands/orchestrate.md).
-Full end-to-end runs and report regeneration are covered by
-[`commands/workflow.md`](./commands/workflow.md) and [`commands/report.md`](./commands/report.md).
+The orchestration playbooks live in the skills:
+[`skills/orchestrate/SKILL.md`](./skills/orchestrate/SKILL.md),
+[`skills/workflow/SKILL.md`](./skills/workflow/SKILL.md), and
+[`skills/report/SKILL.md`](./skills/report/SKILL.md). The `commands/*.md` files are thin slash-command
+triggers that load those skills.
 
 ---
 
@@ -146,6 +148,39 @@ Agent / Implementer / Peer Reviewer
 Repository
 Code / tests / manifests / logs / git history
 ```
+
+---
+
+## Repository layout
+
+```text
+.claude-plugin/   plugin manifest and marketplace metadata
+commands/         thin slash-command triggers that load skills
+skills/           orchestration, workflow, and report playbooks
+bin/              codex-orch and codex-orch-monitor entrypoints
+monitors/         plugin monitor definitions
+templates/        task and review prompt templates
+scripts/          ledger CLI, JSONL parser, report compiler, runtime contract helpers
+schemas/          plugin contract schemas
+bench/            head-to-head eval harness, adapters, cases, and bench/schemas/
+tests/            unittest suite
+docs/             maintainer documentation
+.github/          CI workflows
+```
+
+**Plugin runtime (installed):** `.claude-plugin/`, `commands/`, `skills/`, `bin/`, `monitors/`,
+`templates/`, `scripts/`, `schemas/`, `README.md`, and `LICENSE`.
+
+**Maintainer / dev (in-repo, not needed at runtime):** `bench/` for the head-to-head eval harness and
+`bench/schemas/`, plus `tests/`, `docs/`, `.github/`, and `AGENTS.md`.
+
+**Local / gitignored:** `.codex-orchestrator/` run ledgers, `.env`, `bench/datasets/`, and
+`refactor_plan.md`.
+
+Command surface tiers: **user** (`/codex-orchestrator:orchestrate|workflow|report`,
+`codex-orch status|gate|doctor|report`); **advanced/dev** (`codex-orch append-event`,
+`python3 -m bench.run|bench.compare`); **internal** (event validation, JSONL parsing, report scoring,
+adapter plumbing).
 
 ---
 

@@ -22,7 +22,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 from codex_orch import validate_benchmark_result  # noqa: E402
 
 
-BENCHMARK_SCHEMA = ROOT / "schemas" / "benchmark-result.schema.json"
+BENCHMARK_SCHEMA = ROOT / "bench" / "schemas" / "benchmark-result.schema.json"
 LOCAL_MINI_SUITE = "local-mini"
 TARGET_REPO_CACHE_ENV = "CODEX_ORCH_BENCH_REPO_CACHE"
 TOKEN_USAGE_FIELDS = (

@@ -18,25 +18,30 @@ gates, and **Codex implements**. When you work here, follow that division.
 4. **Additive & backward-compatible** changes to the CLI/report unless a release explicitly says
    otherwise. Existing commands (`init`, `status`, `add-verification`, `append-event`, `worktree`,
    `report`) must keep working.
-5. **Never fake a benchmark number.** Dry-run paths must be deterministic + schema-valid; real
-   paths that need missing infra must **fail loudly** (`NotImplementedError` / nonzero exit), never
-   emit placeholder results.
+5. **Never fake a benchmark number.** Dry-run paths must be deterministic + schema-valid; real paths
+   that need missing infra or datasets must **fail loudly** — the external adapters raise a clear
+   `RuntimeError` naming the missing dataset/infra env var, and a not-yet-wired runner path raises
+   `NotImplementedError` — or exit nonzero, never emitting placeholder results.
 6. **Durable state over memory.** Record material facts in the run ledger
    (`.codex-orchestrator/runs/<id>/`), not just in conversation.
 
 ## Repo layout
 
 ```
-.claude-plugin/   plugin.json (v0.3.0), marketplace.json
-commands/         slash commands: orchestrate.md, workflow.md, report.md
+.claude-plugin/   plugin.json (v0.3.4), marketplace.json
+commands/         thin slash-command triggers that load skills
+skills/           orchestrate/, workflow/, report/ playbooks and orchestration references
+monitors/         monitors.json
+bin/              codex-orch, codex-orch-monitor
+templates/        task-prompt.md, review-prompt.md
 scripts/          codex_orch.py (ledger CLI), codex_orch_parse.py (JSONL session parser),
                   codex_orch_contract.py (enums), codex_orch_report.py (report compiler)
-schemas/          codex-orchestrator.schema.json, benchmark-result.schema.json
+schemas/          codex-orchestrator.schema.json, codex-task-output.schema.json
 bench/            run.py, runners/ (run_replay.py, run_claude.py), compare.py, metrics.py,
                   adapters/ (base, rexbench, tblite, swebench_verified_mini), tiers.json,
-                  cases/ (replay/, local-mini/)
-tests/            unittest suite (46 tests)
-references/       monitoring.md (Codex JSONL monitoring recipes)
+                  bench/schemas/benchmark-result.schema.json, cases/ (replay/, local-mini/)
+tests/            unittest suite (103 pass, 1 skipped on Python 3.10)
+docs/             maintainer docs
 ```
 
 ## Common commands
@@ -54,8 +59,8 @@ python3 -m bench.run --tier tiny   --plugin-ref <ref> --dry-run    # 3 RExBench 
 python3 -m bench.run --tier normal --plugin-ref <ref> --dry-run    # 6 + 15 + 7 = 28
 python3 -m bench.compare --baseline a.jsonl --candidate b.jsonl
 
-# Real runs (spend Claude+Codex budget; need infra) are gated: drop --dry-run and the
-# adapters raise NotImplementedError until their dataset/grader is wired.
+# Real runs (spend Claude+Codex budget; need infra) are gated: drop --dry-run and
+# adapters raise RuntimeError naming missing dataset/infra env vars until wired.
 
 # Ledger CLI (orchestration bookkeeping)
 python3 scripts/codex_orch.py ensure-run --repo . --run-id <id> --plugin-ref <ref>
@@ -77,42 +82,40 @@ record `verification` + `consensus`; gate; commit. Resume the same session for s
 (`codex exec resume <thread-id>`). Note: strict `--output-schema` requires
 `additionalProperties:false` + all-required; `codex exec review --base` cannot take a custom prompt.
 
-## Current status (2026-06-29)
+## Current status (2026-07-01)
 
-Plugin **v0.3.2** (in progress). **Hold merges to `main`** per direction — each release is consolidated
-onto its own `release/0.3.x` branch (approve PRs in the UI: GitHub blocks author self-approval). `main`
-stays untouched. ~65 tests green. Open PR stack (each branches off the previous):
+Plugin **v0.3.4**. **Hold merges to `main`** per direction: the 0.3.x stack
+(#8, #9, #12, #13, #14, #15, #16) has been collapsed into one held PR,
+[#17](https://github.com/alexzh3/codex-orchestrator/pull/17), targeting `main`. #17 is open,
+unmerged, and intentionally held.
 
-| PR | Branch | Release | Tests |
-|----|--------|---------|-------|
-| [#8](https://github.com/alexzh3/codex-orchestrator/pull/8)   | `feat/0.3-benchmarkability` | 0.3.0 benchmarkability & metadata | 33 |
-| [#9](https://github.com/alexzh3/codex-orchestrator/pull/9)   | `feat/bench-local-mini-e2e` | local-mini E2E head-to-head harness | 40 |
-| [#12](https://github.com/alexzh3/codex-orchestrator/pull/12) | `feat/bench-tiers`          | tier-aware benchmark suite | 46 |
-| [#13](https://github.com/alexzh3/codex-orchestrator/pull/13) | `docs/agents-and-roadmap`   | this file | 46 |
-| [#14](https://github.com/alexzh3/codex-orchestrator/pull/14) | `feat/0.3.1-task-protocol`  | 0.3.1 task protocol & enriched ledger | 55 |
-| _next_ | `feat/0.3.2-gate-prompts` | 0.3.2 gate, doctor, render-prompt, strict report | 63+ |
+The test suite is **103 passing tests, 1 skipped on Python 3.10** (the TBLite `task.toml` test runs on
+Python 3.11+). Issues #4, #5, #6, and #11 are closed. Still-open follow-ups are #2/#3/#10 for real
+external-benchmark adapters, #7 for the optional Aider Polyglot smoke, #18/#19/#20 for real-infra
+follow-ups, and the `scripts/codex_orchestrator/` package split planned for the next cleanup phase.
 
-Consolidated: **`release/0.3.1`** = #8→#14 merged off `main`. Every PR's independent `codex exec review`
-found real bugs, all fixed via consensus loops. Built with Claude Opus 4.8 + Codex CLI 0.131.0 +
-Claude Code 2.1.195. Once 0.3.2–0.3.4 land they get `release/0.3.2`–`release/0.3.4` branches, then a
-cross-version daily benchmark compares `main` vs each.
+Built with Claude Opus 4.8 (1M) + Codex CLI 0.131.0.
 
 ## Roadmap
 
 ### Refactor releases (see `refactor_plan.md`)
 **Versioning policy:** stay on the **0.3.x** line — each release bumps the patch (0.3.1, 0.3.2, …),
 not the minor. Do not bump to 0.4+ without explicit instruction.
-- **0.3.0 Benchmarkability & metadata** — ✅ (on `release/0.3.1`, PR #8)
+- **0.3.0 Benchmarkability & metadata** — ✅
 - **0.3.1 Task protocol** — typed events, file claims + `check-conflicts`, report Task Graph,
-  benchmark score wired to the new events. ✅ (on `release/0.3.1`, PR #14)
+  benchmark score wired to the new events. ✅
 - **0.3.2 Gate & generated prompts** — `gate` + `doctor`, `render-prompt` + templates + Codex output
-  schema, strict report mode, Gate Result rendering. *(in progress, PR #15)*
+  schema, strict report mode, Gate Result rendering. ✅
 - **0.3.3 Skills & monitors** — migrate `commands/*` → `skills/<name>/SKILL.md`, `bin/codex-orch`,
-  plugin-native monitors, finish `scripts/codex_orchestrator/` package split (highest conflict → last).
-- **0.3.4 External benchmark adapters** — see benchmark roadmap below.
+  plugin-native monitors. ✅
+- **0.3.4 External benchmark adapters** — dry-run and real-mode adapter scaffolding; see benchmark
+  roadmap below. ✅
+- **0.3.5/0.3.6 Structure cleanup** — Phase A declutter + truth-sync, then Phase B
+  `scripts/codex_orchestrator/` package split behind re-export shims. The package split is not done.
 
 ### Head-to-head version-quality benchmark (two tiers, select **lowest-success-rate** tasks)
-Config in `bench/tiers.json`. Scaffolding done (dry-run); real adapters are **infra-gated**:
+Config in `bench/tiers.json`. Scaffolding done (dry-run + clear RuntimeError on missing real
+datasets/infra); real adapters are **infra-gated**:
 
 | Benchmark | Tier use | Adapter (real) | Infra | Issue |
 |-----------|----------|----------------|-------|-------|
@@ -126,21 +129,24 @@ produced `.codex-orchestrator/` run dir, aggregated by `bench.compare`. External
 model-dominated; the **sidecar** is where harness/plugin versions actually separate.
 
 ### Open issues
-Umbrella tiered suite [#11]; adapters [#2]/[#3]/[#10]; local-mini E2E runner [#4]; compare dashboard +
-false-acceptance [#5]; CI dry-run guards (replay + tiers + unittest on every PR) [#6]; Aider Polyglot
-smoke (optional) [#7].
+Closed: umbrella tiered suite [#11], local-mini E2E runner [#4], compare dashboard +
+false-acceptance [#5], and CI dry-run guards [#6]. Open: real external-benchmark adapters [#2]/[#3]/[#10],
+real-infra follow-ups [#18]/[#19]/[#20], optional Aider Polyglot smoke [#7], and the
+`scripts/codex_orchestrator/` package split.
 
 ### Recommended next steps
-1. Merge the stack **#8 → #9 → #12** to land the foundation on `main`.
-2. Wire CI [#6] (no API cost) so the dry-run replay/tier suites + unittest guard every PR.
-3. Then build the first **real** adapter — TBLite [#3] (daily-loop cornerstone) — and run a small
-   gated head-to-head (`main` vs `0.3`) for the first real version-quality number.
+1. Complete the 0.3.5/0.3.6 structure cleanup: Phase A declutter first, then the
+   `scripts/codex_orchestrator/` package split with compatibility shims.
+2. Keep held PR #17 green while `main` remains untouched.
+3. Build the first **real** adapter — TBLite [#3] — with the real-infra follow-ups #18/#19/#20, then
+   run a small gated head-to-head once infrastructure is available.
 
 ## How to extend
 
 - **A benchmark adapter:** subclass `bench/adapters/base.py`; keep dry-run deterministic +
-  schema-valid (validate against `schemas/benchmark-result.schema.json`); real mode must raise
-  `NotImplementedError` naming the infra until wired. Reuse `run_claude.build_claude_argv`.
+  schema-valid (validate against `bench/schemas/benchmark-result.schema.json`); real mode must raise
+  a clear `RuntimeError` naming the missing infra / dataset env var until wired. Reuse
+  `run_claude.build_claude_argv`.
 - **A ledger event type:** add the `$def` to `schemas/codex-orchestrator.schema.json`, mirror enums
   in `scripts/codex_orch_contract.py`, add validation in `scripts/codex_orch.py`, render it in
   `scripts/codex_orch_report.py`, and extend `tests/test_schema.py` + a focused test.

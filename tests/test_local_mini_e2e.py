@@ -61,7 +61,7 @@ class LocalMiniE2ETests(unittest.TestCase):
         self.assertEqual(case["suite"], "local-mini")
         self.assertEqual(first, second)
         validate_benchmark_result(first)
-        schema = json.loads((ROOT / "schemas" / "benchmark-result.schema.json").read_text(encoding="utf-8"))
+        schema = json.loads((ROOT / "bench" / "schemas" / "benchmark-result.schema.json").read_text(encoding="utf-8"))
         self.assertEqual(set(first), set(schema["properties"]))
 
     def test_dry_run_exposes_claude_argv(self) -> None:

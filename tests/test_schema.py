@@ -24,7 +24,7 @@ from codex_orch_contract import (  # noqa: E402
 )
 
 SCHEMA = ROOT / "schemas" / "codex-orchestrator.schema.json"
-BENCHMARK_SCHEMA = ROOT / "schemas" / "benchmark-result.schema.json"
+BENCHMARK_SCHEMA = ROOT / "bench" / "schemas" / "benchmark-result.schema.json"
 
 
 class SchemaTests(unittest.TestCase):
