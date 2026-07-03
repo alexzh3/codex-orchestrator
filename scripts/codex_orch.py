@@ -20,6 +20,7 @@ from codex_orchestrator.ledger import *
 from codex_orchestrator.prompts import *
 from codex_orchestrator.report import *
 from codex_orchestrator.runmeta import *
+from codex_orchestrator.scoring import *
 from codex_orchestrator.store import *
 
 

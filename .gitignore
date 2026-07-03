@@ -3,4 +3,3 @@ __pycache__/
 *.pyc
 refactor_plan.md
 .env
-bench/datasets/

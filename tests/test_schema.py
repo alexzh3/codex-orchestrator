@@ -26,7 +26,6 @@ from codex_orchestrator.contract import (  # noqa: E402
 )
 
 SCHEMA = ROOT / "schemas" / "codex-orchestrator.schema.json"
-BENCHMARK_SCHEMA = ROOT / "bench" / "schemas" / "benchmark-result.schema.json"
 
 
 class SchemaTests(unittest.TestCase):
@@ -202,36 +201,6 @@ class SchemaTests(unittest.TestCase):
             defs["run_closed_event"]["properties"]["status"]["enum"],
             list(STATE_STATUS_ORDER),
         )
-
-    def test_benchmark_result_schema_shape(self) -> None:
-        schema = json.loads(BENCHMARK_SCHEMA.read_text(encoding="utf-8"))
-        required = [
-            "suite",
-            "case_id",
-            "plugin_ref",
-            "repo_commit",
-            "passed",
-            "wall_seconds",
-            "claude_turns",
-            "codex_sessions",
-            "codex_reviews",
-            "manual_interventions",
-            "prompt_log_pairs_complete",
-            "ledger_errors",
-            "gate_passed",
-            "report_score",
-            "external_score",
-        ]
-
-        self.assertEqual(
-            schema["$id"],
-            "https://alexzh3.github.io/codex-orchestrator/schemas/benchmark-result.schema.json",
-        )
-        self.assertEqual(schema["required"], required)
-        self.assertFalse(schema["additionalProperties"])
-        self.assertEqual(schema["properties"]["report_score"]["minimum"], 0)
-        self.assertEqual(schema["properties"]["report_score"]["maximum"], 1)
-
 
 if __name__ == "__main__":
     unittest.main()

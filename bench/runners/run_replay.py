@@ -16,7 +16,6 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from bench.metrics import coverage_metrics, report_score  # noqa: E402
 from codex_orch import (  # noqa: E402
     collect_warnings,
     read_jsonl_with_warnings,
@@ -28,6 +27,7 @@ from codex_orchestrator.report import (  # noqa: E402
     prompt_log_pairs_complete,
     render_report,
 )
+from codex_orchestrator.scoring import coverage_metrics, report_score  # noqa: E402
 
 
 DEFAULT_CASE_DIR = ROOT / "bench" / "cases" / "replay" / "long-run-001"
