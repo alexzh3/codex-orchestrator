@@ -9,7 +9,7 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from codex_orch_report import (  # noqa: E402
+from codex_orchestrator.report import (  # noqa: E402
     is_final_review_verification,
     prompt_log_pairs_complete as core_prompt_log_pairs_complete,
     report_completeness_score,

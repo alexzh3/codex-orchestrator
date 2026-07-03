@@ -1,0 +1,101 @@
+{
+    "id": "b590b908-5564-4ef6-bd74-8371dd27d66a",
+    "task_name": "book-portfolio-analysis",
+    "trial_name": "book-portfolio-analysis__vR45dbv",
+    "trial_uri": "file://~/Projects/codex-orchestrator/bench/harbor-jobs-preflight/2026-07-02__21-11-38/book-portfolio-analysis__vR45dbv",
+    "task_id": {
+        "git_url": "https://github.com/open-thoughts/OpenThoughts-TBLite.git",
+        "git_commit_id": "f075e463472c7790b85793b392dff1fff20cc0e3",
+        "path": "book-portfolio-analysis"
+    },
+    "source": "openthoughts-tblite",
+    "task_checksum": "f3caf766d44b159d9578820c7c7a33e053350468e0bd0a8e0474b588366afe97",
+    "config": {
+        "task": {
+            "path": "book-portfolio-analysis",
+            "git_url": "https://github.com/open-thoughts/OpenThoughts-TBLite.git",
+            "git_commit_id": "f075e463472c7790b85793b392dff1fff20cc0e3",
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "openthoughts-tblite"
+        },
+        "trial_name": "book-portfolio-analysis__vR45dbv",
+        "trials_dir": "~/Projects/codex-orchestrator/bench/harbor-jobs-preflight/2026-07-02__21-11-38",
+        "install_only": true,
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": null,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": null,
+            "import_path": "bench.harbor_agent:CodexOrchestratorAgent",
+            "model_name": "claude-opus-4-8",
+            "n_concurrent": null,
+            "concurrency_group": null,
+            "skills": [],
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "extra_allowed_hosts": [],
+            "kwargs": {
+                "reasoning_effort": "max"
+            },
+            "env": {},
+            "mcp_servers": []
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "cpu_enforcement_policy": "auto",
+            "memory_enforcement_policy": "auto",
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "override_tpu": null,
+            "mounts": null,
+            "extra_docker_compose": [],
+            "env": {},
+            "kwargs": {},
+            "extra_allowed_hosts": []
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "env": {},
+            "disable": true
+        },
+        "artifacts": [],
+        "extra_instruction_paths": [],
+        "job_id": "0515fcaf-1b72-4b16-8b3d-6f39bd3939ea"
+    },
+    "agent_info": {
+        "name": "codex-orchestrator",
+        "version": "2.1.198",
+        "model_info": {
+            "name": "claude-opus-4-8",
+            "provider": null
+        }
+    },
+    "agent_result": null,
+    "verifier_result": null,
+    "exception_info": null,
+    "started_at": "2026-07-02T19:11:42.398813Z",
+    "finished_at": "2026-07-02T19:14:33.683502Z",
+    "environment_setup": {
+        "started_at": "2026-07-02T19:11:42.443013Z",
+        "finished_at": "2026-07-02T19:13:39.647920Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-07-02T19:13:39.647962Z",
+        "finished_at": "2026-07-02T19:14:22.247745Z"
+    },
+    "agent_execution": null,
+    "verifier": null,
+    "step_results": null
+}

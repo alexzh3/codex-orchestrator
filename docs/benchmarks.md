@@ -30,8 +30,7 @@ OpenThoughts-TBLite is read from
 `open-thoughts/OpenThoughts-TBLite` task directories. The preparer fetches each
 `task.toml` and `instruction.md`, maps the metadata difficulty band to
 `difficulty_score`, uses `expert_time_estimate_min` as a tiebreaker, and writes
-`bench/datasets/tblite/tasks.jsonl`. Real execution still requires
-Harbor/Docker and the native TBLite runner work tracked by #3/#18.
+`bench/datasets/tblite/tasks.jsonl`.
 
 RExBench is gated at `tin-lab/RExBench`. The preparer downloads `dataset.zip`,
 extracts it into the gitignored output directory, fetches
@@ -51,8 +50,107 @@ directory is gitignored for this reason.
 ## Execution Status
 
 The prepared descriptors include explicit failing grader placeholders naming the
-required native harnesses. SWE-bench descriptors carry `repo` and `base_commit`
-fields, so target checkout fits the existing git-worktree adapter path; grading
-still requires a Docker-enabled SWE-bench evaluator (#2/#18). TBLite and
-RExBench descriptors need their native external runners before real benchmark
-results are meaningful (#18).
+required native harnesses where the real runner is not wired. SWE-bench
+descriptors carry `repo` and `base_commit` fields, so target checkout fits the
+existing git-worktree adapter path; grading still requires a Docker-enabled
+SWE-bench evaluator (#2/#18). RExBench remains deferred until the GPU-gated
+executor path is available (#10/#18).
+
+## Real OpenThoughts-TBLite Runs
+
+TBLite real mode uses Harbor/Docker. Each selected task runs the custom Harbor
+agent at `bench.harbor_agent:CodexOrchestratorAgent`, which installs Claude Code
+and Codex in the task container, uploads the local plugin directory, and invokes
+Claude as:
+
+```bash
+claude --verbose --output-format=stream-json --effort max --plugin-dir /tmp/codex-orch-plugin --print -- "/codex-orchestrator:orchestrate <task instruction>"
+```
+
+The agent forces `claude-opus-4-8` through Harbor ClaudeCode's `ANTHROPIC_MODEL`
+environment path and forces reasoning effort `max` through the ClaudeCode
+`--effort` flag. Harbor may still pass `-m` or agent kwargs, but this agent
+overrides them. Plugin-dispatched Codex sessions use the in-container
+`$CODEX_HOME/config.toml` and `~/.codex/config.toml`:
+
+```toml
+model = "gpt-5.5"
+model_reasoning_effort = "xhigh"
+service_tier = "default"
+```
+
+Override those Codex defaults with `CODEX_ORCH_CODEX_MODEL`,
+`CODEX_ORCH_CODEX_REASONING_EFFORT`, or `CODEX_ORCH_CODEX_SERVICE_TIER`.
+
+Claude authentication has two modes, selected by `CODEX_ORCH_CLAUDE_AUTH_MODE`:
+
+- **`credentials` (default) — reuse your local `claude login`.** The agent uploads
+  `~/.claude/.credentials.json` verbatim into each local container (the same
+  pattern as Codex `auth.json`); the file is never parsed or logged. This reuses
+  the operator's Claude subscription, including the refresh token, so no separate
+  headless token is needed. `ANTHROPIC_API_KEY` is blanked inside the container so
+  the CLI prefers that subscription credentials file over any stray API key.
+  Override the source path with `CODEX_ORCH_CLAUDE_CREDENTIALS_FILE`.
+- **`token` — headless OAuth token.** Set `CODEX_ORCH_CLAUDE_AUTH_MODE=token`,
+  run `claude setup-token`, and export `CLAUDE_CODE_OAUTH_TOKEN`. This mints a
+  long-lived token that will not expire mid-campaign — preferred for large runs.
+
+Host prerequisites (credentials mode, the default):
+
+```bash
+test -f ~/.claude/.credentials.json   # produced by `claude login`
+test -f ~/.codex/auth.json
+export CODEX_FORCE_AUTH_JSON=1
+docker info
+harbor download openthoughts-tblite
+```
+
+Direct Harbor smoke command (credentials mode):
+
+```bash
+cat >/tmp/codex-orch-tblite.env <<EOF
+CODEX_ORCH_PLUGIN_DIR=/path/to/codex-orchestrator
+CODEX_ORCH_CLAUDE_AUTH_MODE=credentials
+ANTHROPIC_API_KEY=
+CODEX_FORCE_AUTH_JSON=1
+EOF
+
+harbor run -d openthoughts-tblite -i <task-id> \
+  --agent-import-path bench.harbor_agent:CodexOrchestratorAgent \
+  -n 1 -o jobs/tblite-real --env-file /tmp/codex-orch-tblite.env
+```
+
+For token mode instead, drop `CODEX_ORCH_CLAUDE_AUTH_MODE`/`ANTHROPIC_API_KEY`
+and set `CODEX_ORCH_CLAUDE_AUTH_MODE=token`, `CLAUDE_FORCE_OAUTH=1`, and
+`CLAUDE_CODE_OAUTH_TOKEN=<token from claude setup-token>` in the env file.
+
+The benchmark helper writes the env file for the real tier path so secrets do
+not appear in argv:
+
+```bash
+python3 -m bench.run --tier tiny --plugin-ref /path/to/codex-orchestrator
+```
+
+Set `TBLITE_HARBOR_DATASET` to override the Harbor dataset name; the default is
+`openthoughts-tblite`. Grading comes only from Harbor's verifier reward in the
+task result JSON. Each normalized result also reports
+`codex_sessions_spawned` and `real_orchestration` by parsing the collected
+`claude-code.txt` trajectory for real `codex exec` Bash dispatches. A solved
+run with zero Codex dispatches is recorded honestly and marked
+`degenerate_no_codex` in `external_score` rather than silently changing
+pass/fail.
+
+Each real TBLite task also reports `external_score.token_breakdown` with
+Claude orchestrator usage, GPT/Codex implementer usage, and a combined total.
+The Claude side comes from Harbor's `agent_result` or `stats`. The GPT/Codex
+side is parsed from Codex session JSONL collected out of the task container:
+after Claude returns, the custom Harbor agent copies `$CODEX_HOME/sessions`
+from `/tmp/codex-home` into the `/logs/agent/codex-sessions` bind mount, so the
+session rollouts appear in the Harbor job directory. It also best-effort copies
+other non-session `$CODEX_HOME/**/*.jsonl` streams under that collected tree.
+GPT-side `cost_usd` is not available from those Codex logs and is reported as
+`null`, never estimated.
+
+If Harbor, Docker, the downloaded dataset, Claude OAuth, or Codex `auth.json`
+are missing, real mode raises instead of emitting placeholder pass/fail
+results.

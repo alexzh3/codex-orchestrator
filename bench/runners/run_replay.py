@@ -22,7 +22,7 @@ from codex_orch import (  # noqa: E402
     read_jsonl_with_warnings,
     validate_benchmark_result,
 )
-from codex_orch_report import (  # noqa: E402
+from codex_orchestrator.report import (  # noqa: E402
     is_final_review_verification,
     latest_record,
     prompt_log_pairs_complete,
