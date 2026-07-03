@@ -1,6 +1,6 @@
 # TBLite Head-to-Head Benchmark Results
 
-_Generated 2026-07-03 16:25  — 27/30 cells complete (10 tasks × 3 versions)._
+_Generated 2026-07-03 18:05  — 30/30 cells complete (10 tasks × 3 versions)._
 
 ## What was benchmarked
 
@@ -37,6 +37,7 @@ Legend: ✅/❌ = verifier pass/fail · ⚠️ = solved without dispatching Code
 | 7 | `mech-system` | ✅ | ✅ | ✅ | 3 | 6 | 2 |
 | 8 | `multi-labeller` | ✅ | ✅ | ❌ | 5 | 5 | 7 |
 | 9 | `react-typescript-debugg` | ❌⚠️ | ✅ | ❌ | 0 | 2 | 3 |
+| 10 | `token-auth-websocket` | ✅ | ✅ | ✅ | 2 | 7 | 3 |
 
 ### Claude orchestrator cost + tokens (input)
 
@@ -51,6 +52,7 @@ Legend: ✅/❌ = verifier pass/fail · ⚠️ = solved without dispatching Code
 | 7 | `mech-system` | — | — | — | 2.06M | 2.49M | 2.81M |
 | 8 | `multi-labeller` | — | — | — | 1.85M | 1.55M | 3.48M |
 | 9 | `react-typescript-debugg` | — | — | $3.48 | 1.04M | 1.22M | 1.18M |
+| 10 | `token-auth-websocket` | — | $4.57 | — | 4.57M | 3.54M | 2.81M |
 
 ### GPT/Codex implementer tokens (input) + wall time
 
@@ -65,6 +67,7 @@ Legend: ✅/❌ = verifier pass/fail · ⚠️ = solved without dispatching Code
 | 7 | `mech-system` | 306K | 339K | 272K | 16m | 16m | 16m |
 | 8 | `multi-labeller` | 517K | 242K | 281K | 16m | 16m | 16m |
 | 9 | `react-typescript-debugg` | 14K | 173K | 62K | 17m | 18m | 16m |
+| 10 | `token-auth-websocket` | 727K | 1.26M | 485K | 28m | 29m | 20m |
 
 ## Summary by version
 
@@ -72,9 +75,9 @@ Stats are over **valid** cells only (Claude actually ran); `⟳` cells hit the s
 
 | Version | valid | ⟳ limited | passed | pass rate | real-orch | Σ Claude $ | Σ Claude tok | Σ GPT tok | Σ wall |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
-| **0.2.0** | 9 | 0 | 6 | 67% | 7/9 | $8.53 | 20.32M | 4.26M | 2.7h |
-| **0.3.4** | 9 | 0 | 5 | 56% | 8/9 | $8.20 | 14.91M | 2.23M | 2.4h |
-| **0.3.5** | 9 | 0 | 5 | 56% | 9/9 | $18.36 | 24.22M | 2.54M | 2.6h |
+| **0.2.0** | 10 | 0 | 7 | 70% | 8/10 | $8.53 | 24.98M | 5.01M | 3.2h |
+| **0.3.4** | 10 | 0 | 6 | 60% | 9/10 | $12.77 | 18.51M | 3.52M | 2.9h |
+| **0.3.5** | 10 | 0 | 6 | 60% | 10/10 | $18.36 | 27.09M | 3.04M | 2.9h |
 
 ## Methodology & caveats
 
@@ -83,6 +86,10 @@ Stats are over **valid** cells only (Claude actually ran); `⟳` cells hit the s
 - **`codex_sessions`** counts `codex exec` Bash dispatches in the Claude trajectory; **`gpt_sessions`** counts distinct codex session logs with token usage — they differ when a dispatch resumes/reviews an existing session.
 
 - **GPT `cost_usd` is null** — codex session logs carry token counts, not price.
+
+- **Claude `cost_usd` is sparse** — Harbor only reports it on some runs, so the per-version `Σ Claude $` sums different task subsets and is NOT comparable across versions. Use **Σ Claude tok** (present on every valid cell) as the cost proxy.
+
+- **Fidelity trend:** real-orchestration rate rose 0.2.0→0.3.4→0.3.5 = 8→9→10 of 10; on genuinely-orchestrated passes (passed AND dispatched Codex) all three tie at 6/10. 0.2.0's higher raw pass rate (7/10) includes a degenerate solo-solve.
 
 - **Infra fixes made during bring-up** (all in `bench/harbor_agent.py` / `bench/harbor_runner.py`): token-mode auth (reuse-login credentials file is not read in-container); codex+node symlinked into `~/.local/bin` so the agent can actually dispatch codex; `CLAUDE_PLUGIN_ROOT` pinned; per-run unique Harbor output dir; credential hardening (0600/0700, staging removed).
 
