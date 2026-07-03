@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from codex_orch_report import prompt_log_pair_ratio, report_completeness_score  # noqa: E402
+from codex_orchestrator.report import prompt_log_pair_ratio, report_completeness_score  # noqa: E402
 
 REPORT_HEADINGS = [
     "## Summary",

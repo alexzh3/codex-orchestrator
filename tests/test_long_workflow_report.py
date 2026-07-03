@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from bench.runners.run_replay import run_case
-from codex_orch_report import prompt_log_pair_ratio, report_completeness_score
+from codex_orchestrator.report import prompt_log_pair_ratio, report_completeness_score
 
 
 ROOT = Path(__file__).resolve().parents[1]

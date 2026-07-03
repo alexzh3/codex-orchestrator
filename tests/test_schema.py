@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from codex_orch_contract import (  # noqa: E402
+from codex_orchestrator.contract import (  # noqa: E402
     ALLOWED_RISK_LEVELS,
     ALLOWED_VERIFICATION_KINDS,
     ALLOWED_VERIFICATION_RESULTS,

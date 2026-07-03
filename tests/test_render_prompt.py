@@ -32,7 +32,7 @@ class RenderPromptTests(unittest.TestCase):
                     "status": "active",
                     "owner": "codex",
                     "files_allowed": ["scripts/codex_orch.py", "tests/test_render_prompt.py"],
-                    "files_forbidden": ["scripts/codex_orch_contract.py"],
+                    "files_forbidden": ["scripts/codex_orch_parse.py"],
                     "acceptance": ["render-prompt substitutes fields", "output schema is strict"],
                     "verification_required": ["python3 -m unittest tests/test_render_prompt.py -v"],
                 }
@@ -63,7 +63,7 @@ class RenderPromptTests(unittest.TestCase):
         self.assertIn("You are the implementation agent for task `T100`.", prompt)
         self.assertIn("- scripts/codex_orch.py", prompt)
         self.assertIn("- tests/test_render_prompt.py", prompt)
-        self.assertIn("- scripts/codex_orch_contract.py", prompt)
+        self.assertIn("- scripts/codex_orch_parse.py", prompt)
         self.assertIn("- render-prompt substitutes fields", prompt)
         self.assertIn("- python3 -m unittest tests/test_render_prompt.py -v", prompt)
         self.assertIn("schemas/codex-task-output.schema.json", prompt)

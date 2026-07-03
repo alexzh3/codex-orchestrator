@@ -13,7 +13,7 @@ gates, and **Codex implements**. When you work here, follow that division.
    Claude reviews the real diff, runs an independent `codex exec review`, and records evidence.
 2. **Stdlib only.** No third-party Python deps. Config is JSON (not YAML).
 3. **Keep the schema contract in sync.** Ledger event enums live in
-   `scripts/codex_orch_contract.py` and must match `schemas/codex-orchestrator.schema.json` — the
+   `scripts/codex_orchestrator/contract.py` and must match `schemas/codex-orchestrator.schema.json` — the
    test `tests/test_schema.py::test_schema_enums_match_runtime_contract` guards this.
 4. **Additive & backward-compatible** changes to the CLI/report unless a release explicitly says
    otherwise. Existing commands (`init`, `status`, `add-verification`, `append-event`, `worktree`,
@@ -34,8 +34,8 @@ skills/           orchestrate/, workflow/, report/ playbooks and orchestration r
 monitors/         monitors.json
 bin/              codex-orch, codex-orch-monitor
 templates/        task-prompt.md, review-prompt.md
-scripts/          codex_orch.py (ledger CLI), codex_orch_parse.py (JSONL session parser),
-                  codex_orch_contract.py (enums), codex_orch_report.py (report compiler)
+scripts/          codex_orchestrator/ (the package: cli, gate, ledger, parse, report, contract, …);
+                  codex_orch.py + codex_orch_parse.py are thin path-invoked CLI entry points
 schemas/          codex-orchestrator.schema.json, codex-task-output.schema.json
 bench/            run.py, runners/ (run_replay.py, run_claude.py), compare.py, metrics.py,
                   adapters/ (base, rexbench, tblite, swebench_verified_mini), tiers.json,
@@ -148,6 +148,7 @@ real-infra follow-ups [#18]/[#19]/[#20], optional Aider Polyglot smoke [#7], and
   a clear `RuntimeError` naming the missing infra / dataset env var until wired. Reuse
   `run_claude.build_claude_argv`.
 - **A ledger event type:** add the `$def` to `schemas/codex-orchestrator.schema.json`, mirror enums
-  in `scripts/codex_orch_contract.py`, add validation in `scripts/codex_orch.py`, render it in
-  `scripts/codex_orch_report.py`, and extend `tests/test_schema.py` + a focused test.
+  in `scripts/codex_orchestrator/contract.py`, add validation in the `codex_orchestrator` package,
+  render it in `scripts/codex_orchestrator/report_render.py`, and extend `tests/test_schema.py` + a
+  focused test.
 - Always run the full unittest suite + the relevant `bench.run` before proposing changes.

@@ -63,7 +63,7 @@ class TaskProtocolTests(unittest.TestCase):
                 "context": ["The orchestrator stores task state in ledger.jsonl."],
                 "constraints": ["Keep typed event changes backward-compatible."],
                 "files_allowed": ["scripts/codex_orch.py"],
-                "files_forbidden": ["scripts/codex_orch_report.py"],
+                "files_forbidden": ["scripts/codex_orch_parse.py"],
                 "acceptance": ["unit tests pass"],
                 "verification_required": ["python3 -m unittest discover -s tests -v"],
             },
@@ -73,7 +73,7 @@ class TaskProtocolTests(unittest.TestCase):
                 "task_id": "task-a",
                 "agent": "codex-a",
                 "allow": ["scripts/codex_orch.py"],
-                "forbid": ["scripts/codex_orch_report.py"],
+                "forbid": ["scripts/codex_orch_parse.py"],
             },
             {
                 "type": "dispatch_started",
@@ -196,7 +196,7 @@ class TaskProtocolTests(unittest.TestCase):
             "--allow",
             "tests/*.py",
             "--forbid",
-            "scripts/codex_orch_report.py",
+            "scripts/codex_orch_parse.py",
         )
 
         payload = json.loads(result.stdout)
@@ -206,7 +206,7 @@ class TaskProtocolTests(unittest.TestCase):
         self.assertEqual(records[-1]["task_id"], "task-a")
         self.assertEqual(records[-1]["agent"], "codex-a")
         self.assertEqual(records[-1]["allow"], ["scripts/*.py", "tests/*.py"])
-        self.assertEqual(records[-1]["forbid"], ["scripts/codex_orch_report.py"])
+        self.assertEqual(records[-1]["forbid"], ["scripts/codex_orch_parse.py"])
         self.assertIn("recorded_at", records[-1])
 
     def test_add_verification_task_scope_only_satisfies_matching_task(self) -> None:
