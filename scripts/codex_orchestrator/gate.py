@@ -190,8 +190,11 @@ def has_later_overriding_consensus_with_ids(
     start_index: int,
     verification: dict[str, object],
     by_id: dict[str, list[dict[str, object]]],
+    record_indices: dict[int, int] | None = None,
 ) -> bool:
-    for record in records[start_index + 1 :]:
+    if record_indices is None:
+        record_indices = {id(record): index for index, record in enumerate(records)}
+    for consensus_index, record in enumerate(records[start_index + 1 :], start=start_index + 1):
         if record.get("type") != "consensus":
             continue
         outcome = consensus_outcome_value(record)
@@ -199,7 +202,13 @@ def has_later_overriding_consensus_with_ids(
             outcome in RESOLVING_CONSENSUS_OUTCOMES
             and record.get("requires_user") is not True
             and consensus_addresses_verification(record, verification, by_id)
-            and consensus_clears_verification(record, verification, by_id)
+            and consensus_clears_verification(
+                record,
+                verification,
+                by_id,
+                consensus_index=consensus_index,
+                record_indices=record_indices,
+            )
         ):
             return True
     return False
@@ -216,12 +225,13 @@ def has_later_overriding_consensus(
 def unresolved_verification_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
     unresolved: list[dict[str, object]] = []
     by_id = verifications_by_id(records)
+    record_indices = {id(record): index for index, record in enumerate(records)}
     for index, record in enumerate(records):
         if record.get("type") != "verification":
             continue
         if record.get("result") not in UNRESOLVED_VERIFICATION_RESULTS:
             continue
-        if has_later_overriding_consensus_with_ids(records, index, record, by_id):
+        if has_later_overriding_consensus_with_ids(records, index, record, by_id, record_indices):
             continue
         unresolved.append(record)
     return unresolved
@@ -707,7 +717,8 @@ def cleared_verification_ids(record: dict[str, object]) -> list[str]:
 def rerun_link_doctor_issues(records: list[dict[str, object]]) -> list[str]:
     issues: list[str] = []
     by_id = verifications_by_id(records)
-    for record in records:
+    record_indices = {id(record): index for index, record in enumerate(records)}
+    for consensus_index, record in enumerate(records):
         if record.get("type") != "consensus":
             continue
         basis = consensus_resolution_basis(record)
@@ -733,7 +744,14 @@ def rerun_link_doctor_issues(records: list[dict[str, object]]) -> list[str]:
                 linked_records = by_id.get(linked_id, [])
                 if len(linked_records) != 1:
                     continue
-                reasons = rerun_link_issues(linked_records[0], verification, min_attempts=min_attempts)
+                linked_record = linked_records[0]
+                reasons = rerun_link_issues(
+                    linked_record,
+                    verification,
+                    min_attempts=min_attempts,
+                    link_index=record_indices.get(id(linked_record)),
+                    consensus_index=consensus_index,
+                )
                 if reasons:
                     attempted.append((linked_id, reasons))
                 else:

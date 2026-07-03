@@ -477,6 +477,70 @@ class GateDoctorTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["blocking"], [])
 
+    def test_rerun_evidence_after_consensus_does_not_clear(self) -> None:
+        self.start_gate_ready_run()
+        self.add_verification_event(
+            id="V1",
+            recorded_at="2026-06-29T08:01:00Z",
+            kind="test",
+            result="failed",
+            summary="Unit tests failed.",
+            command=TEST_COMMAND,
+            task_id="T001",
+        )
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": "The rerun will be recorded later.",
+                "resolution_basis": "rerun_passed",
+                "requires_user": False,
+                "evidence": ["rerun"],
+                "clears": ["verification:V1"],
+                "evidence_refs": ["verification:V2"],
+            }
+        )
+        self.add_verification_event(
+            id="V2",
+            recorded_at="2026-06-29T08:02:00Z",
+            kind="test",
+            result="passed",
+            summary="Unit tests passed on rerun.",
+            command=TEST_COMMAND,
+            task_id="T001",
+        )
+        self.finish_run()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "unresolved-verification")
+
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": "The rerun has now been recorded.",
+                "resolution_basis": "rerun_passed",
+                "requires_user": False,
+                "evidence": ["rerun"],
+                "clears": ["verification:V1"],
+                "evidence_refs": ["verification:V2"],
+            }
+        )
+        self.refresh_report_mtime()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["blocking"], [])
+
     def test_gate_rerun_with_different_command_does_not_clear(self) -> None:
         self.start_gate_ready_run()
         self.add_verification_event(id="V1", recorded_at="2026-06-29T08:01:00Z", command=TEST_COMMAND)
@@ -1198,6 +1262,25 @@ class GateDoctorTests(unittest.TestCase):
         self.append_event(
             {
                 "type": "consensus",
+                "finding": "Backfilled rerun.",
+                "outcome": "consensus",
+                "resolution": "This cites a rerun that appears later in the ledger.",
+                "resolution_basis": "rerun_passed",
+                "requires_user": False,
+                "evidence": ["rerun"],
+                "clears": ["verification:V1"],
+                "evidence_refs": ["verification:V4"],
+            }
+        )
+        self.add_verification_event(
+            id="V4",
+            recorded_at="2026-06-29T08:05:00Z",
+            result="passed",
+            command=TEST_COMMAND,
+        )
+        self.append_event(
+            {
+                "type": "consensus",
                 "finding": "Unit tests failed.",
                 "outcome": "consensus",
                 "resolution": "Invalid rerun link.",
@@ -1218,6 +1301,13 @@ class GateDoctorTests(unittest.TestCase):
             any(
                 "invalid-rerun-link: consensus 'Unit tests failed.' link 'V3' "
                 "does not supersede verification 'V1' (command hash mismatch)" in issue
+                for issue in issues
+            )
+        )
+        self.assertTrue(
+            any(
+                "invalid-rerun-link: consensus 'Backfilled rerun.' link 'V4' "
+                "does not supersede verification 'V1' (recorded after consensus)" in issue
                 for issue in issues
             )
         )

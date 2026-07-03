@@ -211,6 +211,7 @@ Verification clearability:
 Valid rerun links require all of:
 
 - the linked verification result is `passed`;
+- the linked verification is recorded earlier in the ledger than the consensus that cites it;
 - linked verification `recorded_at` is parseable and strictly newer than the failed verification;
 - same `task_id`, treating missing as an empty string;
 - same `kind`;
@@ -284,8 +285,8 @@ Doctor prefixes:
 }
 ```
 
-Gate passes this part only if `V2` is passed, strictly newer, same kind, same task, same command
-hash, same acceptance flag, and the id is not duplicated.
+Gate passes this part only if `V2` was already recorded before the consensus, is passed, strictly
+newer, same kind, same task, same command hash, same acceptance flag, and the id is not duplicated.
 
 ### Accepted Risk Over A Style Convention
 

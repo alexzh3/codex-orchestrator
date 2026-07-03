@@ -115,11 +115,21 @@ def linked_verification_ids(c: dict) -> list[str]:
     return ids
 
 
-def rerun_link_issues(link: dict, v: dict, min_attempts: int = 1) -> list[str]:
+def rerun_link_issues(
+    link: dict,
+    v: dict,
+    min_attempts: int = 1,
+    *,
+    link_index: int | None = None,
+    consensus_index: int | None = None,
+) -> list[str]:
     issues: list[str] = []
     result = link.get("result")
     if result != "passed":
         issues.append(f"result {result}")
+
+    if link_index is not None and consensus_index is not None and link_index >= consensus_index:
+        issues.append("recorded after consensus")
 
     link_recorded_at = parse_recorded_at(link.get("recorded_at"))
     verification_recorded_at = parse_recorded_at(v.get("recorded_at"))
@@ -149,7 +159,14 @@ def rerun_link_issues(link: dict, v: dict, min_attempts: int = 1) -> list[str]:
     return issues
 
 
-def consensus_clears_verification(c: dict, v: dict, by_id: dict[str, list[dict[str, object]]]) -> bool:
+def consensus_clears_verification(
+    c: dict,
+    v: dict,
+    by_id: dict[str, list[dict[str, object]]],
+    *,
+    consensus_index: int | None = None,
+    record_indices: dict[int, int] | None = None,
+) -> bool:
     basis = consensus_resolution_basis(c)
     if basis == "user_override":
         return user_override_clears(v)
@@ -161,7 +178,14 @@ def consensus_clears_verification(c: dict, v: dict, by_id: dict[str, list[dict[s
             records = by_id.get(verification_id, [])
             if len(records) != 1:
                 continue
-            if not rerun_link_issues(records[0], v, min_attempts=min_attempts):
+            link = records[0]
+            if consensus_index is not None:
+                if record_indices is None:
+                    continue
+                link_index = record_indices.get(id(link))
+                if link_index is None or link_index >= consensus_index:
+                    continue
+            if not rerun_link_issues(link, v, min_attempts=min_attempts):
                 return True
         return False
     return False
