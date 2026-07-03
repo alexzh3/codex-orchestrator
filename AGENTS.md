@@ -18,17 +18,16 @@ gates, and **Codex implements**. When you work here, follow that division.
 4. **Additive & backward-compatible** changes to the CLI/report unless a release explicitly says
    otherwise. Existing commands (`init`, `status`, `add-verification`, `append-event`, `worktree`,
    `report`) must keep working.
-5. **Never fake a benchmark number.** Dry-run paths must be deterministic + schema-valid; real paths
-   that need missing infra or datasets must **fail loudly** — the external adapters raise a clear
-   `RuntimeError` naming the missing dataset/infra env var, and a not-yet-wired runner path raises
-   `NotImplementedError` — or exit nonzero, never emitting placeholder results.
+5. **Never fake a benchmark number.** Benchmark or evaluation results must come from real artifacts;
+   if required infra or data is unavailable, fail loudly or document the absence rather than
+   emitting placeholder results.
 6. **Durable state over memory.** Record material facts in the run ledger
    (`.codex-orchestrator/runs/<id>/`), not just in conversation.
 
 ## Repo layout
 
 ```
-.claude-plugin/   plugin.json (v0.3.4), marketplace.json
+.claude-plugin/   plugin.json (v0.4.1), marketplace.json
 commands/         thin slash-command triggers that load skills
 skills/           orchestrate/, workflow/, report/ playbooks and orchestration references
 monitors/         monitors.json
@@ -37,10 +36,8 @@ templates/        task-prompt.md, review-prompt.md
 scripts/          codex_orchestrator/ (the package: cli, gate, ledger, parse, report, contract, …);
                   codex_orch.py + codex_orch_parse.py are thin path-invoked CLI entry points
 schemas/          codex-orchestrator.schema.json, codex-task-output.schema.json
-bench/            run.py, runners/ (run_replay.py, run_claude.py), compare.py, metrics.py,
-                  adapters/ (base, rexbench, tblite, swebench_verified_mini), tiers.json,
-                  bench/schemas/benchmark-result.schema.json, cases/ (replay/, local-mini/)
-tests/            unittest suite (103 pass, 1 skipped on Python 3.10)
+bench/            deterministic replay self-test; external benchmarks live in codex-orchestrator-bench
+tests/            unittest suite
 docs/             maintainer docs
 ```
 
@@ -52,16 +49,6 @@ python3 -m unittest discover -s tests -v
 
 # Deterministic protocol benchmark (no models/API — CI-friendly)
 python3 -m bench.run --suite replay
-
-# Head-to-head harness (dry-run mock = zero API cost)
-python3 -m bench.run --suite local-mini --plugin-ref <ref> --dry-run
-python3 -m bench.run --tier tiny     --plugin-ref <ref> --dry-run  # 10 frozen TBLite results
-python3 -m bench.run --tier frontier --plugin-ref <ref> --dry-run  # 8 + 3 + 6 = 17 gated dry-run results
-python3 -m bench.run --tier frontier --plugin-ref <ref>            # real frontier is gated/nonzero
-python3 -m bench.compare --baseline a.jsonl --candidate b.jsonl
-
-# Real runs (spend Claude+Codex budget; need infra) are gated: drop --dry-run and
-# adapters raise RuntimeError naming missing dataset/infra env vars until wired.
 
 # Ledger CLI (orchestration bookkeeping)
 python3 scripts/codex_orch.py ensure-run --repo . --run-id <id> --plugin-ref <ref>
@@ -83,76 +70,20 @@ record `verification` + `consensus`; gate; commit. Resume the same session for s
 (`codex exec resume <thread-id>`). Note: strict `--output-schema` requires
 `additionalProperties:false` + all-required; `codex exec review --base` cannot take a custom prompt.
 
-## Current status (2026-07-01)
+## Public status
 
-Plugin **v0.4.0**. **Hold merges to `main`** per direction: the 0.3.x stack
-(#8, #9, #12, #13, #14, #15, #16) has been collapsed into one held PR,
-[#17](https://github.com/alexzh3/codex-orchestrator/pull/17), targeting `main`. #17 is open,
-unmerged, and intentionally held.
+`main` is the held benchmark baseline; development lands on integration branches; releases are
+tagged (`v0.2.0`, `v0.3.5`, `v0.4.0`, `v0.4.1`). Benchmark results are in
+`docs/benchmarks.md`; external benchmark machinery lives in the
+[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repo.
 
-The test suite is **166 passing tests**. Issues #4, #5, #6, and #11 are closed. Still-open follow-ups are #2/#3/#10 for real
-external-benchmark adapters, #7 for the optional Aider Polyglot smoke, #18/#19/#20 for real-infra
-follow-ups, and the `scripts/codex_orchestrator/` package split planned for the next cleanup phase.
+## Versioning policy
 
-Built with Claude Opus 4.8 (1M) + Codex CLI 0.131.0.
-
-## Roadmap
-
-### Refactor releases (see `refactor_plan.md`)
-**Versioning policy:** stay on the **0.3.x/0.4.x** lines — patch releases bump the patch
+Stay on the **0.3.x/0.4.x** lines — patch releases bump the patch
 (0.3.1, 0.3.2, …; 0.4.1, …). Do not bump beyond 0.4.x without explicit instruction.
-- **0.3.0 Benchmarkability & metadata** — ✅
-- **0.3.1 Task protocol** — typed events, file claims + `check-conflicts`, report Task Graph,
-  benchmark score wired to the new events. ✅
-- **0.3.2 Gate & generated prompts** — `gate` + `doctor`, `render-prompt` + templates + Codex output
-  schema, strict report mode, Gate Result rendering. ✅
-- **0.3.3 Skills & monitors** — migrate `commands/*` → `skills/<name>/SKILL.md`, `bin/codex-orch`,
-  plugin-native monitors. ✅
-- **0.3.4 External benchmark adapters** — dry-run and real-mode adapter scaffolding; see benchmark
-  roadmap below. ✅
-- **0.3.5 Structure cleanup** — Phase A declutter + truth-sync, then Phase B
-  `scripts/codex_orchestrator/` package split behind re-export shims. The package split is not done.
-- **0.4.0 Consensus evidence basis + blocker hygiene** — ✅ gate-semantics change (documented
-  break): resolving consensus can no longer clear failed executable/acceptance verifications
-  without a linked passing rerun (same command hash/kind/task, strictly newer) or explicit
-  user_override; review blocking_findings block pending-repro; add-verification validates +
-  auto-ids; human docs in docs/consensus-and-reviews.md.
-
-### Head-to-head version-quality benchmark (two frozen tiers)
-Config in `bench/tiers.json` schema v2. `tiny` is fixed at 10 empirically benchmarked TBLite tasks;
-`frontier` is fixed at 8 + 3 + 6 external tasks and is **infra-gated**:
-
-| Benchmark | Tier use | Adapter (real) | Infra | Issue |
-|-----------|----------|----------------|-------|-------|
-| **TBLite** (OpenThoughts-TBLite, 100 Terminal-Bench tasks) | tiny 10 frozen | Harbor `--agent-import-path` wrapping `claude -p --plugin-dir` | Harbor sandbox | [#3](https://github.com/alexzh3/codex-orchestrator/issues/3) |
-| **Terminal-Bench 2.1** | frontier 8 frozen | adapter pending | Harbor sandbox | [#18](https://github.com/alexzh3/codex-orchestrator/issues/18) |
-| **SWE-bench Pro public** | frontier 3 frozen | adapter pending | Docker evaluator + public images | [#18](https://github.com/alexzh3/codex-orchestrator/issues/18) |
-| **RExBench** (12 research-eng tasks, arXiv 2506.22598) | frontier 6 frozen | external grading only | rexbench.com patch ZIP submission | [#10](https://github.com/alexzh3/codex-orchestrator/issues/10) |
-
-Each real run measures **external pass/fail** (the benchmark's own grader) **+ orchestration sidecar
-metrics** (report_score, gate false-acceptance, file-conflict count, prompt/log coverage) from the
-produced `.codex-orchestrator/` run dir, aggregated by `bench.compare`. External score is
-model-dominated; the **sidecar** is where harness/plugin versions actually separate.
-
-### Open issues
-Closed: umbrella tiered suite [#11], local-mini E2E runner [#4], compare dashboard +
-false-acceptance [#5], and CI dry-run guards [#6]. Open: real external-benchmark adapters [#2]/[#3]/[#10],
-real-infra follow-ups [#18]/[#19]/[#20], optional Aider Polyglot smoke [#7], and the
-`scripts/codex_orchestrator/` package split.
-
-### Recommended next steps
-1. Complete the remaining structure cleanup: Phase A declutter first, then the
-   `scripts/codex_orchestrator/` package split with compatibility shims.
-2. Keep held PR #17 green while `main` remains untouched.
-3. Build the first **real** adapter — TBLite [#3] — with the real-infra follow-ups #18/#19/#20, then
-   run a small gated head-to-head once infrastructure is available.
 
 ## How to extend
 
-- **A benchmark adapter:** subclass `bench/adapters/base.py`; keep dry-run deterministic +
-  schema-valid (validate against `bench/schemas/benchmark-result.schema.json`); real mode must raise
-  a clear `RuntimeError` naming the missing infra / dataset env var until wired. Reuse
-  `run_claude.build_claude_argv`.
 - **A ledger event type:** add the `$def` to `schemas/codex-orchestrator.schema.json`, mirror enums
   in `scripts/codex_orchestrator/contract.py`, add validation in the `codex_orchestrator` package,
   render it in `scripts/codex_orchestrator/report_render.py`, and extend `tests/test_schema.py` + a

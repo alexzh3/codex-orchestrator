@@ -162,7 +162,7 @@ monitors/         plugin monitor definitions
 templates/        task and review prompt templates
 scripts/          ledger CLI, JSONL parser, report compiler, runtime contract helpers
 schemas/          plugin contract schemas
-bench/            head-to-head eval harness, adapters, cases, and bench/schemas/
+bench/            deterministic replay self-test (protocol byte-stability)
 tests/            unittest suite
 docs/             maintainer documentation
 .github/          CI workflows
@@ -171,16 +171,24 @@ docs/             maintainer documentation
 **Plugin runtime (installed):** `.claude-plugin/`, `commands/`, `skills/`, `bin/`, `monitors/`,
 `templates/`, `scripts/`, `schemas/`, `README.md`, and `LICENSE`.
 
-**Maintainer / dev (in-repo, not needed at runtime):** `bench/` for the head-to-head eval harness and
-`bench/schemas/`, plus `tests/`, `docs/`, `.github/`, and `AGENTS.md`.
+**Maintainer / dev (in-repo, not needed at runtime):** `bench/` for the deterministic replay
+self-test, plus `tests/`, `docs/`, `.github/`, and `AGENTS.md`.
 
-**Local / gitignored:** `.codex-orchestrator/` run ledgers, `.env`, `bench/datasets/`, and
-`refactor_plan.md`.
+**Local / gitignored:** `.codex-orchestrator/` run ledgers and `.env`.
 
 Command surface tiers: **user** (`/codex-orchestrator:orchestrate|workflow|report`,
 `codex-orch status|gate|doctor|report`); **advanced/dev** (`codex-orch append-event`,
-`python3 -m bench.run|bench.compare`); **internal** (event validation, JSONL parsing, report scoring,
-adapter plumbing).
+`python3 -m bench.run`); **internal** (event validation, JSONL parsing, report scoring).
+
+---
+
+## Benchmarks
+
+The public OpenThoughts-TBLite head-to-head shows 0.2.0 at 7/10 raw pass rate, including one
+degenerate solo solve, and 0.3.5 at 6/10 with real-orchestration fidelity rising from 8/10 to 10/10.
+See [docs/benchmarks.md](docs/benchmarks.md) for the curated result. Raw artifacts and external
+benchmark machinery live in
+[codex-orchestrator-bench](https://github.com/alexzh3/codex-orchestrator-bench).
 
 ---
 
