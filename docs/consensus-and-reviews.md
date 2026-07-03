@@ -1,6 +1,6 @@
 # Consensus And Reviews
 
-This document explains how the 0.3.6 evidence flow works. It is for maintainers who need to read a
+This document explains how the 0.4.0 evidence flow works. It is for maintainers who need to read a
 ledger, understand why `gate` passed or blocked, and know what `doctor` is warning about.
 
 ## The Flow At A Glance
@@ -65,7 +65,7 @@ Fields:
 - `task_id`, `covers_tasks`, `scope`: limit or broaden which task a verification satisfies.
   Unscoped verifications can satisfy any task requirement; `scope: "global"` covers the run.
 - `acceptance_test`: marks the verification as an acceptance check. Failed acceptance checks cannot
-  be cleared by `accepted_risk`, `non_executable_convention`, or `user_override` in 0.3.6. A later
+  be cleared by `accepted_risk`, `non_executable_convention`, or `user_override` in 0.4.0. A later
   passing rerun can clear one only when both records have the same non-empty command, kind, task,
   and acceptance flag.
 - `attempt_count`: number of attempts represented by this record. Missing or invalid values count
@@ -102,7 +102,7 @@ Fields:
 
 `gate` appends a `gate_result` and exits nonzero when blocking reasons exist. `doctor` performs
 read-only integrity checks and never mutates the ledger. `report --strict` renders `report.md` and
-fails when required report sections still contain missing-evidence placeholders; 0.3.6 did not
+fails when required report sections still contain missing-evidence placeholders; 0.4.0 did not
 change strict-report scoring or placeholders.
 
 ## Review Events And Blocking Findings
@@ -188,7 +188,7 @@ Resolution bases:
 | `repro_not_reproduced` | A stochastic failure did not reproduce. | A flaky check was rerun enough times. | Same as `rerun_passed`, but stochastic checks need 3 passing attempts. |
 | `accepted_risk` | A known non-executable risk is accepted. | The issue is a convention, documentation, or policy risk. | Command-less non-acceptance verification failures and findings by `finding:<id>`. |
 | `non_executable_convention` | Legacy/default basis for command-less convention decisions. | Old ledgers or convention-only failures. | Command-less non-acceptance verification failures. |
-| `user_override` | Explicit human override. | A human explicitly accepts the outcome. | Executable non-acceptance verification failures and findings. It cannot clear acceptance tests in 0.3.6. |
+| `user_override` | Explicit human override. | A human explicitly accepts the outcome. | Executable non-acceptance verification failures and findings. It cannot clear acceptance tests in 0.4.0. |
 
 `clears` says what the consensus resolves. It is ref-addressed, and a consensus with a non-empty
 `clears` list never falls back to text matching. `evidence_refs` points to proof records; it never
@@ -310,7 +310,7 @@ This would not clear a failed test command or an acceptance check.
 ### Blocked Plain Agreement Over A Failed Executable Test
 
 A failed test verification has a command. A later consensus with matching text but no basis, clears
-ref, or rerun evidence does not clear it in 0.3.6. Gate emits `unresolved-verification`.
+ref, or rerun evidence does not clear it in 0.4.0. Gate emits `unresolved-verification`.
 
 ### Finding Not Reproduced In Three Attempts
 
@@ -320,10 +320,10 @@ the finding's `min_repro_attempts`, the finding stops blocking. If maintainers d
 accepted risk instead, a later consensus with `resolution_basis: "accepted_risk"` and
 `clears: ["finding:F1"]` also clears the finding by explicit ref.
 
-## What Changed In 0.3.6 And Why
+## What Changed In 0.4.0 And Why
 
-Before 0.3.6, matching agreement text could clear failed evidence too easily. That is unsafe for an
-ensemble workflow because models can converge on the same plausible but wrong answer. 0.3.6 makes
+Before 0.4.0, matching agreement text could clear failed evidence too easily. That is unsafe for an
+ensemble workflow because models can converge on the same plausible but wrong answer. 0.4.0 makes
 resolution basis explicit and machine-checkable:
 
 - failed executable or acceptance verifications need a valid linked passing rerun, or an explicit

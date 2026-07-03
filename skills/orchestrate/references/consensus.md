@@ -26,7 +26,7 @@ For each consensus record, capture:
 
 ## Resolution Basis
 
-For 0.3.6+ consensus records that resolve failed verification or review evidence, include a
+For 0.4.0+ consensus records that resolve failed verification or review evidence, include a
 machine-checkable `resolution_basis` plus refs:
 
 - `rerun_passed`: a later verification reran the identical command string and passed.

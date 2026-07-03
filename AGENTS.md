@@ -84,7 +84,7 @@ record `verification` + `consensus`; gate; commit. Resume the same session for s
 
 ## Current status (2026-07-01)
 
-Plugin **v0.3.6**. **Hold merges to `main`** per direction: the 0.3.x stack
+Plugin **v0.4.0**. **Hold merges to `main`** per direction: the 0.3.x stack
 (#8, #9, #12, #13, #14, #15, #16) has been collapsed into one held PR,
 [#17](https://github.com/alexzh3/codex-orchestrator/pull/17), targeting `main`. #17 is open,
 unmerged, and intentionally held.
@@ -98,8 +98,8 @@ Built with Claude Opus 4.8 (1M) + Codex CLI 0.131.0.
 ## Roadmap
 
 ### Refactor releases (see `refactor_plan.md`)
-**Versioning policy:** stay on the **0.3.x** line — each release bumps the patch (0.3.1, 0.3.2, …),
-not the minor. Do not bump to 0.4+ without explicit instruction.
+**Versioning policy:** stay on the **0.3.x/0.4.x** lines — patch releases bump the patch
+(0.3.1, 0.3.2, …; 0.4.1, …). Do not bump beyond 0.4.x without explicit instruction.
 - **0.3.0 Benchmarkability & metadata** — ✅
 - **0.3.1 Task protocol** — typed events, file claims + `check-conflicts`, report Task Graph,
   benchmark score wired to the new events. ✅
@@ -111,7 +111,7 @@ not the minor. Do not bump to 0.4+ without explicit instruction.
   roadmap below. ✅
 - **0.3.5 Structure cleanup** — Phase A declutter + truth-sync, then Phase B
   `scripts/codex_orchestrator/` package split behind re-export shims. The package split is not done.
-- **0.3.6 Consensus evidence basis + blocker hygiene** — ✅ gate-semantics change (documented
+- **0.4.0 Consensus evidence basis + blocker hygiene** — ✅ gate-semantics change (documented
   break): resolving consensus can no longer clear failed executable/acceptance verifications
   without a linked passing rerun (same command hash/kind/task, strictly newer) or explicit
   user_override; review blocking_findings block pending-repro; add-verification validates +
