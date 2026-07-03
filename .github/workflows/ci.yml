@@ -26,5 +26,5 @@ jobs:
       - name: Run tiny dry-run benchmark
         run: python3 -m bench.run --tier tiny --plugin-ref dry-run --dry-run
 
-      - name: Run normal dry-run benchmark
-        run: python3 -m bench.run --tier normal --plugin-ref dry-run --dry-run
+      - name: Run frontier dry-run benchmark
+        run: python3 -m bench.run --tier frontier --plugin-ref dry-run --dry-run

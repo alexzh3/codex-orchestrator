@@ -22,6 +22,8 @@ from bench.runners.run_claude import parse_claude_usage  # noqa: E402
 from bench.runners.run_claude import resolve_target_repo  # noqa: E402
 from bench.runners.run_claude import run_case as run_claude_case  # noqa: E402
 from codex_orch import validate_benchmark_result  # noqa: E402
+from bench.adapters.swebench_pro_public import SWEBenchProPublicAdapter  # noqa: E402
+from bench.adapters.terminalbench_2_1 import TerminalBench21Adapter  # noqa: E402
 
 
 ADAPTERS = (
@@ -29,6 +31,11 @@ ADAPTERS = (
     (TBLiteAdapter(), "tasks.jsonl", "id", "instructions"),
     (SWEBenchVerifiedMiniAdapter(), "instances.jsonl", "instance_id", "problem_statement"),
 )
+LOCAL_GRADER_ADAPTERS = (
+    (TBLiteAdapter(), "tasks.jsonl", "id", "instructions"),
+    (SWEBenchVerifiedMiniAdapter(), "instances.jsonl", "instance_id", "problem_statement"),
+)
+STUB_ADAPTERS = (TerminalBench21Adapter(), SWEBenchProPublicAdapter())
 
 
 class RealAdapterTests(unittest.TestCase):
@@ -230,6 +237,54 @@ class RealAdapterTests(unittest.TestCase):
             self.assertEqual(tasks[0]["benchmark"], adapter.name)
             self.assertEqual(tasks[0]["selection"], "lowest_success_rate")
 
+    def test_resolve_frozen_tasks_dry_run_is_deterministic(self) -> None:
+        adapter = TBLiteAdapter()
+        entries = [
+            {"id": "first-frozen", "reason": "first", "sha256": None},
+            {"id": "second-frozen", "reason": "second", "sha256": None},
+        ]
+        with patch.dict(os.environ, {adapter.dataset_env_var: "/path/that/does/not/exist"}):
+            first = adapter.resolve_frozen_tasks(entries, dry_run=True)
+            second = adapter.resolve_frozen_tasks(entries, dry_run=True)
+
+        self.assertEqual(first, second)
+        self.assertEqual([task["id"] for task in first], ["first-frozen", "second-frozen"])
+        self.assertEqual([task["selection"] for task in first], ["frozen", "frozen"])
+        self.assertIn("frozen task first-frozen", str(first[0]["prompt"]))
+
+    def test_stub_adapters_dry_run_and_real_mode_contract(self) -> None:
+        entries = [{"id": "stub-task", "reason": "stub", "sha256": None}]
+        for adapter in STUB_ADAPTERS:
+            with self.subTest(adapter=adapter.name), tempfile.TemporaryDirectory() as tmp:
+                task = adapter.resolve_frozen_tasks(entries, dry_run=True)[0]
+                result = adapter.run_task(
+                    task,
+                    "demo",
+                    dry_run=True,
+                    repo_root=ROOT,
+                    work_dir=Path(tmp),
+                )
+                validate_benchmark_result(result)
+                self.assertEqual(result["suite"], adapter.name)
+                self.assertEqual(result["case_id"], "stub-task")
+                self.assertEqual(result["external_score"]["selection"], "frozen")
+
+                with self.assertRaises(RuntimeError) as resolve_error:
+                    adapter.resolve_frozen_tasks(entries, dry_run=False)
+                self.assertIn("#18", str(resolve_error.exception))
+                self.assertIn("adapter_pending", str(resolve_error.exception))
+
+                with self.assertRaises(RuntimeError) as run_error:
+                    adapter.run_task(
+                        task,
+                        "demo",
+                        dry_run=False,
+                        repo_root=ROOT,
+                        work_dir=Path(tmp),
+                    )
+                self.assertIn("#18", str(run_error.exception))
+                self.assertIn("adapter_pending", str(run_error.exception))
+
     def test_iter_tasks_fails_when_real_dataset_cannot_fill_requested_count(self) -> None:
         for adapter, filename, id_field, prompt_field in ADAPTERS:
             with self.subTest(adapter=adapter.name), tempfile.TemporaryDirectory() as tmp:
@@ -347,7 +402,7 @@ class RealAdapterTests(unittest.TestCase):
         self.assertEqual(run_mock.call_args.kwargs["suite"], adapter.name)
 
     def test_run_task_uses_runner_and_grader_hooks_for_schema_valid_result(self) -> None:
-        for adapter, filename, id_field, prompt_field in ADAPTERS:
+        for adapter, filename, id_field, prompt_field in LOCAL_GRADER_ADAPTERS:
             with self.subTest(adapter=adapter.name), tempfile.TemporaryDirectory() as tmp:
                 temp_root = Path(tmp)
                 dataset_dir = temp_root / "dataset"
@@ -393,8 +448,26 @@ class RealAdapterTests(unittest.TestCase):
                 self.assertEqual(case["files_allowed"], ["bench/README.md"])
                 grade_mock.assert_called_once()
 
-    def test_timeout_and_grader_failure_merge_as_failed_results(self) -> None:
+    def test_rexbench_real_run_requires_external_submission(self) -> None:
         adapter = RExBenchAdapter()
+        task = adapter.iter_tasks(1, "lowest_success_rate", dry_run=True)[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(RuntimeError) as error:
+                adapter.run_task(
+                    task,
+                    "demo",
+                    dry_run=False,
+                    repo_root=ROOT,
+                    work_dir=Path(tmp),
+                )
+
+        message = str(error.exception)
+        self.assertIn("rexbench.com", message)
+        self.assertIn("#10", message)
+        self.assertIn("no local pass/fail grader", message)
+
+    def test_timeout_and_grader_failure_merge_as_failed_results(self) -> None:
+        adapter = SWEBenchVerifiedMiniAdapter()
         task = {
             "id": "timeout-task",
             "prompt": "Trigger a timeout.",

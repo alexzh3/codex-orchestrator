@@ -37,8 +37,57 @@ extracts it into the gitignored output directory, fetches
 `instructions/<task>/instructions.md`, and writes
 `bench/datasets/rexbench/tasks.jsonl`. If bundled per-task metadata exposes a
 difficulty signal, it is converted into `difficulty_score`; otherwise tasks are
-kept in stable id order. Real execution still requires the RExBench executor
-tracked by #10/#18.
+kept in stable id order. RExBench grading is external-only: patch ZIPs are
+submitted through rexbench.com for async email/leaderboard results. No local
+pass/fail grader exists or is possible (#10).
+
+## Frozen Tiers (Schema V2)
+
+`bench/tiers.json` is schema v2 and freezes explicit task ids instead of
+dynamic `count` plus `lowest_success_rate` slots. This keeps head-to-head runs
+repeatable. The old dynamic selection path remains in adapter `iter_tasks` and
+in `bench/prepare_datasets.py`, but it is now bootstrap/discovery behavior only.
+That matters especially for RExBench, where dynamic ranking degraded to stable
+alphabetical order when no success-rate field was available.
+
+Bootstrap flow:
+
+1. Prepare local descriptors with `bench/prepare_datasets.py`.
+2. Rank or inspect candidate tasks using descriptor metadata and prior runs.
+3. Run the candidate set once.
+4. Freeze the survivors as ids, reasons, provenance pins, and descriptor hashes.
+
+For descriptors available locally, each frozen task stores the sha256 of the raw
+descriptor row canonicalized as sorted compact JSON. Real frozen runs verify
+that hash before normalization. Missing ids or hash drift fail loudly; re-freezing
+`bench/tiers.json` is a deliberate documented act, not an automatic repair.
+Slots without local descriptors carry `sha256: null` and pin the source revision
+instead.
+
+Current tiers:
+
+| Tier | Contents | Status |
+|------|----------|--------|
+| `tiny` | 10 frozen OpenThoughts-TBLite tasks | runnable through Harbor/TBLite real mode |
+| `frontier` | 8 Terminal-Bench 2.1 tasks | `adapter_pending`, #18 |
+| `frontier` | 3 SWE-bench Pro public tasks | `adapter_pending`, #18 |
+| `frontier` | 6 RExBench tasks | `external_grading_only`, #10 |
+
+The old `normal` tier was removed. `swebench_verified_mini` is no longer part of
+any tier, but its adapter remains available for ad-hoc runs.
+
+### Recorded Baseline (2026-07-03)
+
+The frozen `tiny` design set comes from 30/30 completed TBLite head-to-head
+cells. Per-version pass counts were 0.2.0: 7/10, 0.3.4: 6/10, and 0.3.5: 6/10.
+Real-orchestration rate improved 8/10 -> 9/10 -> 10/10, while genuinely
+orchestrated passes, defined as passed and dispatched Codex, tied at 6/10 for
+all three versions. Claude `cost_usd` is sparse in Harbor, so summed Claude
+input tokens are the cost proxy: 24.98M, 18.51M, and 27.09M respectively.
+
+This is a design set frozen for comparability, not a difficulty population
+estimate. Each cell has one run, so directional conclusions need caution. Full
+tables are in `docs/benchmark-results-tblite-headtohead.md`.
 
 ## Privacy
 
@@ -51,10 +100,11 @@ directory is gitignored for this reason.
 
 The prepared descriptors include explicit failing grader placeholders naming the
 required native harnesses where the real runner is not wired. SWE-bench
-descriptors carry `repo` and `base_commit` fields, so target checkout fits the
-existing git-worktree adapter path; grading still requires a Docker-enabled
-SWE-bench evaluator (#2/#18). RExBench remains deferred until the GPU-gated
-executor path is available (#10/#18).
+Verified Mini descriptors carry `repo` and `base_commit` fields, so target
+checkout fits the existing git-worktree adapter path; grading still requires a
+Docker-enabled SWE-bench evaluator (#2). Terminal-Bench 2.1 and SWE-bench Pro
+public are frozen frontier slots with adapter work pending (#18). RExBench is
+external-grading-only via rexbench.com (#10).
 
 ## Real OpenThoughts-TBLite Runs
 

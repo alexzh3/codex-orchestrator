@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import json
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -20,6 +21,10 @@ TIERS_PATH = ROOT / "bench" / "tiers.json"
 DRY_RUN_WORK_DIR = Path("/tmp/codex-orch-local-mini-dry-run")
 TIER_DRY_RUN_WORK_DIR = Path("/tmp/codex-orch-tier-dry-run")
 TOKEN_TOTAL_FIELDS = ("input_tokens", "output_tokens", "total_tokens")
+TIER_STATUS_VALUES = {"runnable", "adapter_pending", "external_grading_only"}
+TIER_SLOT_KEYS = {"benchmark", "status", "issue", "pin", "tasks"}
+TIER_FALLBACK_CHOICES = ("tiny", "frontier")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def discover_cases(suite: str) -> list[Path]:
@@ -42,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run Codex Orchestrator benchmark suites.")
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--suite", choices=("replay", "local-mini"), help="Benchmark suite to run.")
-    target.add_argument("--tier", choices=("tiny", "normal"), help="Head-to-head benchmark tier to run.")
+    target.add_argument("--tier", choices=_tier_choices(), help="Head-to-head benchmark tier to run.")
     parser.add_argument("--plugin-ref", help="Plugin git ref or directory for local-mini or tier runs.")
     parser.add_argument("--dry-run", action="store_true", help="Run without invoking external benchmark infra.")
     parser.add_argument("--repeats", type=positive_int, default=1, help="Number of local-mini or tier repeats.")
@@ -110,34 +115,90 @@ def print_token_summary(results: list[dict[str, object]], stream: object) -> Non
     )
 
 
-def load_tier_slots(tier: str) -> list[dict[str, object]]:
-    payload = json.loads(TIERS_PATH.read_text(encoding="utf-8"))
+def _tier_choices(path: Path = TIERS_PATH) -> tuple[str, ...]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        tiers = payload.get("tiers") if isinstance(payload, dict) else None
+        if not isinstance(tiers, dict):
+            return TIER_FALLBACK_CHOICES
+        choices = tuple(sorted(key for key in tiers if isinstance(key, str) and key))
+        return choices or TIER_FALLBACK_CHOICES
+    except Exception:
+        return TIER_FALLBACK_CHOICES
+
+
+def load_tier_slots(tier: str, path: Path = TIERS_PATH) -> list[dict[str, object]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError(f"{TIERS_PATH} must contain a JSON object")
-    selection_default = payload.get("selection_default")
-    if not isinstance(selection_default, str) or not selection_default:
-        raise ValueError(f"{TIERS_PATH} is missing selection_default")
+        raise ValueError(f"{path} must contain a JSON object")
+    if payload.get("schema_version") != 2:
+        raise ValueError(f"{path} must have schema_version 2")
     tiers = payload.get("tiers")
     if not isinstance(tiers, dict):
-        raise ValueError(f"{TIERS_PATH} is missing tiers")
+        raise ValueError(f"{path} is missing tiers")
     raw_slots = tiers.get(tier)
     if not isinstance(raw_slots, list):
-        raise ValueError(f"{TIERS_PATH} is missing tier {tier!r}")
+        raise ValueError(f"{path} is missing tier {tier!r}")
 
     slots: list[dict[str, object]] = []
+    seen_tier_pairs: set[tuple[str, str]] = set()
     for index, raw_slot in enumerate(raw_slots, start=1):
         if not isinstance(raw_slot, dict):
             raise ValueError(f"{tier} slot {index} must be an object")
+        unknown_keys = set(raw_slot) - TIER_SLOT_KEYS
+        if unknown_keys:
+            keys = ", ".join(sorted(unknown_keys))
+            raise ValueError(f"{tier} slot {index} has unknown keys: {keys}")
         benchmark = raw_slot.get("benchmark")
-        count = raw_slot.get("count")
-        selection = raw_slot.get("selection", selection_default)
+        status = raw_slot.get("status")
+        issue = raw_slot.get("issue")
+        pin = raw_slot.get("pin")
+        raw_tasks = raw_slot.get("tasks")
         if not isinstance(benchmark, str) or not benchmark:
             raise ValueError(f"{tier} slot {index} is missing benchmark")
-        if type(count) is not int or count < 1:
-            raise ValueError(f"{tier} slot {index} count must be a positive integer")
-        if not isinstance(selection, str) or not selection:
-            raise ValueError(f"{tier} slot {index} selection must be a non-empty string")
-        slots.append({"benchmark": benchmark, "count": count, "selection": selection})
+        if status not in TIER_STATUS_VALUES:
+            raise ValueError(f"{tier} slot {index} status must be one of {sorted(TIER_STATUS_VALUES)}")
+        if status != "runnable" and (not isinstance(issue, str) or not issue):
+            raise ValueError(f"{tier} slot {index} status {status} requires a non-empty issue")
+        if issue is not None and (not isinstance(issue, str) or not issue):
+            raise ValueError(f"{tier} slot {index} issue must be a non-empty string when present")
+        if not isinstance(pin, dict) or not pin:
+            raise ValueError(f"{tier} slot {index} pin must be a non-empty object")
+        if not isinstance(raw_tasks, list) or not raw_tasks:
+            raise ValueError(f"{tier} slot {index} tasks must be a non-empty list")
+
+        tasks: list[dict[str, object]] = []
+        seen_slot_ids: set[str] = set()
+        for task_index, raw_task in enumerate(raw_tasks, start=1):
+            if not isinstance(raw_task, dict):
+                raise ValueError(f"{tier} slot {index} task {task_index} must be an object")
+            task_id = raw_task.get("id")
+            reason = raw_task.get("reason")
+            sha256 = raw_task.get("sha256")
+            if not isinstance(task_id, str) or not task_id:
+                raise ValueError(f"{tier} slot {index} task {task_index} is missing id")
+            if not isinstance(reason, str) or not reason:
+                raise ValueError(f"{tier} slot {index} task {task_index} is missing reason")
+            if sha256 is not None and (not isinstance(sha256, str) or SHA256_RE.fullmatch(sha256) is None):
+                raise ValueError(f"{tier} slot {index} task {task_index} sha256 must be null or 64-char lowercase hex")
+            if task_id in seen_slot_ids:
+                raise ValueError(f"{tier} slot {index} has duplicate task id {task_id!r}")
+            pair = (benchmark, task_id)
+            if pair in seen_tier_pairs:
+                raise ValueError(f"{tier} has duplicate benchmark/id pair {benchmark}/{task_id}")
+            seen_slot_ids.add(task_id)
+            seen_tier_pairs.add(pair)
+            tasks.append({"id": task_id, "reason": reason, "sha256": sha256})
+
+        slots.append(
+            {
+                "benchmark": benchmark,
+                "status": status,
+                "issue": issue,
+                "tasks": tasks,
+                "count": len(tasks),
+            }
+        )
     return slots
 
 
@@ -238,6 +299,20 @@ def real_mode_error(benchmark: str, infra: str, exc: NotImplementedError) -> str
     return f"real {benchmark} runs require {infra}; use --dry-run or implement the adapter (issue #N): {exc}"
 
 
+def gated_tier_message(benchmark: str, status: str, issue: object) -> str:
+    issue_text = str(issue) if isinstance(issue, str) and issue else "untracked"
+    if status == "adapter_pending":
+        requirement = f"the {benchmark} adapter"
+    elif status == "external_grading_only":
+        requirement = f"the {benchmark} external grading workflow"
+    else:
+        requirement = f"{benchmark} real-run support"
+    return (
+        f"GATED {benchmark}: {status} - real runs require {requirement} "
+        f"({issue_text}); tasks are frozen in bench/tiers.json"
+    )
+
+
 def run_tier(args: argparse.Namespace) -> int:
     if not args.plugin_ref:
         raise SystemExit("--plugin-ref is required for --tier")
@@ -257,12 +332,19 @@ def run_tier(args: argparse.Namespace) -> int:
             for slot in slots:
                 benchmark = str(slot["benchmark"])
                 count = int(slot["count"])
-                selection = str(slot["selection"])
+                status_value = str(slot["status"])
                 if benchmark not in benchmark_order:
                     benchmark_order.append(benchmark)
+                if not args.dry_run and status_value != "runnable":
+                    hard_failures += count
+                    print(gated_tier_message(benchmark, status_value, slot.get("issue")), file=summary_stream)
+                    continue
                 adapter = get_adapter(benchmark)
                 try:
-                    tasks = adapter.iter_tasks(count, selection, dry_run=args.dry_run)
+                    tasks = adapter.resolve_frozen_tasks(
+                        slot["tasks"],  # type: ignore[arg-type]
+                        dry_run=args.dry_run,
+                    )
                 except NotImplementedError as exc:
                     hard_failures += count
                     print(real_mode_error(benchmark, adapter.real_infra, exc), file=summary_stream)
@@ -299,7 +381,7 @@ def run_tier(args: argparse.Namespace) -> int:
                     status = "PASS" if result.get("passed") is True else "FAIL"
                     print(
                         f"{status} {benchmark}/{result.get('case_id')} repeat={repeat} "
-                        f"selection={selection} "
+                        "selection=frozen "
                         f"report_score={float(result.get('report_score', 0.0)):.2f} "
                         f"gate_passed={result.get('gate_passed')}",
                         file=summary_stream,

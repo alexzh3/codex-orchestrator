@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -49,6 +50,47 @@ class Adapter:
                 )
             return selected[:count]
         return [self._dry_run_task(index, selection) for index in range(1, count + 1)]
+
+    def resolve_frozen_tasks(self, entries: list[dict[str, object]], *, dry_run: bool) -> list[TaskDescriptor]:
+        if dry_run:
+            return [self._frozen_dry_run_task(_frozen_entry_id(entry)) for entry in entries]
+
+        dataset_dir = self._dataset_dir()
+        task_files = self._task_files(dataset_dir)
+        raw_tasks = self._load_task_files(task_files)
+        if not raw_tasks:
+            raise self._dataset_error(dataset_dir, "no task descriptors were found")
+
+        rows_by_id = {_task_id(raw_task): raw_task for raw_task in raw_tasks}
+        missing_ids: list[str] = []
+        resolved: list[TaskDescriptor] = []
+        for entry in entries:
+            task_id = _frozen_entry_id(entry)
+            raw_task = rows_by_id.get(task_id)
+            if raw_task is None:
+                missing_ids.append(task_id)
+                continue
+            expected_hash = entry.get("sha256")
+            if expected_hash is not None:
+                actual_hash = _canonical_task_hash(raw_task)
+                if expected_hash != actual_hash:
+                    raise RuntimeError(
+                        f"{self.display_name} frozen task {task_id!r} hash mismatch: "
+                        f"expected {expected_hash}, actual {actual_hash}. "
+                        "Remediation: descriptor content drifted; re-freeze bench/tiers.json "
+                        "deliberately or restore the pinned dataset."
+                    )
+            resolved.append(self._normalize_task(raw_task, dataset_dir, "frozen"))
+
+        if missing_ids:
+            missing = ", ".join(missing_ids)
+            raise RuntimeError(
+                f"{self.display_name} frozen task ids missing from descriptor files: {missing}. "
+                f"Dataset dir: {dataset_dir}. Dataset env var: {self.dataset_env_var}. "
+                f"Tracking issue: {self.issue_ref}."
+            )
+
+        return resolved
 
     def run_task(
         self,
@@ -364,6 +406,18 @@ class Adapter:
             ),
         }
 
+    def _frozen_dry_run_task(self, task_id: str) -> TaskDescriptor:
+        return {
+            "id": task_id,
+            "suite": self.name,
+            "benchmark": self.name,
+            "selection": "frozen",
+            "prompt": (
+                f"Dry-run {self.display_name} frozen task {task_id}: "
+                "implement the workflow for this frozen benchmark task."
+            ),
+        }
+
 
 def _string_field(payload: dict[str, object], field: str) -> str:
     value = payload.get(field)
@@ -402,6 +456,18 @@ def _load_task_file(path: Path) -> list[dict[str, object]]:
         payload = json.loads(path.read_text(encoding="utf-8"))
         return _tasks_from_json_payload(payload, path)
     raise ValueError(f"unsupported task descriptor file: {path}")
+
+
+def _frozen_entry_id(entry: dict[str, object]) -> str:
+    value = entry.get("id")
+    if not isinstance(value, str) or not value:
+        raise ValueError("frozen task entry is missing non-empty id")
+    return value
+
+
+def _canonical_task_hash(task: dict[str, object]) -> str:
+    payload = json.dumps(task, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _load_jsonl_tasks(path: Path) -> list[dict[str, object]]:

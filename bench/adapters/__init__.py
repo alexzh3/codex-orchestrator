@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from .base import Adapter
 from .rexbench import RExBenchAdapter
+from .swebench_pro_public import SWEBenchProPublicAdapter
 from .swebench_verified_mini import SWEBenchVerifiedMiniAdapter
+from .terminalbench_2_1 import TerminalBench21Adapter
 from .tblite import TBLiteAdapter
 
 
@@ -12,6 +14,8 @@ ADAPTERS: dict[str, Adapter] = {
         RExBenchAdapter(),
         TBLiteAdapter(),
         SWEBenchVerifiedMiniAdapter(),
+        TerminalBench21Adapter(),
+        SWEBenchProPublicAdapter(),
     )
 }
 

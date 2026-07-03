@@ -31,22 +31,34 @@ python3 -m bench.compare --baseline /tmp/baseline.jsonl --candidate /tmp/candida
 
 ## Tiered External Benchmarks
 
-Tiered runs use the external adapters for RExBench, OpenThoughts-TBLite,
-and SWE-bench Verified Mini. Dry-run mode is deterministic and does not call
-Claude, Codex, Docker, Harbor, network services, or external graders:
+Tiered runs use frozen task ids from `bench/tiers.json` schema v2. The active
+tiers are `tiny` and `frontier`; the old `normal` tier was removed. Dry-run mode
+is deterministic and does not call Claude, Codex, Docker, Harbor, network
+services, external graders, or local descriptor files:
 
 ```bash
 python3 -m bench.run --tier tiny --plugin-ref demo --dry-run
-python3 -m bench.run --tier normal --plugin-ref demo --dry-run
+python3 -m bench.run --tier frontier --plugin-ref demo --dry-run
 ```
 
-Real mode is the infra-gated layer. It runs `claude -p --plugin-dir <ref>`
-through the orchestrator workflow and spends Claude+Codex budget. The adapters
-only read local dataset files; they do not download datasets or install graders.
-If a dataset or grader is missing, real mode raises a clear `RuntimeError`
-naming the env var, expected layout, required infra, and tracking issue.
-External real-mode tasks run in the benchmark target repository, not in this
-plugin repository. The plugin repository is still used as `--plugin-dir`.
+Current frozen contents:
+
+| Tier | Benchmark | Count | Status | Issue |
+|------|-----------|-------|--------|-------|
+| `tiny` | `tblite` | 10 | runnable | #3 |
+| `frontier` | `terminalbench_2_1` | 8 | adapter_pending | #18 |
+| `frontier` | `swebench_pro_public` | 3 | adapter_pending | #18 |
+| `frontier` | `rexbench` | 6 | external_grading_only | #10 |
+
+Real mode is the infra-gated layer. For runnable slots it runs
+`claude -p --plugin-dir <ref>` through the orchestrator workflow and spends
+Claude+Codex budget. The adapters only read local dataset files; they do not
+download datasets or install graders. If a dataset or grader is missing, real
+mode raises a clear `RuntimeError` naming the env var, expected layout, required
+infra, and tracking issue. Frontier real mode is currently gated and exits
+nonzero without emitting placeholder result records. External real-mode tasks
+run in the benchmark target repository, not in this plugin repository. The
+plugin repository is still used as `--plugin-dir`.
 
 Benchmark result records may include a top-level `token_usage` object with
 `input_tokens`, `output_tokens`, `cache_read_input_tokens`,
@@ -98,6 +110,10 @@ Grader commands run from the temporary target worktree created by the runner.
 They may use `{task_id}`, `{id}`, `{case_id}`, `{work_dir}`, and
 `{dataset_dir}` placeholders.
 
+The descriptor-driven `iter_tasks` selection path is still available for
+ad-hoc/bootstrap use. Tier runs use `resolve_frozen_tasks`, which resolves the
+fixed ids from `bench/tiers.json` and verifies descriptor hashes in real mode.
+
 ### RExBench
 
 - Dataset env var: `REXBENCH_DIR`
@@ -105,15 +121,16 @@ They may use `{task_id}`, `{id}`, `{case_id}`, `{work_dir}`, and
 - Supported local task files: `tasks.jsonl`, `tasks.json`, `rexbench.jsonl`,
   or `rexbench.json` at the dataset root
 - Grader command env var: `REXBENCH_GRADER_CMD`
-- Required infra: local RExBench dataset plus the RExBench executor/grader
+- Required infra: external patch-ZIP submission through rexbench.com; no local
+  pass/fail grader exists or is possible. Local GPU execution is also blocked by
+  the benchmark env pinning torch <=2.6, incompatible with sm_120.
 - Tracking issue: #10
 
 Example:
 
 ```bash
 export REXBENCH_DIR=/data/rexbench
-export REXBENCH_GRADER_CMD='rexbench evaluate --task-id {task_id} --workspace .'
-python3 -m bench.run --tier tiny --plugin-ref release/0.3.4
+python3 -m bench.run --tier frontier --plugin-ref release/0.3.4  # gated external grading
 ```
 
 ### OpenThoughts-TBLite
@@ -135,7 +152,32 @@ export TBLITE_GRADER_CMD='harbor grade --task-id {task_id} --workspace .'
 python3 -m bench.run --tier tiny --plugin-ref release/0.3.4
 ```
 
+### Terminal-Bench 2.1
+
+- Dataset env var: `TB21_DIR`
+- Default path: `bench/datasets/terminalbench_2_1`
+- Required infra: Harbor with dataset `terminal-bench/terminal-bench-2-1`
+- Tier status: `adapter_pending`
+- Tracking issue: #18
+
+Dry-run works through the base frozen-task path. Real tier runs are gated until
+the adapter is implemented.
+
+### SWE-bench Pro Public
+
+- Dataset env var: `SWEBENCH_PRO_DIR`
+- Default path: `bench/datasets/swebench_pro_public`
+- Required infra: SWE-bench Pro Docker evaluator plus `jefzda/sweap-images`
+- Tier status: `adapter_pending`
+- Tracking issue: #18
+
+Dry-run works through the base frozen-task path. Real tier runs are gated until
+the adapter is implemented.
+
 ### SWE-bench Verified Mini
+
+SWE-bench Verified Mini is no longer included in `bench/tiers.json`, but the
+adapter is retained for ad-hoc runs.
 
 - Dataset env var: `SWEBENCH_VERIFIED_MINI_DIR`
 - Default path: `bench/datasets/swebench_verified_mini`
@@ -146,10 +188,5 @@ python3 -m bench.run --tier tiny --plugin-ref release/0.3.4
   subset present locally
 - Tracking issue: #2
 
-Example:
-
-```bash
-export SWEBENCH_VERIFIED_MINI_DIR=/data/swebench-verified-mini
-export SWEBENCH_VERIFIED_MINI_GRADER_CMD='swebench evaluate --instance-id {task_id} --workspace .'
-python3 -m bench.run --tier normal --plugin-ref release/0.3.4
-```
+There is no frozen tier command for this adapter; use it from focused scripts or
+tests when an ad-hoc Verified Mini run is needed.

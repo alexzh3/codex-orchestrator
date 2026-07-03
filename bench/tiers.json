@@ -1,33 +1,194 @@
 {
-  "selection_default": "lowest_success_rate",
+  "schema_version": 2,
   "tiers": {
     "tiny": [
       {
-        "benchmark": "rexbench",
-        "count": 3,
-        "selection": "lowest_success_rate"
-      },
-      {
         "benchmark": "tblite",
-        "count": 10,
-        "selection": "lowest_success_rate"
+        "status": "runnable",
+        "pin": {
+          "source": "HF open-thoughts/OpenThoughts-TBLite via bench/prepare_datasets.py",
+          "harbor_dataset": "openthoughts-tblite",
+          "frozen_at": "2026-07-03",
+          "baseline": "docs/benchmark-results-tblite-headtohead.md (30/30 cells, 2026-07-03)"
+        },
+        "tasks": [
+          {
+            "id": "book-portfolio-analysis",
+            "reason": "3/3 pass all versions; heaviest orchestration (8-18 codex dispatches); regression canary",
+            "sha256": "a0cf4021af10fd4d826cbaca54e0587edde53a8517d937c78a3f86d83489852c"
+          },
+          {
+            "id": "corrupted-filesystem-recovery",
+            "reason": "3/3 pass; one degenerate solo-solve on 0.2.0",
+            "sha256": "1e176cad132235c9956459bae6242058060e39450b9f274fc33945fed95d7bd3"
+          },
+          {
+            "id": "mech-system",
+            "reason": "3/3 pass; regression canary",
+            "sha256": "e8cbeae798cb02c76d78d610b943f20f84d8afdbc0733a3e7cf35ed18b3ee3dc"
+          },
+          {
+            "id": "token-auth-websocket",
+            "reason": "3/3 pass; final cells completed 2026-07-03",
+            "sha256": "b94aa51293ff6b9c9c5f5006c1d9c6695743d0a2e7dd006995facb1b5a6087bb"
+          },
+          {
+            "id": "breast-cancer-mlflow",
+            "reason": "2/3 boundary (0.3.4 failed)",
+            "sha256": "06d8f60e47229807dbde7147b7ce73ba2123407de57cd0a439456b0a8c13a573"
+          },
+          {
+            "id": "service-deployment-wave-planner",
+            "reason": "2/3 boundary (0.3.4 degenerate fail)",
+            "sha256": "6d7521e3ed6b46a6d536f7874774cbcd1d3f88ce2ec22e47638eb1eea90b9b0f"
+          },
+          {
+            "id": "multi-labeller",
+            "reason": "2/3 boundary (0.3.5 failed)",
+            "sha256": "7596d506c56c841e9a4bb6f630bc22649238aa663b85f1803b6e1f54b9f57f70"
+          },
+          {
+            "id": "react-typescript-debugg",
+            "reason": "1/3 boundary (only 0.3.4 passed)",
+            "sha256": "3249e7a67c0ce84bfd620033ade2436b4b8c182decea6956a48dcbe671ebbe42"
+          },
+          {
+            "id": "bloom-filter-cache-penetration-prevention",
+            "reason": "0/3 headroom",
+            "sha256": "dcb357be1b1aef1f09cceb902876f0f767d7abec765fb264cf944d845f977279"
+          },
+          {
+            "id": "reproducibility-and-envsetup",
+            "reason": "0/3 headroom; cheapest cell (~8m wall)",
+            "sha256": "409cce3a139ec31718abca7878f17484c5776ddfb61c1e3077c2f03b21aa37fb"
+          }
+        ]
       }
     ],
-    "normal": [
+    "frontier": [
+      {
+        "benchmark": "terminalbench_2_1",
+        "status": "adapter_pending",
+        "issue": "#18",
+        "pin": {
+          "harbor_dataset": "terminal-bench/terminal-bench-2-1",
+          "release": "2.1",
+          "tasks_total": 89,
+          "license": "Apache-2.0",
+          "hardness_source": "Terminal-Bench paper arXiv:2601.11868 Fig. 11 ordering (approx, predates 2.1 fixes)"
+        },
+        "tasks": [
+          {
+            "id": "torch-pipeline-parallelism",
+            "reason": "near-frontier hardness (~85/89); ML systems",
+            "sha256": null
+          },
+          {
+            "id": "torch-tensor-parallelism",
+            "reason": "~70/89; ML systems",
+            "sha256": null
+          },
+          {
+            "id": "db-wal-recovery",
+            "reason": "~66/89; database recovery",
+            "sha256": null
+          },
+          {
+            "id": "llm-inference-batching-scheduler",
+            "reason": "~52/89; inference systems",
+            "sha256": null
+          },
+          {
+            "id": "query-optimize",
+            "reason": "~36/89; database",
+            "sha256": null
+          },
+          {
+            "id": "pytorch-model-recovery",
+            "reason": "~35/89; ML",
+            "sha256": null
+          },
+          {
+            "id": "kv-store-grpc",
+            "reason": "~25/89; easy-side regression canary",
+            "sha256": null
+          },
+          {
+            "id": "train-fasttext",
+            "reason": "top-11 hardest; model training (replaced hf-model-inference ~17/89)",
+            "sha256": null
+          }
+        ]
+      },
+      {
+        "benchmark": "swebench_pro_public",
+        "status": "adapter_pending",
+        "issue": "#18",
+        "pin": {
+          "hf_dataset": "ScaleAI/SWE-bench_Pro",
+          "hf_revision": "7ab5114912baf22bb098818e604c02fe7ad2c11f",
+          "images": "jefzda/sweap-images:<dockerhub_tag column verbatim - tags may be 128-char truncated, never reconstruct from instance_id>"
+        },
+        "tasks": [
+          {
+            "id": "instance_tutao__tutanota-da4edb7375c10f47f4ed3860a591c5e6557f7b5c-vbc0d9ba8f0071fbe982809910959a6ff8884dbbf",
+            "reason": "TS - hardest language per paper; image verified on Docker Hub",
+            "sha256": null
+          },
+          {
+            "id": "instance_element-hq__element-web-33e8edb3d508d6eefb354819ca693b7accc695e7",
+            "reason": "JS - second-hardest language; image verified",
+            "sha256": null
+          },
+          {
+            "id": "instance_flipt-io__flipt-e42da21a07a5ae35835ec54f74004ebd58713874",
+            "reason": "Go; distinct repo/language; image verified",
+            "sha256": null
+          }
+        ]
+      },
       {
         "benchmark": "rexbench",
-        "count": 6,
-        "selection": "lowest_success_rate"
-      },
-      {
-        "benchmark": "tblite",
-        "count": 15,
-        "selection": "lowest_success_rate"
-      },
-      {
-        "benchmark": "swebench_verified_mini",
-        "count": 7,
-        "selection": "lowest_success_rate"
+        "status": "external_grading_only",
+        "issue": "#10",
+        "pin": {
+          "source": "HF tin-lab/RExBench dataset.zip (gated; do not publish task content or agent outputs)",
+          "paper": "arXiv:2506.22598v3",
+          "grading": "private async - submit patch ZIPs via rexbench.com; no local pass/fail grader exists or is possible",
+          "success_source": "paper v3 Tables 11-24, best no-hints final success across 14 agent-model combos"
+        },
+        "tasks": [
+          {
+            "id": "reasoning-or-reciting",
+            "reason": "0.00 - never solved by any agent at any hint level",
+            "sha256": "33f67da72a38554a6833c62edec287f1aa75fa5d23bf25aec2efba44dce24be7"
+          },
+          {
+            "id": "varierr-nli",
+            "reason": "0.00 - never solved at any hint level",
+            "sha256": "db215f63073242f05448799542ac49528ed23f582078a4e7224b7ade7ce68e06"
+          },
+          {
+            "id": "checkeval",
+            "reason": "0.00 no-hints (0.40 with hints); CPU-only, ~1m runtime",
+            "sha256": "9eb4319bed44a6a5bae31ade19eff4a9d23aa86a89ee388de00cb757436e393b"
+          },
+          {
+            "id": "re-reading",
+            "reason": "0.20 best no-hints",
+            "sha256": "ff3b1bc1eda573f711c3d1064d8dc81a49fb23524e924d560a5ae8a4f45387f9"
+          },
+          {
+            "id": "mission-impossible",
+            "reason": "0.40 best no-hints",
+            "sha256": "f1f2c56a1e08e5a621f9c5600f0429d7af28d272d40c58cdbfd5cdefed8d4b48"
+          },
+          {
+            "id": "implicit-ins",
+            "reason": "0.60 best no-hints; aider never solved it (0.00 file recall) - scaffold-sensitive",
+            "sha256": "8d4f14023edde804e4c864d934b59b960e964c82c9b6f4775ffc494618d7e8a0"
+          }
+        ]
       }
     ]
   }
