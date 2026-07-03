@@ -12,8 +12,37 @@ from .gate import *
 from .ledger import *
 from .prompts import *
 from .report import *
+from .resolution import computed_command_hash
 from .runmeta import *
 from .store import *
+
+
+def positive_int_type(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be an integer >= 1") from exc
+    if str(parsed) != value or parsed < 1:
+        raise argparse.ArgumentTypeError("value must be an integer >= 1")
+    return parsed
+
+
+def verification_id_for_record(args: argparse.Namespace, records: list[dict[str, object]]) -> str:
+    verification_records = [record for record in records if record.get("type") == "verification"]
+    existing_ids = {
+        record.get("id")
+        for record in verification_records
+        if isinstance(record.get("id"), str) and record.get("id")
+    }
+    if args.id:
+        if args.id in existing_ids:
+            raise SystemExit(f"ERROR: verification id already exists: {args.id}")
+        return args.id
+
+    index = 1
+    while f"V{index}" in existing_ids:
+        index += 1
+    return f"V{index}"
 
 
 def command_init(args: argparse.Namespace) -> int:
@@ -57,8 +86,10 @@ def command_ensure_run(args: argparse.Namespace) -> int:
 def command_add_verification(args: argparse.Namespace) -> int:
     directory = run_dir(args.repo, args.run_id)
     load_json(state_path(directory))
+    records = read_jsonl(ledger_path(directory))
     record: dict[str, object] = {
         "type": "verification",
+        "id": verification_id_for_record(args, records),
         "recorded_at": utc_now(),
         "kind": args.kind,
         "result": args.result,
@@ -66,6 +97,7 @@ def command_add_verification(args: argparse.Namespace) -> int:
     }
     if args.command:
         record["command"] = args.command
+        record["command_hash"] = computed_command_hash(args.command)
     if args.exit_code is not None:
         record["exit_code"] = args.exit_code
     if args.artifact:
@@ -78,6 +110,13 @@ def command_add_verification(args: argparse.Namespace) -> int:
         record["covers_tasks"] = args.covers_tasks
     if args.scope:
         record["scope"] = args.scope
+    if args.finding_id:
+        record["finding_id"] = args.finding_id
+    if args.acceptance_test:
+        record["acceptance_test"] = True
+    if args.attempt_count is not None:
+        record["attempt_count"] = args.attempt_count
+    validate_ledger_event(record)
     append_jsonl(ledger_path(directory), record)
     print_json({"ok": True, "verification": record})
     return 0
@@ -301,11 +340,15 @@ def build_parser() -> argparse.ArgumentParser:
     verification_parser.add_argument("--kind", required=True, choices=ALLOWED_VERIFICATION_KINDS)
     verification_parser.add_argument("--result", required=True, choices=ALLOWED_VERIFICATION_RESULTS)
     verification_parser.add_argument("--summary", required=True)
+    verification_parser.add_argument("--id")
     verification_parser.add_argument("--command")
     verification_parser.add_argument("--exit-code", type=int)
     verification_parser.add_argument("--artifact", action="append", default=[])
     verification_parser.add_argument("--notes")
     verification_parser.add_argument("--task-id", help="Scope this verification to a task id.")
+    verification_parser.add_argument("--finding-id")
+    verification_parser.add_argument("--acceptance-test", action="store_true")
+    verification_parser.add_argument("--attempt-count", type=positive_int_type)
     verification_parser.add_argument(
         "--covers-tasks",
         action="append",

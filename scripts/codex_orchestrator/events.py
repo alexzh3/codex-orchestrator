@@ -1,21 +1,47 @@
 from __future__ import annotations
 
+import re
+
 from .contract import *
 from .store import utc_now
+
+
+COMMAND_HASH_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+BLOCKING_FINDING_FIELDS = (
+    "id",
+    "claim",
+    "severity",
+    "file_refs",
+    "repro_command",
+    "min_repro_attempts",
+)
+BLOCKING_FINDING_REQUIRED_STRINGS = ("id", "claim")
+BLOCKING_FINDING_STRING_FIELDS = ("id", "claim", "repro_command")
 
 
 LEDGER_EVENT_SCHEMAS = {
     "verification": {
         "timestamp": True,
         "required": ("type", "kind", "result", "recorded_at", "summary"),
-        "strings": ("type", "recorded_at", "summary", "command", "notes", "task_id"),
+        "strings": (
+            "type",
+            "recorded_at",
+            "summary",
+            "command",
+            "notes",
+            "task_id",
+            "id",
+            "command_hash",
+            "finding_id",
+        ),
         "enums": {
             "kind": ALLOWED_VERIFICATION_KINDS,
             "result": ALLOWED_VERIFICATION_RESULTS,
             "scope": VERIFICATION_SCOPE_ORDER,
         },
         "ints": ("exit_code",),
-        "bools": ("stochastic",),
+        "positive_ints": ("attempt_count",),
+        "bools": ("stochastic", "acceptance_test"),
         "string_arrays": ("artifacts", "covers_tasks"),
         "scalar_maps": ("thresholds",),
     },
@@ -27,8 +53,10 @@ LEDGER_EVENT_SCHEMAS = {
             "outcome": CONSENSUS_OUTCOME_ORDER,
             "risk_level": tuple(sorted(ALLOWED_RISK_LEVELS)),
             "status": tuple(sorted(ALLOWED_LEGACY_CONSENSUS_STATUSES)),
+            "resolution_basis": RESOLUTION_BASIS_ORDER,
         },
         "bools": ("requires_user",),
+        "string_arrays": ("clears", "evidence_refs"),
         "non_empty_string_arrays": ("evidence",),
     },
     "task": {
@@ -116,6 +144,7 @@ LEDGER_EVENT_SCHEMAS = {
         },
         "bools": ("final",),
         "string_arrays": ("findings",),
+        "finding_arrays": ("blocking_findings",),
     },
     "gate_result": {
         "timestamp": True,
@@ -154,10 +183,12 @@ def event_schema_fields(schema: dict[str, object]) -> set[str]:
         "strings",
         "nullable_strings",
         "ints",
+        "positive_ints",
         "bools",
         "string_arrays",
         "non_empty_string_arrays",
         "object_arrays",
+        "finding_arrays",
         "scalar_maps",
         "run_meta_configs",
     ):
@@ -201,6 +232,14 @@ def validate_typed_fields(event_type: str, event: dict[str, object], schema: dic
             continue
         if value is not None and type(value) is not int:
             raise SystemExit(f"ERROR: {event_type} field {field} must be an integer or null")
+    for field in schema.get("positive_ints", ()):
+        value = event.get(field)
+        if value is None:
+            if field in required:
+                raise SystemExit(f"ERROR: {event_type} field {field} must be an integer >= 1")
+            continue
+        if type(value) is not int or value < 1:
+            raise SystemExit(f"ERROR: {event_type} field {field} must be an integer >= 1")
     for field in schema.get("bools", ()):
         value = event.get(field)
         if value is None:
@@ -235,6 +274,13 @@ def validate_typed_fields(event_type: str, event: dict[str, object], schema: dic
             continue
         if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
             raise SystemExit(f"ERROR: {event_type} field {field} must be an object array")
+    for field in schema.get("finding_arrays", ()):
+        value = event.get(field)
+        if value is None:
+            if field in required:
+                raise SystemExit(f"ERROR: {event_type} field {field} must be a finding array")
+            continue
+        validate_blocking_findings(event_type, field, value)
     for field in schema.get("scalar_maps", ()):
         value = event.get(field)
         if value is not None and not isinstance(value, dict):
@@ -260,6 +306,37 @@ def validate_typed_fields(event_type: str, event: dict[str, object], schema: dic
                 raise SystemExit(f"ERROR: {event_type} field {field}.{key} must be a string or null")
 
 
+def validate_blocking_findings(event_type: str, field: str, value: object) -> None:
+    if not isinstance(value, list):
+        raise SystemExit(f"ERROR: {event_type} field {field} must be a finding array")
+    for item in value:
+        if not isinstance(item, dict):
+            raise SystemExit(f"ERROR: {event_type} field {field} must be a finding array")
+        unknown = sorted(key for key in item if key not in BLOCKING_FINDING_FIELDS)
+        if unknown:
+            raise SystemExit(f"ERROR: {event_type} field {field} has unknown key(s): {', '.join(unknown)}")
+        for key in BLOCKING_FINDING_REQUIRED_STRINGS:
+            if not isinstance(item.get(key), str) or not item.get(key):
+                raise SystemExit(f"ERROR: {event_type} field {field}.{key} must be a non-empty string")
+        for key in BLOCKING_FINDING_STRING_FIELDS:
+            if key not in item or key in BLOCKING_FINDING_REQUIRED_STRINGS:
+                continue
+            if not isinstance(item[key], str) or not item[key]:
+                raise SystemExit(f"ERROR: {event_type} field {field}.{key} must be a non-empty string")
+        severity = item.get("severity")
+        if severity is not None and (not isinstance(severity, str) or severity not in FINDING_SEVERITY_ORDER):
+            allowed = ", ".join(FINDING_SEVERITY_ORDER)
+            raise SystemExit(f"ERROR: {event_type} blocking_findings severity must be one of: {allowed}")
+        file_refs = item.get("file_refs")
+        if file_refs is not None and (
+            not isinstance(file_refs, list) or not all(isinstance(ref, str) and ref for ref in file_refs)
+        ):
+            raise SystemExit(f"ERROR: {event_type} field {field}.file_refs must be a string array")
+        min_repro_attempts = item.get("min_repro_attempts")
+        if min_repro_attempts is not None and (type(min_repro_attempts) is not int or min_repro_attempts < 1):
+            raise SystemExit(f"ERROR: {event_type} field {field}.min_repro_attempts must be an integer >= 1")
+
+
 def validate_typed_event(event_type: str, event: dict[str, object], schema: dict[str, object]) -> None:
     if schema.get("timestamp"):
         event.setdefault("recorded_at", utc_now())
@@ -280,6 +357,12 @@ def validate_typed_event(event_type: str, event: dict[str, object], schema: dict
     validate_string_fields(event_type, event, schema)
     validate_enum_fields(event_type, event, schema)
     validate_typed_fields(event_type, event, schema)
+    if event_type == "verification":
+        for field in ("id", "finding_id"):
+            if field in event and not event[field]:
+                raise SystemExit(f"ERROR: verification field {field} must be a non-empty string")
+        if "command_hash" in event and not COMMAND_HASH_PATTERN.match(str(event["command_hash"])):
+            raise SystemExit("ERROR: verification field command_hash must be sha256:<64 hex digits>")
 
     if event_type == "consensus" and event.get("outcome") == "user_action_required":
         event.setdefault("requires_user", True)

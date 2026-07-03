@@ -29,6 +29,16 @@ DISPATCH_MODE_ORDER = ("ide", "exec")
 REVIEW_KIND_ORDER = ("diff", "test", "manual", "custom")
 VERIFICATION_SCOPE_ORDER = ("task", "global")
 CONSENSUS_OUTCOME_ORDER = ("consensus", "claude_decision", "user_action_required")
+RESOLUTION_BASIS_ORDER = (
+    "rerun_passed",
+    "repro_not_reproduced",
+    "accepted_risk",
+    "non_executable_convention",
+    "user_override",
+)
+DEFAULT_RESOLUTION_BASIS = "non_executable_convention"
+FINDING_SEVERITY_ORDER = ("P0", "P1", "P2")
+DEFAULT_FINDING_SEVERITY = "P1"
 ALLOWED_RISK_LEVELS = ("none", "low", "medium", "high")
 
 LEGACY_CONSENSUS_STATUS_OUTCOMES = {

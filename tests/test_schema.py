@@ -15,7 +15,9 @@ from codex_orchestrator.contract import (  # noqa: E402
     ALLOWED_VERIFICATION_RESULTS,
     CONSENSUS_OUTCOME_ORDER,
     DISPATCH_MODE_ORDER,
+    FINDING_SEVERITY_ORDER,
     REVIEW_KIND_ORDER,
+    RESOLUTION_BASIS_ORDER,
     RUN_META_CONFIG_FIELDS,
     SESSION_STATUS_ORDER,
     STATE_STATUS_ORDER,
@@ -76,6 +78,38 @@ class SchemaTests(unittest.TestCase):
             consensus["properties"]["risk_level"]["enum"],
             list(ALLOWED_RISK_LEVELS),
         )
+        self.assertEqual(
+            consensus["properties"]["resolution_basis"]["enum"],
+            list(RESOLUTION_BASIS_ORDER),
+        )
+        self.assertEqual(consensus["properties"]["clears"]["$ref"], "#/$defs/string_list")
+        self.assertEqual(consensus["properties"]["evidence_refs"]["$ref"], "#/$defs/string_list")
+        verification = defs["verification_event"]
+        self.assertEqual(verification["properties"]["id"]["minLength"], 1)
+        self.assertEqual(
+            verification["properties"]["command_hash"]["pattern"],
+            "^sha256:[0-9a-f]{64}$",
+        )
+        self.assertEqual(verification["properties"]["finding_id"]["minLength"], 1)
+        self.assertEqual(verification["properties"]["acceptance_test"]["type"], "boolean")
+        self.assertEqual(verification["properties"]["attempt_count"]["minimum"], 1)
+        review = defs["review_event"]
+        self.assertEqual(
+            review["properties"]["blocking_findings"]["items"]["$ref"],
+            "#/$defs/blocking_finding",
+        )
+        blocking_finding = defs["blocking_finding"]
+        self.assertEqual(blocking_finding["required"], ["id", "claim"])
+        self.assertFalse(blocking_finding["additionalProperties"])
+        self.assertEqual(blocking_finding["properties"]["id"]["minLength"], 1)
+        self.assertEqual(blocking_finding["properties"]["claim"]["minLength"], 1)
+        self.assertEqual(
+            blocking_finding["properties"]["severity"]["enum"],
+            list(FINDING_SEVERITY_ORDER),
+        )
+        self.assertEqual(blocking_finding["properties"]["file_refs"]["$ref"], "#/$defs/string_list")
+        self.assertEqual(blocking_finding["properties"]["repro_command"]["minLength"], 1)
+        self.assertEqual(blocking_finding["properties"]["min_repro_attempts"]["minimum"], 1)
         run_meta = defs["run_meta_event"]
         self.assertEqual(
             run_meta["required"],
@@ -121,6 +155,10 @@ class SchemaTests(unittest.TestCase):
             list(CONSENSUS_OUTCOME_ORDER),
         )
         self.assertEqual(
+            defs["consensus_event"]["properties"]["resolution_basis"]["enum"],
+            list(RESOLUTION_BASIS_ORDER),
+        )
+        self.assertEqual(
             defs["consensus_event"]["properties"]["risk_level"]["enum"],
             list(ALLOWED_RISK_LEVELS),
         )
@@ -155,6 +193,10 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(
             defs["review_event"]["properties"]["result"]["enum"],
             list(ALLOWED_VERIFICATION_RESULTS),
+        )
+        self.assertEqual(
+            defs["blocking_finding"]["properties"]["severity"]["enum"],
+            list(FINDING_SEVERITY_ORDER),
         )
         self.assertEqual(
             defs["run_closed_event"]["properties"]["status"]["enum"],

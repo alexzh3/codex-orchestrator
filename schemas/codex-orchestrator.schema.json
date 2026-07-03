@@ -184,6 +184,10 @@
         "type": {
           "const": "verification"
         },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
         "kind": {
           "type": "string",
           "enum": [
@@ -233,11 +237,26 @@
         "command": {
           "type": "string"
         },
+        "command_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "finding_id": {
+          "type": "string",
+          "minLength": 1
+        },
         "exit_code": {
           "type": [
             "integer",
             "null"
           ]
+        },
+        "acceptance_test": {
+          "type": "boolean"
+        },
+        "attempt_count": {
+          "type": "integer",
+          "minimum": 1
         },
         "artifacts": {
           "type": "array",
@@ -302,7 +321,23 @@
           "type": "string",
           "minLength": 1
         },
+        "resolution_basis": {
+          "type": "string",
+          "enum": [
+            "rerun_passed",
+            "repro_not_reproduced",
+            "accepted_risk",
+            "non_executable_convention",
+            "user_override"
+          ]
+        },
         "evidence": {
+          "$ref": "#/$defs/string_list"
+        },
+        "clears": {
+          "$ref": "#/$defs/string_list"
+        },
+        "evidence_refs": {
           "$ref": "#/$defs/string_list"
         },
         "risk_level": {
@@ -715,6 +750,12 @@
         "findings": {
           "$ref": "#/$defs/string_list"
         },
+        "blocking_findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/blocking_finding"
+          }
+        },
         "final": {
           "type": "boolean"
         },
@@ -932,6 +973,43 @@
         }
       },
       "additionalProperties": true
+    },
+    "blocking_finding": {
+      "type": "object",
+      "required": [
+        "id",
+        "claim"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "claim": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "P0",
+            "P1",
+            "P2"
+          ]
+        },
+        "file_refs": {
+          "$ref": "#/$defs/string_list"
+        },
+        "repro_command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "min_repro_attempts": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
     },
     "string_list": {
       "type": "array",
