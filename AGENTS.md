@@ -55,8 +55,9 @@ python3 -m bench.run --suite replay
 
 # Head-to-head harness (dry-run mock = zero API cost)
 python3 -m bench.run --suite local-mini --plugin-ref <ref> --dry-run
-python3 -m bench.run --tier tiny   --plugin-ref <ref> --dry-run    # 3 RExBench + 10 TBLite = 13
-python3 -m bench.run --tier normal --plugin-ref <ref> --dry-run    # 6 + 15 + 7 = 28
+python3 -m bench.run --tier tiny     --plugin-ref <ref> --dry-run  # 10 frozen TBLite results
+python3 -m bench.run --tier frontier --plugin-ref <ref> --dry-run  # 8 + 3 + 6 = 17 gated dry-run results
+python3 -m bench.run --tier frontier --plugin-ref <ref>            # real frontier is gated/nonzero
 python3 -m bench.compare --baseline a.jsonl --candidate b.jsonl
 
 # Real runs (spend Claude+Codex budget; need infra) are gated: drop --dry-run and
@@ -117,15 +118,16 @@ Built with Claude Opus 4.8 (1M) + Codex CLI 0.131.0.
   user_override; review blocking_findings block pending-repro; add-verification validates +
   auto-ids; human docs in docs/consensus-and-reviews.md.
 
-### Head-to-head version-quality benchmark (two tiers, select **lowest-success-rate** tasks)
-Config in `bench/tiers.json`. Scaffolding done (dry-run + clear RuntimeError on missing real
-datasets/infra); real adapters are **infra-gated**:
+### Head-to-head version-quality benchmark (two frozen tiers)
+Config in `bench/tiers.json` schema v2. `tiny` is fixed at 10 empirically benchmarked TBLite tasks;
+`frontier` is fixed at 8 + 3 + 6 external tasks and is **infra-gated**:
 
 | Benchmark | Tier use | Adapter (real) | Infra | Issue |
 |-----------|----------|----------------|-------|-------|
-| **TBLite** (OpenThoughts-TBLite, 100 Terminal-Bench tasks) | tiny 10 / normal 15 | Harbor `--agent-import-path` wrapping `claude -p --plugin-dir` | Harbor sandbox | [#3](https://github.com/alexzh3/codex-orchestrator/issues/3) |
-| **RExBench** (12 research-eng tasks, arXiv 2506.22598) | tiny 3 / normal 6 | RExBench executor | repo + grader | [#10](https://github.com/alexzh3/codex-orchestrator/issues/10) |
-| **SWE-bench Verified Mini** (50, HAL; hard 1hr+ band) | normal 7 | official Docker evaluator | Docker ~5GB | [#2](https://github.com/alexzh3/codex-orchestrator/issues/2) |
+| **TBLite** (OpenThoughts-TBLite, 100 Terminal-Bench tasks) | tiny 10 frozen | Harbor `--agent-import-path` wrapping `claude -p --plugin-dir` | Harbor sandbox | [#3](https://github.com/alexzh3/codex-orchestrator/issues/3) |
+| **Terminal-Bench 2.1** | frontier 8 frozen | adapter pending | Harbor sandbox | [#18](https://github.com/alexzh3/codex-orchestrator/issues/18) |
+| **SWE-bench Pro public** | frontier 3 frozen | adapter pending | Docker evaluator + public images | [#18](https://github.com/alexzh3/codex-orchestrator/issues/18) |
+| **RExBench** (12 research-eng tasks, arXiv 2506.22598) | frontier 6 frozen | external grading only | rexbench.com patch ZIP submission | [#10](https://github.com/alexzh3/codex-orchestrator/issues/10) |
 
 Each real run measures **external pass/fail** (the benchmark's own grader) **+ orchestration sidecar
 metrics** (report_score, gate false-acceptance, file-conflict count, prompt/log coverage) from the
