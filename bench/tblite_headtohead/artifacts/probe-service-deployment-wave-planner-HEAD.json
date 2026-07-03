@@ -1,0 +1,71 @@
+{
+  "suite": "tblite",
+  "case_id": "service-deployment-wave-planner",
+  "plugin_ref": "HEAD",
+  "repo_commit": null,
+  "passed": true,
+  "wall_seconds": 1654.30254,
+  "claude_turns": null,
+  "codex_sessions": 1,
+  "codex_reviews": 0,
+  "manual_interventions": null,
+  "prompt_log_pairs_complete": false,
+  "ledger_errors": 0,
+  "gate_passed": null,
+  "report_score": 0.0,
+  "token_usage": {
+    "input_tokens": 6232487,
+    "output_tokens": 88162,
+    "cache_read_input_tokens": 6008450,
+    "cache_creation_input_tokens": null,
+    "total_tokens": 6320649,
+    "cost_usd": 7.4116750000000025,
+    "num_turns_reported": null
+  },
+  "external_score": {
+    "benchmark": "tblite",
+    "task_id": "service-deployment-wave-planner",
+    "required_infra": "OpenThoughts-TBLite dataset and Harbor",
+    "harbor_dataset": "openthoughts-tblite",
+    "resolved": true,
+    "verifier_exit": null,
+    "score": 1.0,
+    "verifier_rewards": {
+      "reward": 1.0
+    },
+    "raw_result_path": "~/Projects/codex-orchestrator/.codex-orchestrator/runs/bench-real-infra/probe-work/service-deployment-wave-planner__HEAD/harbor-jobs/service-deployment-wave-planner-0kyu06gk/2026-07-03__11-26-58/service-deployment-wave-planner__DsviQjV/result.json",
+    "token_usage": {
+      "input_tokens": 6232487,
+      "output_tokens": 88162,
+      "cache_read_input_tokens": 6008450,
+      "cache_creation_input_tokens": null,
+      "total_tokens": 6320649,
+      "cost_usd": 7.4116750000000025,
+      "num_turns_reported": null
+    },
+    "token_breakdown": {
+      "claude": {
+        "input_tokens": 6232487,
+        "output_tokens": 88162,
+        "total_tokens": 6320649,
+        "cost_usd": 7.4116750000000025
+      },
+      "gpt": {
+        "input_tokens": 458617,
+        "output_tokens": 8997,
+        "total_tokens": 467614,
+        "num_sessions": 5,
+        "cost_usd": null
+      },
+      "combined": {
+        "input_tokens": 6691104,
+        "output_tokens": 97159,
+        "total_tokens": 6788263
+      }
+    },
+    "exception": null,
+    "codex_sessions_spawned": 1,
+    "real_orchestration": true,
+    "orchestration_note": null
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "suite": "tblite",
+  "case_id": "book-portfolio-analysis",
+  "plugin_ref": "release/0.3.4",
+  "repo_commit": null,
+  "passed": true,
+  "wall_seconds": 1640.437984,
+  "claude_turns": null,
+  "codex_sessions": 18,
+  "codex_reviews": 0,
+  "manual_interventions": null,
+  "prompt_log_pairs_complete": false,
+  "ledger_errors": 0,
+  "gate_passed": null,
+  "report_score": 0.0,
+  "token_usage": {
+    "input_tokens": 3659873,
+    "output_tokens": 67740,
+    "cache_read_input_tokens": 3549461,
+    "cache_creation_input_tokens": null,
+    "total_tokens": 3727613,
+    "cost_usd": 4.5434555,
+    "num_turns_reported": null
+  },
+  "external_score": {
+    "benchmark": "tblite",
+    "task_id": "book-portfolio-analysis",
+    "required_infra": "OpenThoughts-TBLite dataset and Harbor",
+    "harbor_dataset": "openthoughts-tblite",
+    "resolved": true,
+    "verifier_exit": null,
+    "score": 1.0,
+    "verifier_rewards": {
+      "reward": 1.0
+    },
+    "raw_result_path": "~/Projects/codex-orchestrator/.codex-orchestrator/runs/bench-real-infra/probe-work/book-portfolio-analysis__release_0.3.4/harbor-jobs/book-portfolio-analysis-v6j8fyko/2026-07-02__22-33-05/book-portfolio-analysis__Kb9ar7e/result.json",
+    "token_usage": {
+      "input_tokens": 3659873,
+      "output_tokens": 67740,
+      "cache_read_input_tokens": 3549461,
+      "cache_creation_input_tokens": null,
+      "total_tokens": 3727613,
+      "cost_usd": 4.5434555,
+      "num_turns_reported": null
+    },
+    "token_breakdown": {
+      "claude": {
+        "input_tokens": 3659873,
+        "output_tokens": 67740,
+        "total_tokens": 3727613,
+        "cost_usd": 4.5434555
+      },
+      "gpt": {
+        "input_tokens": 543707,
+        "output_tokens": 16669,
+        "total_tokens": 560376,
+        "num_sessions": 3,
+        "cost_usd": null
+      },
+      "combined": {
+        "input_tokens": 4203580,
+        "output_tokens": 84409,
+        "total_tokens": 4287989
+      }
+    },
+    "exception": null,
+    "codex_sessions_spawned": 18,
+    "real_orchestration": true,
+    "orchestration_note": null
+  }
+}

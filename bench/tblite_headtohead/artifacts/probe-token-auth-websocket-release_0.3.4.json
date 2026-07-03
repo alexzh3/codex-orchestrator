@@ -1,0 +1,71 @@
+{
+  "suite": "tblite",
+  "case_id": "token-auth-websocket",
+  "plugin_ref": "release/0.3.4",
+  "repo_commit": null,
+  "passed": true,
+  "wall_seconds": 1730.370622,
+  "claude_turns": null,
+  "codex_sessions": 7,
+  "codex_reviews": 0,
+  "manual_interventions": null,
+  "prompt_log_pairs_complete": false,
+  "ledger_errors": 0,
+  "gate_passed": null,
+  "report_score": 0.0,
+  "token_usage": {
+    "input_tokens": 3541706,
+    "output_tokens": 64373,
+    "cache_read_input_tokens": 3412037,
+    "cache_creation_input_tokens": null,
+    "total_tokens": 3606079,
+    "cost_usd": 4.5694185,
+    "num_turns_reported": null
+  },
+  "external_score": {
+    "benchmark": "tblite",
+    "task_id": "token-auth-websocket",
+    "required_infra": "OpenThoughts-TBLite dataset and Harbor",
+    "harbor_dataset": "openthoughts-tblite",
+    "resolved": true,
+    "verifier_exit": null,
+    "score": 1.0,
+    "verifier_rewards": {
+      "reward": 1.0
+    },
+    "raw_result_path": "~/Projects/codex-orchestrator/.codex-orchestrator/runs/bench-real-infra/probe-work/token-auth-websocket__release_0.3.4/harbor-jobs/token-auth-websocket-rsel__c4/2026-07-03__16-59-27/token-auth-websocket__zVsqfgv/result.json",
+    "token_usage": {
+      "input_tokens": 3541706,
+      "output_tokens": 64373,
+      "cache_read_input_tokens": 3412037,
+      "cache_creation_input_tokens": null,
+      "total_tokens": 3606079,
+      "cost_usd": 4.5694185,
+      "num_turns_reported": null
+    },
+    "token_breakdown": {
+      "claude": {
+        "input_tokens": 3541706,
+        "output_tokens": 64373,
+        "total_tokens": 3606079,
+        "cost_usd": 4.5694185
+      },
+      "gpt": {
+        "input_tokens": 1261650,
+        "output_tokens": 24302,
+        "total_tokens": 1285952,
+        "num_sessions": 4,
+        "cost_usd": null
+      },
+      "combined": {
+        "input_tokens": 4803356,
+        "output_tokens": 88675,
+        "total_tokens": 4892031
+      }
+    },
+    "exception": null,
+    "codex_sessions_spawned": 7,
+    "real_orchestration": true,
+    "orchestration_note": null
+  }
+}
