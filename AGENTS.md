@@ -84,13 +84,12 @@ record `verification` + `consensus`; gate; commit. Resume the same session for s
 
 ## Current status (2026-07-01)
 
-Plugin **v0.3.4**. **Hold merges to `main`** per direction: the 0.3.x stack
+Plugin **v0.3.6**. **Hold merges to `main`** per direction: the 0.3.x stack
 (#8, #9, #12, #13, #14, #15, #16) has been collapsed into one held PR,
 [#17](https://github.com/alexzh3/codex-orchestrator/pull/17), targeting `main`. #17 is open,
 unmerged, and intentionally held.
 
-The test suite is **103 passing tests, 1 skipped on Python 3.10** (the TBLite `task.toml` test runs on
-Python 3.11+). Issues #4, #5, #6, and #11 are closed. Still-open follow-ups are #2/#3/#10 for real
+The test suite is **166 passing tests**. Issues #4, #5, #6, and #11 are closed. Still-open follow-ups are #2/#3/#10 for real
 external-benchmark adapters, #7 for the optional Aider Polyglot smoke, #18/#19/#20 for real-infra
 follow-ups, and the `scripts/codex_orchestrator/` package split planned for the next cleanup phase.
 
@@ -110,8 +109,13 @@ not the minor. Do not bump to 0.4+ without explicit instruction.
   plugin-native monitors. ✅
 - **0.3.4 External benchmark adapters** — dry-run and real-mode adapter scaffolding; see benchmark
   roadmap below. ✅
-- **0.3.5/0.3.6 Structure cleanup** — Phase A declutter + truth-sync, then Phase B
+- **0.3.5 Structure cleanup** — Phase A declutter + truth-sync, then Phase B
   `scripts/codex_orchestrator/` package split behind re-export shims. The package split is not done.
+- **0.3.6 Consensus evidence basis + blocker hygiene** — ✅ gate-semantics change (documented
+  break): resolving consensus can no longer clear failed executable/acceptance verifications
+  without a linked passing rerun (same command hash/kind/task, strictly newer) or explicit
+  user_override; review blocking_findings block pending-repro; add-verification validates +
+  auto-ids; human docs in docs/consensus-and-reviews.md.
 
 ### Head-to-head version-quality benchmark (two tiers, select **lowest-success-rate** tasks)
 Config in `bench/tiers.json`. Scaffolding done (dry-run + clear RuntimeError on missing real
@@ -135,7 +139,7 @@ real-infra follow-ups [#18]/[#19]/[#20], optional Aider Polyglot smoke [#7], and
 `scripts/codex_orchestrator/` package split.
 
 ### Recommended next steps
-1. Complete the 0.3.5/0.3.6 structure cleanup: Phase A declutter first, then the
+1. Complete the remaining structure cleanup: Phase A declutter first, then the
    `scripts/codex_orchestrator/` package split with compatibility shims.
 2. Keep held PR #17 green while `main` remains untouched.
 3. Build the first **real** adapter — TBLite [#3] — with the real-infra follow-ups #18/#19/#20, then

@@ -233,6 +233,9 @@ That is why this plugin uses **evidence-based consensus** instead of majority vo
 * Claude verifies the diff, tests, logs, and artifacts.
 * When Claude finds a suspected issue, Codex can also review Claude’s objection.
 * Disagreements are resolved using evidence, not vibes.
+* Consensus records can include a machine-checkable resolution basis (`rerun_passed`,
+  `accepted_risk`, `user_override`, etc.) so failed executable checks require real rerun evidence or
+  an explicit override; see [`docs/consensus-and-reviews.md`](docs/consensus-and-reviews.md).
 * The final report records each disagreement or mistake, its root cause when known, the agreed resolution, and the verification evidence.
 
 ### 2. Claude is a strong default long-context orchestrator compared to GPT

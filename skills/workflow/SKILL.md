@@ -31,15 +31,20 @@ Default typed protocol workflow:
 7. Append `dispatch_started` when the session begins and `dispatch_completed` when it yields,
    completes, or fails.
 8. Append `task_checkpoint` with `files_changed` after inspecting the diff and artifacts.
-9. Run `add-verification` with `task_id`; use `covers_tasks` and `scope` (`task` or `global`) when
-   evidence covers multiple tasks or the whole run.
+9. Run `add-verification` with `task_id`; it auto-records a verification id and command hash when
+   `--command` is present. Use `covers_tasks` and `scope` (`task` or `global`) when evidence covers
+   multiple tasks or the whole run. Use `--acceptance-test` for acceptance checks and
+   `--finding-id` for repro runs tied to structured review findings.
 10. Append a `review` event for the acceptance review. The final-review check accepts only a passing
     `diff` or `manual` review, or a review explicitly marked `final`.
-11. Run `report --strict` to render evidence and catch missing required protocol records.
-12. Run `gate`; it must block missing task-scoped verification, file-claim conflicts, and unclaimed
+11. Resolve failed checks and blocking findings with basis-bearing `consensus` records. Plain
+    agreement clears only command-less convention items; failed executable or acceptance checks need
+    linked rerun evidence or an explicit valid override.
+12. Run `report --strict` to render evidence and catch missing required protocol records.
+13. Run `gate`; it must block missing task-scoped verification, file-claim conflicts, and unclaimed
     changes outside a task allowlist.
-13. Run `report --strict` again so `report.md` includes the latest `gate_result`.
-14. Run `doctor` before handoff to catch ledger, prompt, log, and artifact inconsistencies.
+14. Run `report --strict` again so `report.md` includes the latest `gate_result`.
+15. Run `doctor` before handoff to catch ledger, prompt, log, and artifact inconsistencies.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for the full operating contract and
 concrete procedures.

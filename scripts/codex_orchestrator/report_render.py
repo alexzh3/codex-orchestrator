@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .report_common import *
+from .resolution import clears_refs, is_acceptance, is_executable, parse_ref, verifications_by_id
 
 
 def verification_kind_label(kind: object) -> str:
@@ -50,6 +51,25 @@ def typed_review_lines(record: dict[str, object]) -> list[str]:
     if findings:
         lines.append("  - Findings:")
         lines.extend(f"    - {finding}" for finding in findings)
+    blocking_findings = record.get("blocking_findings")
+    if isinstance(blocking_findings, list):
+        rendered_findings: list[str] = []
+        for item in blocking_findings:
+            if not isinstance(item, dict):
+                continue
+            finding_id = text_field(item.get("id"))
+            claim = text_field(item.get("claim"))
+            if not finding_id or not claim:
+                continue
+            severity = text_field(item.get("severity")) or "P1"
+            line = f"    - [{severity}] {finding_id}: {claim}"
+            repro_command = text_field(item.get("repro_command"))
+            if repro_command:
+                line += f" (repro: {inline_code(repro_command)})"
+            rendered_findings.append(line)
+        if rendered_findings:
+            lines.append("  - Blocking Findings:")
+            lines.extend(rendered_findings)
     return lines
 
 
@@ -91,6 +111,19 @@ def consensus_outcome_tally(records: list[dict[str, object]]) -> str:
     return ", ".join(
         f"{counts[outcome]} {consensus_outcome_label(outcome)}" for outcome in ordered_outcomes
     )
+
+
+def resolution_basis_label(basis: str) -> str:
+    return basis.replace("_", " ")
+
+
+def resolution_basis_counts(records: list[dict[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        basis = text_field(record.get("resolution_basis"))
+        if basis:
+            counts[basis] = counts.get(basis, 0) + 1
+    return counts
 
 
 def task_status_tally(records: list[dict[str, object]]) -> str:
@@ -313,6 +346,51 @@ def render_gate_result(lines: list[str], ledger: list[dict[str, object]]) -> Non
     lines.append("")
 
 
+def accepted_risk_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        record
+        for record in records
+        if text_field(record.get("resolution_basis")) in {"accepted_risk", "user_override"}
+    ]
+
+
+def render_accepted_risks_and_overrides(
+    lines: list[str],
+    consensus_records: list[dict[str, object]],
+    ledger: list[dict[str, object]],
+) -> bool:
+    records = accepted_risk_records(consensus_records)
+    if not records:
+        return False
+    by_id = verifications_by_id(ledger)
+    lines.extend(["### Accepted Risks & Overrides", ""])
+    for record in records:
+        basis = text_field(record.get("resolution_basis"))
+        label = "Accepted Risk" if basis == "accepted_risk" else "User Override"
+        finding = text_field(record.get("finding") or record.get("summary")) or "Consensus record"
+        lines.append(f"- **{label}:** {finding}")
+        for ref in clears_refs(record):
+            parsed = parse_ref(ref)
+            if parsed is None:
+                continue
+            ref_type, ref_id = parsed
+            if ref_type == "verification":
+                records_for_id = by_id.get(ref_id, [])
+                if len(records_for_id) != 1:
+                    lines.append(f"  - Clears {inline_code(ref)} (unknown verification)")
+                    continue
+                verification = records_for_id[0]
+                executable = "yes" if is_executable(verification) else "no"
+                acceptance = "yes" if is_acceptance(verification) else "no"
+                lines.append(
+                    f"  - Clears {inline_code(ref)} (executable: {executable}, acceptance: {acceptance})"
+                )
+            elif ref_type == "finding":
+                lines.append(f"  - Clears {inline_code(ref)}")
+    lines.append("")
+    return True
+
+
 def has_change_evidence(ledger: list[dict[str, object]]) -> bool:
     for record in ledger:
         record_type = record.get("type")
@@ -375,6 +453,7 @@ def render_report(
     completeness = report_completeness_score(state, ledger)
     open_risks = unresolved_items(warnings, verifications, consensus_records, task_records)
     sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
+    basis_counts = resolution_basis_counts(consensus_records)
 
     lines = ["# Report", "", "## Summary", ""]
     authored_summary = authored_summary_section(existing_report)
@@ -402,6 +481,12 @@ def render_report(
             f"- Reviews: {len(all_review_records)}",
             f"- Consensus: {consensus_outcome_tally(consensus_records)}",
         ])
+        accepted_risks = basis_counts.get("accepted_risk", 0)
+        user_overrides = basis_counts.get("user_override", 0)
+        if accepted_risks:
+            lines.append(f"- Accepted Risks: {accepted_risks}")
+        if user_overrides:
+            lines.append(f"- User Overrides: {user_overrides}")
         if sessions:
             lines.append(f"- Sessions: {len(sessions)}")
         if open_risks:
@@ -453,6 +538,8 @@ def render_report(
         lines.append("")
         wrote_consensus_content = True
     if consensus_records:
+        if render_accepted_risks_and_overrides(lines, consensus_records, ledger):
+            wrote_consensus_content = True
         lines.extend(["### Decisions", ""])
         for record in consensus_records:
             finding = text_field(record.get("finding") or record.get("summary")) or "Consensus record"
@@ -462,6 +549,17 @@ def render_report(
                 lines.append(f"  - **Root Cause:** {root_cause}")
             lines.append(f"  - **Resolution:** {text_field(record.get('resolution')) or 'Not recorded.'}")
             lines.append(f"  - **Outcome:** {consensus_outcome_label(consensus_outcome(record))}")
+            basis = text_field(record.get("resolution_basis"))
+            if basis:
+                lines.append(f"  - **Basis:** {resolution_basis_label(basis)}")
+            clears = string_list(record.get("clears"))
+            if clears:
+                lines.append("  - **Clears:**")
+                lines.extend(f"    - {inline_code(item)}" for item in clears)
+            evidence_refs = string_list(record.get("evidence_refs"))
+            if evidence_refs:
+                lines.append("  - **Evidence Refs:**")
+                lines.extend(f"    - {inline_code(item)}" for item in evidence_refs)
             risk_level = text_field(record.get("risk_level"))
             if risk_level:
                 lines.append(f"  - **Risk Level:** {risk_level}")

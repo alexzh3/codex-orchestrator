@@ -24,6 +24,41 @@ For each consensus record, capture:
 - Whether user input is required.
 - Verification required before acceptance.
 
+## Resolution Basis
+
+For 0.3.6+ consensus records that resolve failed verification or review evidence, include a
+machine-checkable `resolution_basis` plus refs:
+
+- `rerun_passed`: a later verification reran the identical command string and passed.
+- `repro_not_reproduced`: a stochastic failure did not reproduce; stochastic checks need 3 passing
+  attempts.
+- `accepted_risk`: a command-less, non-acceptance convention or risk is accepted.
+- `non_executable_convention`: legacy/default basis for command-less convention decisions.
+- `user_override`: explicit human approval. Use only after the human says to override; it is
+  rendered loudly and counted in the report.
+
+Use `clears` for what the consensus resolves and `evidence_refs` for proof:
+
+```json
+{
+  "resolution_basis": "rerun_passed",
+  "clears": ["verification:V1"],
+  "evidence_refs": ["verification:V2"]
+}
+```
+
+Rerun flow: record the failed check and keep its auto id (`V1`), rerun with the identical command
+string, record the passing rerun (`V2`), then add consensus with `rerun_passed`, `clears:
+["verification:V1"]`, and `evidence_refs: ["verification:V2"]`.
+
+Traps:
+
+- `user_override` with `requires_user: true` resolves nothing.
+- A consensus with non-empty `clears` never falls back to text matching.
+- `evidence_refs` never address what is being cleared.
+- Acceptance-test failures are cleared only by a green rerun with the same command/kind/task and
+  matching acceptance flag; `user_override` does not clear them.
+
 ## Plan Review Disagreements
 
 For `/codex-orchestrator:workflow`, have Codex review any new Claude-created plan before execution.

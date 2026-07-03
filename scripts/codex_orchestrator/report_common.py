@@ -69,7 +69,7 @@ def report_section(text: str, heading: str, default: str) -> str:
 
 def manual_consensus_section(text: str) -> str:
     section = report_section(text, "Consensus", "")
-    for generated_marker in ("### Reviews", "### Decisions", "### Ledger Records"):
+    for generated_marker in ("### Reviews", "### Accepted Risks & Overrides", "### Decisions", "### Ledger Records"):
         if generated_marker in section:
             section = section.split(generated_marker, 1)[0].strip()
     return "\n".join(
