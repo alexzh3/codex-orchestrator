@@ -1,6 +1,6 @@
 # TBLite Head-to-Head Benchmark Results
 
-_Generated 2026-07-03 18:05  — 30/30 cells complete (10 tasks × 3 versions)._
+_30/30 cells complete (10 tasks × 3 versions)._
 
 ## What was benchmarked
 
@@ -8,7 +8,7 @@ _Generated 2026-07-03 18:05  — 30/30 cells complete (10 tasks × 3 versions)._
 
 - **Task selection:** the **10 hardest** of the 100-task dataset by `lowest_success_rate` (difficulty-ranked); same 10 tasks for every version.
 
-- **Plugin versions (head-to-head):** `0.2.0` (`main`), `0.3.4` (`release/0.3.4`), `0.3.5` (`feat/0.3.5-structure-cleanup` HEAD).
+- **Plugin versions (head-to-head):** `0.2.0` (`4a69447`, tag `v0.2.0`), `0.3.4` (`fb1963d`), `0.3.5` (`2827487`, tag `v0.3.5`).
 
 - **Models:** orchestrator = **Claude Opus-4.8 @ effort=max**; implementer = **Codex gpt-5.5 @ reasoning_effort=xhigh, service_tier=default** (verified in codex session logs).
 
@@ -99,7 +99,7 @@ Stats are over **valid** cells only (Claude actually ran); `⟳` cells hit the s
 ```bash
 # prereqs: docker running; harbor installed; `harbor download openthoughts-tblite`;
 #          ~/.codex/auth.json present; CLAUDE_CODE_OAUTH_TOKEN in ./.env (gitignored)
-bash .codex-orchestrator/runs/bench-real-infra/run_matrix.sh          # runs the 27 remaining cells
-python3 .codex-orchestrator/runs/bench-real-infra/aggregate_results.py # regenerates this doc
+bash bench/tblite_headtohead/run_matrix.sh          # runs the 27 remaining cells
+python3 bench/tblite_headtohead/aggregate_results.py # regenerates this doc
 ```
 

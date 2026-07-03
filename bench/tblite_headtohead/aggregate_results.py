@@ -9,16 +9,14 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 ART = HERE / "artifacts"
 OUT = REPO / "docs/benchmark-results-tblite-headtohead.md"
+REFS_PATH = HERE / "refs.json"
 
-VERSION = {"main": "0.2.0", "release/0.3.4": "0.3.4", "HEAD": "0.3.5"}
-VORDER = ["0.2.0", "0.3.4", "0.3.5"]
 # hardness-ranked task order (rank 1..10)
 TASK_ORDER = [
     "book-portfolio-analysis", "corrupted-filesystem-recovery", "breast-cancer-mlflow",
@@ -26,6 +24,36 @@ TASK_ORDER = [
     "service-deployment-wave-planner", "mech-system", "multi-labeller",
     "react-typescript-debugg", "token-auth-websocket",
 ]
+
+
+def load_refs():
+    data = json.loads(REFS_PATH.read_text(encoding="utf-8"))
+    for ref, meta in data.items():
+        if not isinstance(meta, dict) or not meta.get("label") or not meta.get("resolved_commit"):
+            raise SystemExit(f"{REFS_PATH}: ref {ref!r} must define label and resolved_commit")
+    return data
+
+
+REFS = load_refs()
+VORDER = sorted({meta["label"] for meta in REFS.values()})
+
+
+def version_refs_summary():
+    by_label = {}
+    for meta in REFS.values():
+        label = meta["label"]
+        current = by_label.get(label)
+        if current is None or (meta.get("tag") and not current.get("tag")):
+            by_label[label] = meta
+
+    parts = []
+    for label in VORDER:
+        meta = by_label[label]
+        detail = f"`{meta['resolved_commit'][:7]}`"
+        if meta.get("tag"):
+            detail += f", tag `{meta['tag']}`"
+        parts.append(f"`{label}` ({detail})")
+    return ", ".join(parts)
 
 
 def _k(n):
@@ -55,7 +83,10 @@ def load_rows():
             print(f"skip unreadable {f.name}: {e}", file=sys.stderr)
             continue
         es = o.get("external_score", {}) or {}
-        ver = VERSION.get(o.get("plugin_ref", ""), o.get("plugin_ref", "?"))
+        plugin_ref = o.get("plugin_ref", "")
+        if plugin_ref not in REFS:
+            raise SystemExit(f"unknown plugin_ref {plugin_ref!r} in {f}; add it to {REFS_PATH}")
+        ver = REFS[plugin_ref]["label"]
         task = es.get("task_id") or o.get("case_id") or f.stem
         tb = es.get("token_breakdown", {}) or {}
         cl, gp = tb.get("claude") or {}, tb.get("gpt") or {}
@@ -84,8 +115,7 @@ def main():
 
     L = []
     L.append("# TBLite Head-to-Head Benchmark Results\n")
-    L.append(f"_Generated {datetime.now().strftime('%Y-%m-%d %H:%M %Z') or datetime.now().isoformat()} — "
-             f"{done}/30 cells complete (10 tasks × 3 versions)._\n")
+    L.append(f"_{done}/30 cells complete (10 tasks × 3 versions)._\n")
 
     L.append("## What was benchmarked\n")
     L.append("- **Benchmark:** OpenThoughts-TBLite (Terminal-Bench format), run via **Harbor** in per-task "
@@ -93,8 +123,7 @@ def main():
              "No score is ever fabricated.\n")
     L.append("- **Task selection:** the **10 hardest** of the 100-task dataset by `lowest_success_rate` "
              "(difficulty-ranked); same 10 tasks for every version.\n")
-    L.append("- **Plugin versions (head-to-head):** `0.2.0` (`main`), `0.3.4` (`release/0.3.4`), "
-             "`0.3.5` (`feat/0.3.5-structure-cleanup` HEAD).\n")
+    L.append(f"- **Plugin versions (head-to-head):** {version_refs_summary()}.\n")
     L.append("- **Models:** orchestrator = **Claude Opus-4.8 @ effort=max**; implementer = **Codex gpt-5.5 "
              "@ reasoning_effort=xhigh, service_tier=default** (verified in codex session logs).\n")
     L.append("- **Harness:** custom Harbor agent `bench.harbor_agent:CodexOrchestratorAgent` — launches Claude "
@@ -199,8 +228,8 @@ def main():
     L.append("```bash\n"
              "# prereqs: docker running; harbor installed; `harbor download openthoughts-tblite`;\n"
              "#          ~/.codex/auth.json present; CLAUDE_CODE_OAUTH_TOKEN in ./.env (gitignored)\n"
-             "bash .codex-orchestrator/runs/bench-real-infra/run_matrix.sh          # runs the 27 remaining cells\n"
-             "python3 .codex-orchestrator/runs/bench-real-infra/aggregate_results.py # regenerates this doc\n"
+             "bash bench/tblite_headtohead/run_matrix.sh          # runs the 27 remaining cells\n"
+             "python3 bench/tblite_headtohead/aggregate_results.py # regenerates this doc\n"
              "```\n")
 
     OUT.parent.mkdir(parents=True, exist_ok=True)

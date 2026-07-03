@@ -1,7 +1,7 @@
 # TBLite head-to-head benchmark bundle
 
 Self-contained reproducibility bundle for the OpenThoughts-TBLite head-to-head across plugin
-versions **0.2.0 / 0.3.4 / 0.3.5**. Results are written to
+versions **0.2.0 / 0.3.4 / 0.3.5** (refs `v0.2.0`, `release/0.3.4`, `v0.3.5`). Results are written to
 [`../../docs/benchmark-results-tblite-headtohead.md`](../../docs/benchmark-results-tblite-headtohead.md).
 
 ## Contents
@@ -10,6 +10,7 @@ versions **0.2.0 / 0.3.4 / 0.3.5**. Results are written to
   session/rate-limit (0-token) run so it is never recorded as a real result.
 - `run_matrix.sh` — drive the full matrix (10 hardest tasks × 3 versions). **Resumable**: skips any
   cell whose artifact already exists; one failed cell never aborts the run.
+- `refs.json` — map historical and release refs to labels and resolved commits.
 - `aggregate_results.py` — regenerate the results doc from `artifacts/` (idempotent).
 - `artifacts/probe-*.json` — the 30 raw per-cell results (metrics only; no secrets).
 

@@ -28,7 +28,7 @@ TASKS=(
   react-typescript-debugg
   token-auth-websocket
 )
-REFS=(main release/0.3.4 HEAD)
+REFS=(v0.2.0 release/0.3.4 v0.3.5)
 
 total=$(( ${#TASKS[@]} * ${#REFS[@]} ))
 n=0
