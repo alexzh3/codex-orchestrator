@@ -14,6 +14,22 @@ from .claims import (
 from .contract import LEGACY_CONSENSUS_STATUS_OUTCOMES
 from .events import LEDGER_EVENT_SCHEMAS, validate_ledger_event
 from .report import is_final_review_verification
+from .resolution import (
+    USER_OVERRIDE_CLEARS_ACCEPTANCE,
+    attempt_count,
+    clears_refs,
+    computed_command_hash,
+    consensus_clears_verification,
+    consensus_resolution_basis,
+    is_acceptance,
+    is_executable,
+    linked_verification_ids,
+    min_repro_attempts_for,
+    parse_recorded_at,
+    parse_ref,
+    rerun_link_issues,
+    verifications_by_id,
+)
 from .store import report_path
 
 
@@ -153,10 +169,27 @@ def consensus_matches_verification(consensus: dict[str, object], verification: d
     return False
 
 
-def has_later_overriding_consensus(
+def consensus_addresses_verification(
+    consensus: dict[str, object],
+    verification: dict[str, object],
+    by_id: dict[str, list[dict[str, object]]],
+) -> bool:
+    refs = clears_refs(consensus)
+    if refs:
+        verification_id = verification.get("id")
+        if not isinstance(verification_id, str) or not verification_id:
+            return False
+        if f"verification:{verification_id}" not in refs:
+            return False
+        return len(by_id.get(verification_id, [])) == 1
+    return consensus_matches_verification(consensus, verification)
+
+
+def has_later_overriding_consensus_with_ids(
     records: list[dict[str, object]],
     start_index: int,
     verification: dict[str, object],
+    by_id: dict[str, list[dict[str, object]]],
 ) -> bool:
     for record in records[start_index + 1 :]:
         if record.get("type") != "consensus":
@@ -165,20 +198,30 @@ def has_later_overriding_consensus(
         if (
             outcome in RESOLVING_CONSENSUS_OUTCOMES
             and record.get("requires_user") is not True
-            and consensus_matches_verification(record, verification)
+            and consensus_addresses_verification(record, verification, by_id)
+            and consensus_clears_verification(record, verification, by_id)
         ):
             return True
     return False
 
 
+def has_later_overriding_consensus(
+    records: list[dict[str, object]],
+    start_index: int,
+    verification: dict[str, object],
+) -> bool:
+    return has_later_overriding_consensus_with_ids(records, start_index, verification, verifications_by_id(records))
+
+
 def unresolved_verification_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
     unresolved: list[dict[str, object]] = []
+    by_id = verifications_by_id(records)
     for index, record in enumerate(records):
         if record.get("type") != "verification":
             continue
         if record.get("result") not in UNRESOLVED_VERIFICATION_RESULTS:
             continue
-        if has_later_overriding_consensus(records, index, record):
+        if has_later_overriding_consensus_with_ids(records, index, record, by_id):
             continue
         unresolved.append(record)
     return unresolved
@@ -243,19 +286,6 @@ def is_run_wide_record(record: dict[str, object]) -> bool:
     return not text_value(record.get("task_id")) and text_value(record.get("scope")) != "task"
 
 
-def parse_recorded_at(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
 def latest_recorded_at(records: list[dict[str, object]]) -> datetime | None:
     timestamps = [
         parsed
@@ -289,6 +319,159 @@ def low_confidence_warnings(state: dict[str, object]) -> list[str]:
             continue
         name = text_value(session.get("name")) or "<unnamed>"
         warnings.append(f"low-parser-confidence: session {name} has low parser confidence")
+    return warnings
+
+
+def collect_blocking_findings(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    findings: list[dict[str, object]] = []
+    for review_index, record in enumerate(records):
+        if record.get("type") != "review":
+            continue
+        blocking_findings = record.get("blocking_findings")
+        if not isinstance(blocking_findings, list):
+            continue
+        for item in blocking_findings:
+            if not isinstance(item, dict):
+                continue
+            finding_id = text_value(item.get("id"))
+            claim = text_value(item.get("claim"))
+            if not finding_id or not claim:
+                continue
+            severity = text_value(item.get("severity")) or "P1"
+            min_repro_attempts = item.get("min_repro_attempts")
+            if type(min_repro_attempts) is not int or min_repro_attempts < 1:
+                min_repro_attempts = 1
+            findings.append(
+                {
+                    "id": finding_id,
+                    "claim": claim,
+                    "severity": severity,
+                    "repro_command": text_value(item.get("repro_command")),
+                    "min_repro_attempts": min_repro_attempts,
+                    "review_index": review_index,
+                    "task_id": text_value(record.get("task_id")) or "<unknown>",
+                }
+            )
+    return findings
+
+
+def finding_id_counts(records: list[dict[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        if record.get("type") != "review":
+            continue
+        blocking_findings = record.get("blocking_findings")
+        if not isinstance(blocking_findings, list):
+            continue
+        for item in blocking_findings:
+            if not isinstance(item, dict):
+                continue
+            finding_id = text_value(item.get("id"))
+            if finding_id:
+                counts[finding_id] = counts.get(finding_id, 0) + 1
+    return counts
+
+
+def finding_cleared_by_consensus(records: list[dict[str, object]], finding: dict[str, object]) -> bool:
+    finding_id = text_value(finding.get("id"))
+    review_index = finding.get("review_index")
+    if not finding_id or type(review_index) is not int:
+        return False
+    ref = f"finding:{finding_id}"
+    for record in records[review_index + 1 :]:
+        if record.get("type") != "consensus":
+            continue
+        if consensus_outcome_value(record) not in RESOLVING_CONSENSUS_OUTCOMES:
+            continue
+        if record.get("requires_user") is True:
+            continue
+        if consensus_resolution_basis(record) not in {"accepted_risk", "user_override"}:
+            continue
+        if ref in clears_refs(record):
+            return True
+    return False
+
+
+def repro_verifications_for_finding(
+    records: list[dict[str, object]],
+    finding: dict[str, object],
+) -> list[dict[str, object]]:
+    finding_id = text_value(finding.get("id"))
+    repro_command = text_value(finding.get("repro_command"))
+    review_index = finding.get("review_index")
+    if not finding_id or not repro_command or type(review_index) is not int:
+        return []
+    repro_command_hash = computed_command_hash(repro_command)
+    verifications: list[dict[str, object]] = []
+    for index, record in enumerate(records):
+        if index <= review_index:
+            continue
+        if record.get("type") != "verification" or record.get("finding_id") != finding_id:
+            continue
+        command = text_value(record.get("command"))
+        if not command:
+            continue
+        if computed_command_hash(command) != repro_command_hash:
+            continue
+        verifications.append(record)
+    return verifications
+
+
+def pending_repro_blocking_reasons(records: list[dict[str, object]]) -> list[str]:
+    reasons: list[str] = []
+    seen_reasons: set[str] = set()
+    unresolved_repro_ids = {id(record) for record in unresolved_verification_records(records)}
+
+    def append_reason(reason: str) -> None:
+        if reason in seen_reasons:
+            return
+        seen_reasons.add(reason)
+        reasons.append(reason)
+
+    for finding in collect_blocking_findings(records):
+        severity = text_value(finding.get("severity")) or "P1"
+        if severity not in {"P0", "P1"}:
+            continue
+        if finding_cleared_by_consensus(records, finding):
+            continue
+        if not finding.get("repro_command"):
+            continue
+        finding_id = str(finding["id"])
+        claim = str(finding["claim"])
+        repro_records = repro_verifications_for_finding(records, finding)
+        if not repro_records:
+            append_reason(
+                f"pending-repro: finding {finding_id} ({severity}) '{claim}' has no passing repro verification"
+            )
+            continue
+        if any(id(record) in unresolved_repro_ids for record in repro_records):
+            continue
+        passing_attempts = sum(attempt_count(record) for record in repro_records if record.get("result") == "passed")
+        min_repro_attempts = int(finding.get("min_repro_attempts", 1))
+        if passing_attempts < min_repro_attempts:
+            append_reason(
+                f"pending-repro: finding {finding_id} ({severity}) '{claim}' "
+                f"has {passing_attempts} passing repro attempt(s), needs {min_repro_attempts}"
+            )
+    return reasons
+
+
+def gate_warning_reasons(records: list[dict[str, object]]) -> list[str]:
+    warnings: list[str] = []
+    for finding in collect_blocking_findings(records):
+        severity = text_value(finding.get("severity")) or "P1"
+        if severity not in {"P0", "P1"}:
+            continue
+        if finding_cleared_by_consensus(records, finding):
+            continue
+        if finding.get("repro_command"):
+            continue
+        finding_id = str(finding["id"])
+        claim = str(finding["claim"])
+        warnings.append(
+            f"finding-no-repro-command: finding {finding_id} ({severity}) "
+            f"'{claim}' has no repro_command and cannot block"
+        )
     return warnings
 
 
@@ -404,7 +587,12 @@ def gate_blocking_reasons(directory: Path, records: list[dict[str, object]], dia
                 blocking.append(f"unmet-verification: task {task_id} requires {requirement}")
 
     for record in unresolved_verification_records(records):
-        blocking.append(f"unresolved-verification: {verification_label(record)} has no overriding consensus")
+        blocking.append(
+            f"unresolved-verification: {verification_label(record)} "
+            "has no overriding consensus with a valid evidence basis"
+        )
+
+    blocking.extend(pending_repro_blocking_reasons(records))
 
     for record in records:
         if record.get("type") != "consensus" or not consensus_requires_user(record):
@@ -465,6 +653,174 @@ def dispatch_path_issues(records: list[dict[str, object]]) -> list[str]:
     return issues
 
 
+def consensus_finding_label(record: dict[str, object]) -> str:
+    return text_value(record.get("finding")) or text_value(record.get("summary")) or "consensus record"
+
+
+def all_finding_ids(records: list[dict[str, object]]) -> set[str]:
+    return set(finding_id_counts(records))
+
+
+def consensus_ref_issues(records: list[dict[str, object]]) -> list[str]:
+    issues: list[str] = []
+    by_id = verifications_by_id(records)
+    finding_ids = all_finding_ids(records)
+    for record in records:
+        if record.get("type") != "consensus":
+            continue
+        finding = consensus_finding_label(record)
+        for field in ("clears", "evidence_refs"):
+            refs = record.get(field)
+            if not isinstance(refs, list):
+                continue
+            for ref in refs:
+                parsed = parse_ref(ref)
+                if parsed is None:
+                    issues.append(
+                        f"malformed-ref: consensus '{finding}' {field} entry '{ref}' "
+                        "is not verification:<id> or finding:<id>"
+                    )
+                    continue
+                ref_type, ref_id = parsed
+                if ref_type == "verification" and ref_id not in by_id:
+                    issues.append(f"dangling-ref: consensus '{finding}' references unknown verification id '{ref_id}'")
+                elif ref_type == "finding" and ref_id not in finding_ids:
+                    issues.append(f"dangling-ref: consensus '{finding}' references unknown finding id '{ref_id}'")
+    return issues
+
+
+def cleared_verification_ids(record: dict[str, object]) -> list[str]:
+    ids: list[str] = []
+    seen: set[str] = set()
+    for ref in clears_refs(record):
+        parsed = parse_ref(ref)
+        if parsed is None:
+            continue
+        ref_type, ref_id = parsed
+        if ref_type != "verification" or ref_id in seen:
+            continue
+        ids.append(ref_id)
+        seen.add(ref_id)
+    return ids
+
+
+def rerun_link_doctor_issues(records: list[dict[str, object]]) -> list[str]:
+    issues: list[str] = []
+    by_id = verifications_by_id(records)
+    for record in records:
+        if record.get("type") != "consensus":
+            continue
+        basis = consensus_resolution_basis(record)
+        if basis not in {"rerun_passed", "repro_not_reproduced"}:
+            continue
+        finding = consensus_finding_label(record)
+        linked_ids = linked_verification_ids(record)
+        for verification_id in cleared_verification_ids(record):
+            verification_records = by_id.get(verification_id, [])
+            if len(verification_records) != 1:
+                continue
+            verification = verification_records[0]
+            min_attempts = min_repro_attempts_for(verification) if basis == "repro_not_reproduced" else 1
+            if not linked_ids:
+                issues.append(
+                    f"invalid-rerun-link: consensus '{finding}' clears verification '{verification_id}' "
+                    f"with basis {basis} but links no passing rerun"
+                )
+                continue
+            attempted: list[tuple[str, list[str]]] = []
+            has_valid_link = False
+            for linked_id in linked_ids:
+                linked_records = by_id.get(linked_id, [])
+                if len(linked_records) != 1:
+                    continue
+                reasons = rerun_link_issues(linked_records[0], verification, min_attempts=min_attempts)
+                if reasons:
+                    attempted.append((linked_id, reasons))
+                else:
+                    has_valid_link = True
+            if has_valid_link:
+                continue
+            for linked_id, reasons in attempted:
+                issues.append(
+                    f"invalid-rerun-link: consensus '{finding}' link '{linked_id}' "
+                    f"does not supersede verification '{verification_id}' ({', '.join(reasons)})"
+                )
+    return issues
+
+
+def ineffective_clear_issues(records: list[dict[str, object]]) -> list[str]:
+    issues: list[str] = []
+    by_id = verifications_by_id(records)
+    for record in records:
+        if record.get("type") != "consensus" or not clears_refs(record):
+            continue
+        basis = consensus_resolution_basis(record)
+        if basis not in {"accepted_risk", "non_executable_convention", "user_override"}:
+            continue
+        finding = consensus_finding_label(record)
+        for verification_id in cleared_verification_ids(record):
+            verification_records = by_id.get(verification_id, [])
+            if len(verification_records) != 1:
+                continue
+            verification = verification_records[0]
+            if basis in {"accepted_risk", "non_executable_convention"}:
+                if is_executable(verification):
+                    issues.append(
+                        f"ineffective-clear: consensus '{finding}' (basis {basis}) "
+                        f"cannot clear verification '{verification_id}' (executable command)"
+                    )
+                if is_acceptance(verification):
+                    issues.append(
+                        f"ineffective-clear: consensus '{finding}' (basis {basis}) "
+                        f"cannot clear verification '{verification_id}' (acceptance test)"
+                    )
+            elif basis == "user_override" and not USER_OVERRIDE_CLEARS_ACCEPTANCE and is_acceptance(verification):
+                issues.append(
+                    f"ineffective-clear: consensus '{finding}' (basis {basis}) "
+                    f"cannot clear verification '{verification_id}' (acceptance test)"
+                )
+    return issues
+
+
+def duplicate_evidence_id_issues(records: list[dict[str, object]]) -> list[str]:
+    issues: list[str] = []
+    for verification_id, verification_records in verifications_by_id(records).items():
+        if len(verification_records) > 1:
+            issues.append(f"duplicate-verification-id: verification id '{verification_id}' recorded {len(verification_records)} times")
+    for finding_id, count in finding_id_counts(records).items():
+        if count > 1:
+            issues.append(f"duplicate-finding-id: blocking finding id '{finding_id}' recorded {count} times")
+    return issues
+
+
+def command_hash_issues(records: list[dict[str, object]]) -> list[str]:
+    issues: list[str] = []
+    for record in records:
+        if record.get("type") != "verification":
+            continue
+        command = record.get("command")
+        stored_hash = record.get("command_hash")
+        if not isinstance(command, str) or not isinstance(stored_hash, str):
+            continue
+        if stored_hash == computed_command_hash(command):
+            continue
+        verification_id = text_value(record.get("id")) or "<unknown>"
+        issues.append(f"command-hash-mismatch: verification '{verification_id}' stored command_hash does not match its command")
+    return issues
+
+
+def finding_repro_issues(records: list[dict[str, object]]) -> list[str]:
+    issues: list[str] = []
+    for finding in collect_blocking_findings(records):
+        if finding.get("repro_command"):
+            continue
+        issues.append(
+            f"finding-missing-repro: blocking finding '{finding['id']}' "
+            f"in review for task {finding['task_id']} has no repro_command"
+        )
+    return issues
+
+
 def doctor_issues(directory: Path, state: dict[str, object], records: list[dict[str, object]], diagnostics: list[dict[str, object]]) -> list[str]:
     issues: list[str] = []
     for diagnostic in diagnostics:
@@ -473,6 +829,12 @@ def doctor_issues(directory: Path, state: dict[str, object], records: list[dict[
         )
     issues.extend(schema_event_issues(records))
     issues.extend(dispatch_path_issues(records))
+    issues.extend(consensus_ref_issues(records))
+    issues.extend(rerun_link_doctor_issues(records))
+    issues.extend(ineffective_clear_issues(records))
+    issues.extend(duplicate_evidence_id_issues(records))
+    issues.extend(command_hash_issues(records))
+    issues.extend(finding_repro_issues(records))
 
     tasks = task_states(records)
     for task in tasks:

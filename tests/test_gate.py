@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -19,6 +20,7 @@ class GateDoctorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self.tmp.name)
+        self._verification_event_index = 0
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -197,6 +199,38 @@ class GateDoctorTests(unittest.TestCase):
             "1",
         )
 
+    def add_verification_event(self, **fields: object) -> dict[str, object]:
+        index = getattr(self, "_verification_event_index", 0) + 1
+        self._verification_event_index = index
+        record: dict[str, object] = {
+            "type": "verification",
+            "id": f"V{index}",
+            "recorded_at": f"2026-06-29T08:{index:02d}:00Z",
+            "kind": "test",
+            "result": "failed",
+            "summary": f"Verification {index}",
+        }
+        record.update(fields)
+        self.append_event(record)
+        return record
+
+    def finish_run(self) -> None:
+        self.append_event({"type": "run_closed", "status": "complete", "summary": "Run is ready."})
+        self.refresh_report_mtime()
+
+    def start_gate_ready_run(self) -> None:
+        self.init_run()
+        self.add_task()
+        self.add_checkpoint()
+        self.add_final_review()
+
+    def run_doctor_unchanged(self, *, check: bool = False) -> dict[str, object]:
+        before = self.ledger_path().read_text(encoding="utf-8")
+        result = self.run_cli("doctor", "--repo", str(self.repo), "--run-id", "run", check=check)
+        payload = json.loads(result.stdout)
+        self.assertEqual(self.ledger_path().read_text(encoding="utf-8"), before)
+        return payload
+
     def test_gate_ok_appends_gate_result(self) -> None:
         self.make_complete_run(verification_required=[TEST_COMMAND])
 
@@ -346,7 +380,7 @@ class GateDoctorTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assert_blocking_contains(payload, "unresolved-verification")
 
-    def test_gate_allows_failed_verification_with_matching_consensus(self) -> None:
+    def test_gate_blocks_failed_executable_verification_with_plain_matching_consensus(self) -> None:
         self.init_run()
         self.add_task()
         self.add_checkpoint()
@@ -366,12 +400,488 @@ class GateDoctorTests(unittest.TestCase):
         self.append_event({"type": "run_closed", "status": "complete", "summary": "Run is ready."})
         self.refresh_report_mtime()
 
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_gate_allows_command_less_failed_verification_with_matching_consensus(self) -> None:
+        self.start_gate_ready_run()
+        self.add_verification_event(
+            id="V1",
+            kind="manual_review",
+            result="failed",
+            summary="Manual review found a non-executable convention issue.",
+        )
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Manual review found a non-executable convention issue.",
+                "outcome": "consensus",
+                "resolution": "Accepted as a documented convention issue.",
+                "risk_level": "low",
+                "requires_user": False,
+                "evidence": ["Claude and Codex agreed this is non-executable."],
+            }
+        )
+        self.finish_run()
+
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
         payload = json.loads(result.stdout)
 
         self.assertEqual(result.returncode, 0)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["blocking"], [])
+
+    def test_gate_rerun_passed_clears_failed_executable_verification(self) -> None:
+        self.start_gate_ready_run()
+        self.add_verification_event(
+            id="V1",
+            recorded_at="2026-06-29T08:01:00Z",
+            kind="test",
+            result="failed",
+            summary="Unit tests failed.",
+            command=TEST_COMMAND,
+            task_id="T001",
+        )
+        self.add_verification_event(
+            id="V2",
+            recorded_at="2026-06-29T08:02:00Z",
+            kind="test",
+            result="passed",
+            summary="Unit tests passed on rerun.",
+            command=TEST_COMMAND,
+            task_id="T001",
+        )
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": "The rerun passed.",
+                "resolution_basis": "rerun_passed",
+                "requires_user": False,
+                "evidence": ["rerun"],
+                "clears": ["verification:V1"],
+                "evidence_refs": ["verification:V2"],
+            }
+        )
+        self.finish_run()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["blocking"], [])
+
+    def test_gate_rerun_with_different_command_does_not_clear(self) -> None:
+        self.start_gate_ready_run()
+        self.add_verification_event(id="V1", recorded_at="2026-06-29T08:01:00Z", command=TEST_COMMAND)
+        self.add_verification_event(
+            id="V2",
+            recorded_at="2026-06-29T08:02:00Z",
+            result="passed",
+            command=f"{TEST_COMMAND} --failfast",
+        )
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": "A different rerun passed.",
+                "resolution_basis": "rerun_passed",
+                "requires_user": False,
+                "evidence": ["rerun"],
+                "clears": ["verification:V1"],
+                "evidence_refs": ["verification:V2"],
+            }
+        )
+        self.finish_run()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_rerun_link_recomputes_hash_and_rejects_spoofed_command_hash(self) -> None:
+        self.start_gate_ready_run()
+        stored_hash = "sha256:" + hashlib.sha256(TEST_COMMAND.encode("utf-8")).hexdigest()
+        self.add_verification_event(
+            id="V1",
+            recorded_at="2026-06-29T08:01:00Z",
+            command=TEST_COMMAND,
+            command_hash=stored_hash,
+        )
+        self.add_verification_event(
+            id="V2",
+            recorded_at="2026-06-29T08:02:00Z",
+            result="passed",
+            command=f"{TEST_COMMAND} --failfast",
+            command_hash=stored_hash,
+        )
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": "A spoofed hash should not clear.",
+                "resolution_basis": "rerun_passed",
+                "requires_user": False,
+                "evidence": ["rerun"],
+                "clears": ["verification:V1"],
+                "evidence_refs": ["verification:V2"],
+            }
+        )
+        self.finish_run()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_same_timestamp_rerun_does_not_clear(self) -> None:
+        self.start_gate_ready_run()
+        timestamp = "2026-06-29T08:01:00Z"
+        self.add_verification_event(id="V1", recorded_at=timestamp, command=TEST_COMMAND)
+        self.add_verification_event(id="V2", recorded_at=timestamp, result="passed", command=TEST_COMMAND)
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": "Same timestamp rerun.",
+                "resolution_basis": "rerun_passed",
+                "requires_user": False,
+                "evidence": ["rerun"],
+                "clears": ["verification:V1"],
+                "evidence_refs": ["verification:V2"],
+            }
+        )
+        self.finish_run()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_gate_rerun_older_or_task_mismatch_does_not_clear(self) -> None:
+        cases = [
+            {
+                "name": "older",
+                "rerun_recorded_at": "2026-06-29T08:00:00Z",
+                "rerun_task_id": "T001",
+            },
+            {
+                "name": "task-mismatch",
+                "rerun_recorded_at": "2026-06-29T08:02:00Z",
+                "rerun_task_id": "T002",
+            },
+        ]
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                self.tearDown()
+                self.setUp()
+                self.start_gate_ready_run()
+                self.add_verification_event(
+                    id="V1",
+                    recorded_at="2026-06-29T08:01:00Z",
+                    command=TEST_COMMAND,
+                    task_id="T001",
+                )
+                self.add_verification_event(
+                    id="V2",
+                    recorded_at=case["rerun_recorded_at"],
+                    result="passed",
+                    command=TEST_COMMAND,
+                    task_id=case["rerun_task_id"],
+                )
+                self.append_event(
+                    {
+                        "type": "consensus",
+                        "finding": "Unit tests failed.",
+                        "outcome": "consensus",
+                        "resolution": "Rerun did not supersede.",
+                        "resolution_basis": "rerun_passed",
+                        "requires_user": False,
+                        "evidence": ["rerun"],
+                        "clears": ["verification:V1"],
+                        "evidence_refs": ["verification:V2"],
+                    }
+                )
+                self.finish_run()
+
+                result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+                payload = json.loads(result.stdout)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(payload["ok"])
+                self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_rerun_passed_requires_same_verification_kind(self) -> None:
+        self.start_gate_ready_run()
+        self.add_verification_event(id="V1", recorded_at="2026-06-29T08:01:00Z", kind="test", command=TEST_COMMAND)
+        self.add_verification_event(
+            id="V2",
+            recorded_at="2026-06-29T08:02:00Z",
+            kind="manual_review",
+            result="passed",
+            command=TEST_COMMAND,
+        )
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": "Different verification kind.",
+                "resolution_basis": "rerun_passed",
+                "requires_user": False,
+                "evidence": ["rerun"],
+                "clears": ["verification:V1"],
+                "evidence_refs": ["verification:V2"],
+            }
+        )
+        self.finish_run()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_acceptance_flag_absent_and_false_match_for_rerun(self) -> None:
+        self.start_gate_ready_run()
+        self.add_verification_event(
+            id="V1",
+            recorded_at="2026-06-29T08:01:00Z",
+            command=TEST_COMMAND,
+            acceptance_test=False,
+        )
+        self.add_verification_event(
+            id="V2",
+            recorded_at="2026-06-29T08:02:00Z",
+            result="passed",
+            command=TEST_COMMAND,
+        )
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": "The rerun passed.",
+                "resolution_basis": "rerun_passed",
+                "requires_user": False,
+                "evidence": ["rerun"],
+                "clears": ["verification:V1"],
+                "evidence_refs": ["verification:V2"],
+            }
+        )
+        self.finish_run()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["blocking"], [])
+
+    def test_duplicate_verification_id_cannot_be_used_as_clear_ref(self) -> None:
+        self.start_gate_ready_run()
+        self.add_verification_event(id="V1", recorded_at="2026-06-29T08:01:00Z", command=TEST_COMMAND)
+        self.add_verification_event(id="V2", recorded_at="2026-06-29T08:02:00Z", result="passed", command=TEST_COMMAND)
+        self.add_verification_event(id="V2", recorded_at="2026-06-29T08:03:00Z", result="passed", command=TEST_COMMAND)
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": "Duplicate rerun id.",
+                "resolution_basis": "rerun_passed",
+                "requires_user": False,
+                "evidence": ["rerun"],
+                "clears": ["verification:V1"],
+                "evidence_refs": ["verification:V2"],
+            }
+        )
+        self.finish_run()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_evidence_refs_do_not_address_verification(self) -> None:
+        self.start_gate_ready_run()
+        self.add_verification_event(id="V1", command=TEST_COMMAND, summary="Unit tests failed.")
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Documentation wording is acceptable.",
+                "outcome": "consensus",
+                "resolution": "No action needed for documentation.",
+                "resolution_basis": "accepted_risk",
+                "requires_user": False,
+                "evidence": ["review"],
+                "evidence_refs": ["verification:V1"],
+            }
+        )
+        self.finish_run()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_gate_consensus_with_clears_refs_disables_text_matching(self) -> None:
+        self.start_gate_ready_run()
+        self.add_verification_event(id="V1", command=TEST_COMMAND, summary="Unit tests failed.")
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": f"The failed check `{TEST_COMMAND}` is accepted.",
+                "resolution_basis": "accepted_risk",
+                "requires_user": False,
+                "evidence": ["review"],
+                "clears": ["verification:V9"],
+            }
+        )
+        self.finish_run()
+
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        payload = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["ok"])
+        self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_repro_not_reproduced_requires_three_attempts_for_stochastic(self) -> None:
+        for attempts, should_pass in ((2, False), (3, True)):
+            with self.subTest(attempts=attempts):
+                self.tearDown()
+                self.setUp()
+                self.start_gate_ready_run()
+                self.add_verification_event(
+                    id="V1",
+                    recorded_at="2026-06-29T08:01:00Z",
+                    command=TEST_COMMAND,
+                    stochastic=True,
+                )
+                self.add_verification_event(
+                    id="V2",
+                    recorded_at="2026-06-29T08:02:00Z",
+                    result="passed",
+                    command=TEST_COMMAND,
+                    attempt_count=attempts,
+                )
+                self.append_event(
+                    {
+                        "type": "consensus",
+                        "finding": "Stochastic test failed.",
+                        "outcome": "consensus",
+                        "resolution": "The issue was not reproduced.",
+                        "resolution_basis": "repro_not_reproduced",
+                        "requires_user": False,
+                        "evidence": ["rerun"],
+                        "clears": ["verification:V1"],
+                        "evidence_refs": ["verification:V2"],
+                    }
+                )
+                self.finish_run()
+
+                result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=should_pass)
+                payload = json.loads(result.stdout)
+
+                self.assertEqual(payload["ok"], should_pass)
+                if should_pass:
+                    self.assertEqual(result.returncode, 0)
+                    self.assertEqual(payload["blocking"], [])
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_accepted_risk_cannot_clear_executable_or_acceptance(self) -> None:
+        cases = [
+            {"name": "executable", "fields": {"command": TEST_COMMAND}, "should_pass": False},
+            {"name": "acceptance", "fields": {"kind": "manual_review", "acceptance_test": True}, "should_pass": False},
+            {"name": "plain", "fields": {"kind": "manual_review"}, "should_pass": True},
+        ]
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                self.tearDown()
+                self.setUp()
+                self.start_gate_ready_run()
+                self.add_verification_event(id="V1", summary="Risk accepted.", **case["fields"])
+                self.append_event(
+                    {
+                        "type": "consensus",
+                        "finding": "Risk accepted.",
+                        "outcome": "consensus",
+                        "resolution": "Accepted risk.",
+                        "resolution_basis": "accepted_risk",
+                        "requires_user": False,
+                        "evidence": ["risk reviewed"],
+                        "clears": ["verification:V1"],
+                    }
+                )
+                self.finish_run()
+
+                result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=case["should_pass"])
+                payload = json.loads(result.stdout)
+
+                self.assertEqual(payload["ok"], case["should_pass"])
+                if case["should_pass"]:
+                    self.assertEqual(payload["blocking"], [])
+                else:
+                    self.assert_blocking_contains(payload, "unresolved-verification")
+
+    def test_user_override_clears_executable_but_not_acceptance(self) -> None:
+        cases = [
+            {"name": "executable", "fields": {"command": TEST_COMMAND}, "should_pass": True},
+            {"name": "acceptance", "fields": {"kind": "manual_review", "acceptance_test": True}, "should_pass": False},
+        ]
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                self.tearDown()
+                self.setUp()
+                self.start_gate_ready_run()
+                self.add_verification_event(id="V1", summary="User override.", **case["fields"])
+                self.append_event(
+                    {
+                        "type": "consensus",
+                        "finding": "User override.",
+                        "outcome": "consensus",
+                        "resolution": "User override recorded.",
+                        "resolution_basis": "user_override",
+                        "requires_user": False,
+                        "evidence": ["user approved"],
+                        "clears": ["verification:V1"],
+                    }
+                )
+                self.finish_run()
+
+                result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=case["should_pass"])
+                payload = json.loads(result.stdout)
+
+                self.assertEqual(payload["ok"], case["should_pass"])
+                if case["should_pass"]:
+                    self.assertEqual(payload["blocking"], [])
+                else:
+                    self.assert_blocking_contains(payload, "unresolved-verification")
 
     def test_gate_blocks_malformed_ledger_line(self) -> None:
         self.make_complete_run(verification_required=[TEST_COMMAND])
@@ -628,6 +1138,139 @@ class GateDoctorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["blocking"], [])
+
+    def test_doctor_flags_dangling_and_malformed_refs(self) -> None:
+        self.start_gate_ready_run()
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Reference hygiene.",
+                "outcome": "consensus",
+                "resolution": "References are intentionally bad.",
+                "requires_user": False,
+                "evidence": ["review"],
+                "clears": ["verification:V404", "not-a-ref"],
+                "evidence_refs": ["finding:F404", "also-bad"],
+            }
+        )
+        self.refresh_report_mtime()
+
+        payload = self.run_doctor_unchanged()
+        issues = payload["issues"]
+
+        self.assertFalse(payload["ok"])
+        self.assertTrue(
+            any(
+                "malformed-ref: consensus 'Reference hygiene.' clears entry 'not-a-ref'" in issue
+                for issue in issues
+            )
+        )
+        self.assertTrue(
+            any(
+                "malformed-ref: consensus 'Reference hygiene.' evidence_refs entry 'also-bad'" in issue
+                for issue in issues
+            )
+        )
+        self.assertTrue(
+            any(
+                "dangling-ref: consensus 'Reference hygiene.' references unknown verification id 'V404'" in issue
+                for issue in issues
+            )
+        )
+        self.assertTrue(
+            any(
+                "dangling-ref: consensus 'Reference hygiene.' references unknown finding id 'F404'" in issue
+                for issue in issues
+            )
+        )
+
+    def test_doctor_flags_invalid_rerun_link_and_duplicate_ids(self) -> None:
+        self.start_gate_ready_run()
+        self.add_verification_event(id="V1", recorded_at="2026-06-29T08:01:00Z", command=TEST_COMMAND)
+        self.add_verification_event(id="V2", recorded_at="2026-06-29T08:02:00Z", result="passed", command=TEST_COMMAND)
+        self.add_verification_event(id="V2", recorded_at="2026-06-29T08:03:00Z", result="passed", command=TEST_COMMAND)
+        self.add_verification_event(
+            id="V3",
+            recorded_at="2026-06-29T08:04:00Z",
+            result="passed",
+            command=f"{TEST_COMMAND} --failfast",
+        )
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Unit tests failed.",
+                "outcome": "consensus",
+                "resolution": "Invalid rerun link.",
+                "resolution_basis": "rerun_passed",
+                "requires_user": False,
+                "evidence": ["rerun"],
+                "clears": ["verification:V1"],
+                "evidence_refs": ["verification:V3"],
+            }
+        )
+        self.refresh_report_mtime()
+
+        payload = self.run_doctor_unchanged()
+        issues = payload["issues"]
+
+        self.assertFalse(payload["ok"])
+        self.assertTrue(
+            any(
+                "invalid-rerun-link: consensus 'Unit tests failed.' link 'V3' "
+                "does not supersede verification 'V1' (command hash mismatch)" in issue
+                for issue in issues
+            )
+        )
+        self.assertTrue(any("duplicate-verification-id: verification id 'V2' recorded 2 times" in issue for issue in issues))
+
+    def test_doctor_flags_ineffective_clear_on_executable_target(self) -> None:
+        self.start_gate_ready_run()
+        self.add_verification_event(id="V1", command=TEST_COMMAND, summary="Executable failure.")
+        self.append_event(
+            {
+                "type": "consensus",
+                "finding": "Executable failure.",
+                "outcome": "consensus",
+                "resolution": "Accepted risk cannot clear this executable check.",
+                "resolution_basis": "accepted_risk",
+                "requires_user": False,
+                "evidence": ["risk reviewed"],
+                "clears": ["verification:V1"],
+            }
+        )
+        self.refresh_report_mtime()
+
+        payload = self.run_doctor_unchanged()
+
+        self.assertFalse(payload["ok"])
+        self.assertTrue(
+            any(
+                "ineffective-clear: consensus 'Executable failure.' (basis accepted_risk) "
+                "cannot clear verification 'V1' (executable command)" in issue
+                for issue in payload["issues"]
+            )
+        )
+
+    def test_doctor_flags_spoofed_stored_command_hash(self) -> None:
+        self.start_gate_ready_run()
+        spoofed_hash = "sha256:" + hashlib.sha256(TEST_COMMAND.encode("utf-8")).hexdigest()
+        self.add_verification_event(
+            id="V1",
+            result="passed",
+            command=f"{TEST_COMMAND} --failfast",
+            command_hash=spoofed_hash,
+        )
+        self.refresh_report_mtime()
+
+        payload = self.run_doctor_unchanged()
+
+        self.assertFalse(payload["ok"])
+        self.assertTrue(
+            any(
+                "command-hash-mismatch: verification 'V1' stored command_hash does not match its command" in issue
+                for issue in payload["issues"]
+            )
+        )
 
     def test_doctor_flags_missing_checkpoint_and_dispatch_paths_without_mutating_ledger(self) -> None:
         self.init_run()

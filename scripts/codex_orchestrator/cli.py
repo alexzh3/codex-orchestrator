@@ -169,10 +169,11 @@ def command_gate(args: argparse.Namespace) -> int:
     state = load_json(state_path(directory))
     records, diagnostics = read_jsonl_with_warnings(ledger_path(directory))
     blocking = gate_blocking_reasons(directory, records, diagnostics)
+    warnings = low_confidence_warnings(state) + gate_warning_reasons(records)
     payload = {
         "ok": not blocking,
         "blocking": blocking,
-        "warnings": low_confidence_warnings(state),
+        "warnings": warnings,
     }
     record = {"type": "gate_result", "ok": payload["ok"], "blocking": blocking, "warnings": payload["warnings"]}
     validate_ledger_event(record)
