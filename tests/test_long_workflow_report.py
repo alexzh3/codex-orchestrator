@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import json
+import sys
 import unittest
 from pathlib import Path
 
-from bench.runners.run_replay import run_case
-from codex_orchestrator.report import prompt_log_pair_ratio, report_completeness_score
-
 
 ROOT = Path(__file__).resolve().parents[1]
-CASE_DIR = ROOT / "bench" / "cases" / "replay" / "long-run-001"
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from codex_orchestrator.report import prompt_log_pair_ratio, report_completeness_score
+from tests.replay_support import run_case
+
+
+CASE_DIR = ROOT / "tests" / "replay" / "long-run-001"
 
 
 class LongWorkflowReportTests(unittest.TestCase):

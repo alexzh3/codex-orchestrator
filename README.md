@@ -162,23 +162,20 @@ monitors/         plugin monitor definitions
 templates/        task and review prompt templates
 scripts/          ledger CLI, JSONL parser, report compiler, runtime contract helpers
 schemas/          plugin contract schemas
-bench/            deterministic replay self-test (protocol byte-stability)
-tests/            unittest suite
+tests/            unittest suite (includes the deterministic replay self-test)
 docs/             maintainer documentation
-.github/          CI workflows
 ```
 
 **Plugin runtime (installed):** `.claude-plugin/`, `commands/`, `skills/`, `bin/`, `monitors/`,
 `templates/`, `scripts/`, `schemas/`, `README.md`, and `LICENSE`.
 
-**Maintainer / dev (in-repo, not needed at runtime):** `bench/` for the deterministic replay
-self-test, plus `tests/`, `docs/`, `.github/`, and `AGENTS.md`.
+**Maintainer / dev (in-repo, not needed at runtime):** `tests/` and `docs/`.
 
 **Local / gitignored:** `.codex-orchestrator/` run ledgers and `.env`.
 
 Command surface tiers: **user** (`/codex-orchestrator:orchestrate|workflow|report`,
 `codex-orch status|gate|doctor|report`); **advanced/dev** (`codex-orch append-event`,
-`python3 -m bench.run`); **internal** (event validation, JSONL parsing, report scoring).
+`python3 -m unittest tests.test_long_workflow_report`); **internal** (event validation, JSONL parsing, report scoring).
 
 ---
 
@@ -189,6 +186,9 @@ degenerate solo solve, and 0.3.5 at 6/10 with real-orchestration fidelity rising
 See [docs/benchmarks.md](docs/benchmarks.md) for the curated result. Raw artifacts and external
 benchmark machinery live in
 [codex-orchestrator-bench](https://github.com/alexzh3/codex-orchestrator-bench).
+The deterministic replay self-test is part of the unittest suite; run
+`python3 -m unittest tests.test_long_workflow_report`. Set `CODEX_ORCH_UPDATE_GOLDEN=1` only when
+intentionally refreshing the replay golden.
 
 ---
 

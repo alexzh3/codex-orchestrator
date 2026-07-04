@@ -822,7 +822,7 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIn("gate result", payload["missing"])
 
     def test_report_strict_passes_on_replay_fixture(self) -> None:
-        fixture_dir = ROOT / "bench" / "cases" / "replay" / "long-run-001"
+        fixture_dir = ROOT / "tests" / "replay" / "long-run-001"
         run_id = "long-run-001"
         directory = self.ledger_dir(run_id)
         directory.mkdir(parents=True)

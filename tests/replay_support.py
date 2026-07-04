@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import argparse
-import difflib
 import json
+import os
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 SCRIPTS_DIR = ROOT / "scripts"
@@ -30,7 +29,8 @@ from codex_orchestrator.report import (  # noqa: E402
 from codex_orchestrator.scoring import coverage_metrics, report_score  # noqa: E402
 
 
-DEFAULT_CASE_DIR = ROOT / "bench" / "cases" / "replay" / "long-run-001"
+DEFAULT_CASE_DIR = ROOT / "tests" / "replay" / "long-run-001"
+UPDATE_GOLDEN_ENV = "CODEX_ORCH_UPDATE_GOLDEN"
 
 
 @dataclass(frozen=True)
@@ -149,18 +149,8 @@ def build_payload(
     return payload
 
 
-def diff_reports(expected: str, generated: str) -> str:
-    return "".join(
-        difflib.unified_diff(
-            expected.splitlines(keepends=True),
-            generated.splitlines(keepends=True),
-            fromfile="expected-report.md",
-            tofile="generated-report.md",
-        )
-    )
-
-
 def run_case(case_dir: Path, *, update_golden: bool = False) -> ReplayResult:
+    update_golden = update_golden or os.environ.get(UPDATE_GOLDEN_ENV) == "1"
     case_dir = case_dir.resolve()
     case = load_json_object(case_dir / "case.json")
     state = load_json_object(case_path(case_dir, "state", case))
@@ -197,35 +187,3 @@ def run_case(case_dir: Path, *, update_golden: bool = False) -> ReplayResult:
         updated_golden=update_golden,
     )
 
-
-def case_dir_arg(value: str) -> Path:
-    path = Path(value)
-    return path.parent if path.name == "case.json" else path
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run a deterministic replay benchmark case.")
-    parser.add_argument("case", nargs="?", default=str(DEFAULT_CASE_DIR), type=case_dir_arg)
-    parser.add_argument("--update-golden", action="store_true", help="Rewrite expected-report.md.")
-    parser.add_argument("--out", help="Write the benchmark-result JSON to this path.")
-    return parser
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    result = run_case(args.case, update_golden=args.update_golden)
-    output = json.dumps(result.payload, indent=2, sort_keys=True) + "\n"
-    if args.out:
-        Path(args.out).write_text(output, encoding="utf-8")
-    sys.stdout.write(output)
-    if not result.golden_match:
-        sys.stderr.write(diff_reports(result.expected_report, result.generated_report))
-        return 1
-    if result.ledger_diagnostics:
-        sys.stderr.write(f"ledger contains {len(result.ledger_diagnostics)} malformed line(s)\n")
-        return 1
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

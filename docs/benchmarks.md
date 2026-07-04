@@ -34,8 +34,8 @@ Codex session JSONL logs.
 
 Full raw artifacts, the omitted 0.3.4 column, aggregation tooling, and run instructions live in the
 [`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repo. The
-deterministic replay self-test that remains in this repo is:
+deterministic replay self-test that remains in this repo is part of the unittest suite:
 
 ```bash
-python3 -m bench.run --suite replay
+python3 -m unittest tests.test_long_workflow_report
 ```
