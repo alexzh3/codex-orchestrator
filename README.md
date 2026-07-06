@@ -181,10 +181,12 @@ Command surface tiers: **user** (`/codex-orchestrator:orchestrate|workflow|repor
 
 ## Benchmarks
 
-The public OpenThoughts-TBLite head-to-head shows 0.2.0 at 7/10 raw pass rate, including one
-degenerate solo solve, and 0.3.5 at 6/10 with real-orchestration fidelity rising from 8/10 to 10/10.
-See [docs/benchmarks.md](docs/benchmarks.md) for the curated result. Raw artifacts and external
-benchmark machinery live in
+The public OpenThoughts-TBLite head-to-head (10 hardest tasks, one run per cell) puts the two solo
+baselines at 8/10 each and the orchestrated plugin at 7/10 (0.2.0) and 6/10 (0.4.1) under the harness
+wall-clock timeout. Lifting that timeout raises both 0.2.0 and 0.4.1 to 9/10 — most orchestrated
+"losses" are the timeout killing a solve still in progress, not a capability gap.
+See [docs/benchmarks.md](docs/benchmarks.md) for the curated result. Raw artifacts, the full version
+history, and external benchmark machinery live in
 [codex-orchestrator-bench](https://github.com/alexzh3/codex-orchestrator-bench).
 The deterministic replay self-test is part of the unittest suite; run
 `python3 -m unittest tests.test_long_workflow_report`. Set `CODEX_ORCH_UPDATE_GOLDEN=1` only when
