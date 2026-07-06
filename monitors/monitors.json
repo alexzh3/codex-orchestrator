@@ -3,7 +3,7 @@
     {
       "name": "codex-orch-monitor",
       "description": "Auto-discover the newest active run and emit compact Codex session completion, failure, and stale notifications from run logs.",
-      "command": "scripts/codex_orch_monitor.py"
+      "command": "bin/codex-orch-monitor"
     }
   ]
 }
