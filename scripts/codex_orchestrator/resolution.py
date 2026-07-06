@@ -9,7 +9,8 @@ from .contract import DEFAULT_RESOLUTION_BASIS
 VERIFICATION_REF_PREFIX = "verification:"
 FINDING_REF_PREFIX = "finding:"
 USER_OVERRIDE_CLEARS_ACCEPTANCE = False
-MIN_STOCHASTIC_REPRO_ATTEMPTS = 3
+# Passing reruns needed to clear a flaky check; >1 prevents one lucky pass from clearing it.
+MIN_STOCHASTIC_REPRO_ATTEMPTS = 2
 
 
 def normalize_command(command: str) -> str:

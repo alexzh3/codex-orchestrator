@@ -1,25 +1,26 @@
 # Claude–Codex Orchestrator Plugin
 
-A Claude Code plugin for Codex agent orchestration, live-IDE Codex supervision, durable audit
-ledgers, and evidence-recorded consensus.
+A Claude Code plugin that lets Claude run OpenAI Codex coding sessions for you. Claude breaks the
+work into tasks, starts or resumes Codex agents, watches them in the CLI or IDE, reviews the diffs,
+and records why each result was accepted or rejected.
 
 ---
 
 ## What this plugin does
 
-Use this plugin when you want Claude Code to coordinate Codex sessions instead of supervising them
-manually.
+Use this plugin when you want Claude Code to manage Codex sessions instead of supervising them by
+hand.
 
 It helps Claude:
 
-* launch, reuse, or resume scoped Codex workers,
-* attach to live Codex IDE sessions from `codex://threads/<thread-uuid>` URLs,
+* start new Codex sessions or resume existing ones with the right context,
+* attach to live Codex IDE sessions from `codex://threads/<thread-uuid>` using Codex deeplinks,
 * monitor compact JSONL/rollout streams and classify session status,
 * coordinate sequential or parallel Codex work without file or compute conflicts,
-* gate shared compute before expensive rollouts,
+* check shared compute before expensive local runs, such as GPU-heavy tests or research rollouts,
 * record verification evidence and Claude/Codex consensus in a final report.
 
-We try to reproduce an heterogeneous coding-agent ensemble: Claude acts as the long-context
+We try to reproduce a heterogeneous coding-agent ensemble: Claude acts as the long-context
 orchestrator and reviewer, while Codex handles scoped implementation, backend work, refactors, test
 repair, and second-pass review as reusable monitored agents by default.
 
@@ -57,18 +58,17 @@ Claude is also a strong fit for long-context coordination. Anthropic's [1M conte
 
 At the same time, this plugin does not rely on long context alone. Reports like [Context Rot](https://www.trychroma.com/research/context-rot) show that model reliability can degrade as context grows. The workflow therefore keeps important operational state external, auditable, and evidence-based: repository diffs, tests, logs, manifests, and explicit consensus records.
 
-### 3. Cost-aware delegation
-
-Codex may be the cheaper or higher-throughput agent for repetitive coding loops, depending on
-the user's plan and limits.
-
-This plugin therefore routes repetitive implementation loops to Codex while preserving Claude's budget for the work where it is most valuable: planning, long-context reasoning, review, orchestration, and final judgment.
-
-### 4. Native harnesses matter
+### 3. Native harnesses matter
 
 Agent quality is not only model quality. It also depends on the harness: IDE context, shell access, file editing, approvals, session history, logs, sandboxing, and model-specific prompting.
 
-This plugin does not try to wrap Codex through a generic interface. It lets Codex run through its own [CLI](https://developers.openai.com/codex/cli/reference), IDE integration, and [approval/sandbox model](https://developers.openai.com/codex/agent-approvals-security), while Claude runs through [Claude Code](https://code.claude.com/docs/en/overview).
+This shows up empirically. On the [Terminal-Bench 2.1 leaderboard](https://www.tbench.ai/leaderboard/terminal-bench/2.1) the same model scores differently depending on the harness driving it, and the **Codex CLI harness (with gpt-5.5) is the top-scoring agent harness** — narrowly ahead of Claude Code with Fable 5. As a solo terminal executor, Codex CLI is currently the strongest harness, which is a direct reason to route scoped implementation to Codex in its own harness.
+
+---
+
+## Why not just use OpenAI's Codex plugin?
+
+OpenAI's Codex plugin is the right default for standard review, rescue, background execution, and review-gated coding tasks. This plugin is narrower: it is an orchestration manual plus small local scripts for supervising live IDE sessions, coordinating several Codex workers, gating scarce compute, and preserving review/consensus state outside model context. The tradeoff is that this reads local Codex session state and may need updates when Codex changes its rollout/event format.
 
 ---
 
@@ -200,40 +200,42 @@ Code / tests / manifests / logs / git history
 .claude-plugin/   plugin manifest and marketplace metadata
 commands/         thin slash-command triggers that load skills
 skills/           orchestration, workflow, and report playbooks
-bin/              codex-orch and codex-orch-monitor entrypoints
+bin/              executable entrypoints for the CLI shim and monitor
 monitors/         plugin monitor definitions
 templates/        task and review prompt templates
-scripts/          ledger CLI, JSONL parser, report compiler, runtime contract helpers
+scripts/          Python implementation: ledger CLI, parser, report compiler, runtime helpers
 schemas/          plugin contract schemas
 tests/            unittest suite (includes the deterministic replay self-test)
 docs/             maintainer documentation
 ```
-
-**Plugin runtime (installed):** `.claude-plugin/`, `commands/`, `skills/`, `bin/`, `monitors/`,
-`templates/`, `scripts/`, `schemas/`, `README.md`, and `LICENSE`.
-
-**Maintainer / dev (in-repo, not needed at runtime):** `tests/` and `docs/`.
-
-**Local / gitignored:** `.codex-orchestrator/` run ledgers and `.env`.
-
-Command surface tiers: **user** (`/codex-orchestrator:orchestrate|workflow|report`,
-`codex-orch status|gate|doctor|report`); **advanced/dev** (`codex-orch append-event`,
-`python3 -m unittest tests.test_long_workflow_report`); **internal** (event validation, JSONL parsing, report scoring).
 
 ---
 
 ## Benchmarks
 
 The public OpenThoughts-TBLite head-to-head (10 hardest tasks, one run per cell) puts the two solo
-baselines at 8/10 each and the orchestrated plugin at 7/10 (0.2.0) and 6/10 (0.4.1) under the harness
-wall-clock timeout. Lifting that timeout raises both 0.2.0 and 0.4.1 to 9/10 — most orchestrated
-"losses" are the timeout killing a solve still in progress, not a capability gap.
-See [docs/benchmarks.md](docs/benchmarks.md) for the curated result. Raw artifacts, the full version
-history, and external benchmark machinery live in
-[codex-orchestrator-bench](https://github.com/alexzh3/codex-orchestrator-bench).
-The deterministic replay self-test is part of the unittest suite; run
-`python3 -m unittest tests.test_long_workflow_report`. Set `CODEX_ORCH_UPDATE_GOLDEN=1` only when
-intentionally refreshing the replay golden.
+baselines at 8/10 each. Under the harness wall-clock timeout the orchestrated plugin scores lower,
+but with the timeout lifted both 0.2.0 and 0.4.1 reach 9/10 — most orchestrated "losses" are the
+timeout killing a solve still in progress. This is only a single pass per cell though, so it does
+not prove the orchestrated approach is *better* than running solo agents; a fuller
+benchmark would be needed to establish that. See [docs/benchmarks.md](docs/benchmarks.md) for the
+curated result. Raw artifacts, the full version history, and external benchmark machinery live in
+[codex-orchestrator-bench](https://github.com/alexzh3/codex-orchestrator-bench) (currently private).
+
+---
+
+## Limitations
+
+- **Most review loops are sequential.** The workflow is built on recorded evidence
+  and consensus — Claude scopes and reviews, Codex implements, and each step depends on the other's
+  output — so the two models cannot work the same task at the same time. You wait for one to finish
+  before the other continues, which makes the **total wall-clock time to complete a task longer** than
+  a single solo agent, especially with Claude set to maximum reasoning effort. The
+  [benchmarks](#benchmarks) reflect this: the orchestrated runs are slower than the solo baselines.
+- **The trade-off is oversight and token efficiency.** Keeping state in the ledger, reports, and
+  artifacts — instead of manually re-feeding context back and forth between two models — means the
+  orchestrated approach uses **fewer tokens on average than driving the two models by hand**. You
+  spend some extra wall-clock time to get supervised, auditable work at a lower token cost.
 
 ---
 
@@ -255,14 +257,6 @@ Runtime files live under `.codex-orchestrator/runs/<run-id>/` and are ignored by
 the human-readable handoff. Codex prompts, JSONL streams, and generated artifacts are grouped under
 `prompts/`, `logs/`, and `artifacts/` using matching filename stems where possible. Runtime records
 are described by `schemas/codex-orchestrator.schema.json`.
-
----
-
-## Why not just use OpenAI's Codex plugin?
-
-OpenAI's Codex plugin is the right default for standard review, rescue, background execution, and review-gated coding tasks. This plugin is narrower: it is an orchestration manual plus small local scripts for supervising live IDE sessions, coordinating several Codex workers, gating scarce compute, and preserving review/consensus state outside model context.
-
-The tradeoff is that this reads local Codex session state and may need updates when Codex changes its rollout/event format.
 
 ---
 

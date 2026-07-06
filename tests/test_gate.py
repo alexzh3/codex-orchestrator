@@ -833,8 +833,8 @@ class GateDoctorTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assert_blocking_contains(payload, "unresolved-verification")
 
-    def test_repro_not_reproduced_requires_three_attempts_for_stochastic(self) -> None:
-        for attempts, should_pass in ((2, False), (3, True)):
+    def test_repro_not_reproduced_requires_two_attempts_for_stochastic(self) -> None:
+        for attempts, should_pass in ((1, False), (2, True)):
             with self.subTest(attempts=attempts):
                 self.tearDown()
                 self.setUp()

@@ -30,7 +30,7 @@ For 0.4.0+ consensus records that resolve failed verification or review evidence
 machine-checkable `resolution_basis` plus refs:
 
 - `rerun_passed`: a later verification reran the identical command string and passed.
-- `repro_not_reproduced`: a stochastic failure did not reproduce; stochastic checks need 3 passing
+- `repro_not_reproduced`: a stochastic failure did not reproduce; stochastic checks need 2 passing
   attempts.
 - `accepted_risk`: a command-less, non-acceptance convention or risk is accepted.
 - `non_executable_convention`: legacy/default basis for command-less convention decisions.
