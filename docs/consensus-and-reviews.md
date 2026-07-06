@@ -1,32 +1,55 @@
-# Consensus And Reviews
+# Consensus and Reviews
 
-This document explains how the 0.4.0 evidence flow works. It is for maintainers who need to read a
-ledger, understand why `gate` passed or blocked, and know what `doctor` is warning about.
+This document explains the evidence flow for anyone reading a ledger, checking why `gate` passed or
+blocked a run, or interpreting what `doctor` flagged.
 
-## The Flow At A Glance
+## Overview
+
+Every claim about the code must be backed by *recorded evidence*. Agreement alone is not enough to
+bypass an unresolved problem. A check is either satisfied, or it **blocks the run** until a
+**consensus** record clears it. Clearing a failure requires the right proof for that failure:
+
+- a **runnable check that failed** (test, lint, build…) clears only by **re-running the same command
+  until it passes**, or an explicit human override;
+- a **judgment call that failed** (a manual review of style, docs, or convention — nothing to re-run)
+  clears by **accepting it as a known risk**, or a human override;
+- an **acceptance test** — the check that decides whether the task is truly done — is strictest: a
+  runnable one clears *only* by passing a real re-run (no overrides), and a non-runnable one cannot
+  be cleared at all; it has to actually pass.
+
+`gate` reads the ledger and decides accept/block, `doctor` checks it for integrity problems, and
+`report` writes a human-readable summary. Everything below is the reference behind those rules.
+
+**Core records:**
+
+- **verification** — evidence that a check happened, plus its result. The check may be automated (a
+  test command) or manual (a `manual_review` recording a maintainer's judgment).
+- **review** — a judgment pass over the work as a whole; it can raise **findings**.
+- **finding** — one specific problem a review claims, optionally with a command to reproduce it.
+- **consensus** — a record that resolves a failed check, finding, or disagreement (see the naming
+  note under [Consensus Events](#consensus-events)).
+- **gate** — reads the whole ledger and decides whether the run can ship.
+- **doctor** — a read-only integrity check over the ledger.
+
+## The Flow
 
 ```
 task_created + file claims
   -> Codex implementation
   -> verification events for concrete checks
   -> review events for human/agent judgment
-  -> consensus events for resolved failures or disagreements
+  -> consensus events that resolve failures or disagreements
   -> gate decides ship/no-ship from the ledger
   -> doctor audits ledger integrity
   -> report renders the run for humans
 ```
 
-The ledger is the source of truth. Tasks define work and file ownership. Codex implements and records
-checkpoints. Verifications record command runs such as tests, lint, build, typecheck, benchmarks, and
-manual review checks. Reviews record human or agent judgment, including structured blocking findings
-when a review claims something is still wrong. Consensus records explain how a failed check,
-blocking finding, or disagreement was resolved. `gate` reads the ledger and decides whether the run
-can be accepted. `doctor` is read-only and reports integrity problems. `report` renders the ledger
-for maintainers.
+The ledger is the source of truth: everything `gate` and `doctor` decide comes only from these
+records.
 
 ## Verification Events
 
-A verification records one piece of evidence. Example:
+A verification records one piece of evidence:
 
 ```json
 {
@@ -48,34 +71,30 @@ A verification records one piece of evidence. Example:
 
 Fields:
 
-- `kind`: the check category, such as `test`, `lint`, `build`, `typecheck`, `benchmark`,
-  `artifact_check`, `screenshot`, `manual_review`, `git_diff`, or `custom`.
-- `result`: `passed`, `failed`, `skipped`, `inconclusive`, or `needs_human_review`. Gate treats
-  `failed`, `inconclusive`, and `needs_human_review` as unresolved unless a later consensus clears
-  them with a valid evidence basis.
-- `summary`: human-readable explanation of what happened.
-- `command`: the exact command string that was run. Gate rerun checks compare this exact command
-  after only CRLF normalization and outer whitespace stripping through the shared command hash.
-- `command_hash`: audit metadata computed as `sha256:` plus the hash of the normalized command.
-  Gate always recomputes from `command`; it never trusts a stored hash. If a stored hash disagrees
-  with `command`, `doctor` emits `command-hash-mismatch`.
-- `id`: a non-empty verification identifier such as `V1`. `add-verification` auto-generates the
-  first unused `Vn`; explicit duplicate ids are rejected by the CLI. Consensus refs use
-  `verification:<id>`.
-- `task_id`, `covers_tasks`, `scope`: limit or broaden which task a verification satisfies.
-  Unscoped verifications can satisfy any task requirement; `scope: "global"` covers the run.
-- `acceptance_test`: marks the verification as an acceptance check. Failed acceptance checks cannot
-  be cleared by `accepted_risk`, `non_executable_convention`, or `user_override` in 0.4.0. A later
-  passing rerun can clear one only when both records have the same non-empty command, kind, task,
-  and acceptance flag.
-- `attempt_count`: number of attempts represented by this record. Missing or invalid values count
-  as 1 in gate logic.
-- `stochastic`: when true, `repro_not_reproduced` requires at least 3 passing rerun attempts.
-- `exit_code`: process exit code when there was one.
-- `artifacts`: paths or artifact names that support the verification.
-- `finding_id`: links a repro run to a structured review finding. For findings, gate only counts
-  a verification as repro evidence when it has the same `finding_id`, appears later in the ledger
-  than the review that filed the finding, and ran the finding's exact `repro_command`.
+- `kind`: check category — `test`, `lint`, `build`, `typecheck`, `benchmark`, `artifact_check`,
+  `screenshot`, `manual_review`, `git_diff`, or `custom`.
+- `result`: `passed`, `failed`, `skipped`, `inconclusive`, or `needs_human_review`. `gate` treats
+  `failed`, `inconclusive`, and `needs_human_review` as unresolved until a later consensus clears them
+  with a valid basis.
+- `summary`: plain-text description of what happened.
+- `command`: the exact command that was run. Rerun checks compare it after CRLF normalization and
+  outer-whitespace stripping, via the shared command hash.
+- `command_hash`: `sha256:` plus the hash of the normalized command. `gate` always recomputes it from
+  `command` and never trusts a stored hash; a mismatch makes `doctor` emit `command-hash-mismatch`.
+- `id`: a non-empty id like `V1`. `add-verification` auto-generates the first unused `Vn`; duplicate
+  ids are rejected. Consensus refs use `verification:<id>`.
+- `task_id`, `covers_tasks`, `scope`: which task(s) a verification satisfies. Unscoped verifications
+  satisfy any task; `scope: "global"` covers the whole run.
+- `acceptance_test`: marks it as an acceptance check. Failed acceptance checks cannot be cleared by
+  `accepted_risk`, `non_executable_convention`, or `user_override` — only a passing rerun with the
+  same command, kind, task, and acceptance flag.
+- `attempt_count`: how many attempts this record represents. Missing or invalid counts as 1.
+- `stochastic`: when true, `repro_not_reproduced` needs at least **2** passing rerun attempts.
+- `exit_code`: the process exit code, if any.
+- `artifacts`: paths or names that back the verification.
+- `finding_id`: links a repro run to a review finding. `gate` counts it as repro evidence only when the
+  `finding_id` matches, it comes later in the ledger than the review that filed the finding, and it
+  ran the finding's exact `repro_command`.
 
 ## CLI Flags
 
@@ -100,14 +119,13 @@ Fields:
 | `--covers-tasks` | Repeatable extra task ids this verification covers. |
 | `--scope` | `task` or `global`. |
 
-`gate` appends a `gate_result` and exits nonzero when blocking reasons exist. `doctor` performs
+`gate` appends a `gate_result` and exits nonzero when blocking reasons remain. `doctor` runs
 read-only integrity checks and never mutates the ledger. `report --strict` renders `report.md` and
-fails when required report sections still contain missing-evidence placeholders; 0.4.0 did not
-change strict-report scoring or placeholders.
+fails if required sections still contain missing-evidence placeholders.
 
 ## Review Events And Blocking Findings
 
-A typed review records a review result. It may include legacy free-form `findings` and structured
+A review records a judgment. It may include legacy free-form `findings` and structured
 `blocking_findings`.
 
 ```json
@@ -132,30 +150,33 @@ A typed review records a review result. It may include legacy free-form `finding
 
 Structured finding fields:
 
-- `id`: non-empty finding id, referenced as `finding:<id>`.
-- `claim`: the concrete claim being made.
+- `id`: non-empty id, referenced as `finding:<id>`.
+- `claim`: the concrete claim.
 - `severity`: `P0`, `P1`, or `P2`; default is `P1`.
 - `file_refs`: optional file references.
-- `repro_command`: exact command a later verification must run to count as repro evidence.
-- `min_repro_attempts`: positive integer required passing attempts; default is 1.
+- `repro_command`: the exact command a later verification must run to count as repro evidence.
+- `min_repro_attempts`: required passing attempts (positive integer, default 1).
 
 Finding lifecycle:
 
 1. A review files a P0 or P1 finding with `repro_command`.
-2. Until later valid repro evidence or a later `accepted_risk`/`user_override` consensus clears the
-   finding by `finding:<id>`, `gate` emits `pending-repro`.
-3. A later verification with matching `finding_id` and exact `repro_command` counts as repro
-   evidence. If that verification failed, it blocks as `unresolved-verification`; gate avoids
-   double-counting it as `pending-repro`.
-4. Enough later passing repro attempts satisfy the finding, so it no longer blocks.
-5. P2 findings never block. P0/P1 findings without `repro_command` do not block, but gate emits a
-   `finding-no-repro-command` warning and `doctor` emits `finding-missing-repro`.
-6. A later review can re-file the same finding id. Gate evaluates each occurrence independently;
-   an earlier clear does not clear a later re-file.
+2. `gate` emits `pending-repro` until valid repro evidence is recorded, or until a later
+   `accepted_risk`/`user_override` consensus clears it by `finding:<id>`.
+3. A later verification with the matching `finding_id` and exact `repro_command` counts as repro
+   evidence. If that verification *failed*, it blocks as `unresolved-verification` (`gate` will not
+   also count it as `pending-repro`).
+4. Once enough later passing attempts are recorded, the finding stops blocking.
+5. P2 findings never block. A P0/P1 finding *without* `repro_command` does not block either, but
+   `gate` warns `finding-no-repro-command` and `doctor` emits `finding-missing-repro`.
+6. A later review can re-file the same finding id; `gate` evaluates each occurrence independently,
+   so an earlier clear does not clear a later re-file.
 
 ## Consensus Events
 
-Consensus records explain how failed evidence, findings, or disagreements were resolved.
+In the ledger, a `consensus` record means **"resolution record"**. It may capture true agreement
+between Claude and Codex, a Claude decision, or a request for user action, so not every consensus
+record is literal consensus. Each one records how a failed check, finding, or
+disagreement was resolved.
 
 ```json
 {
@@ -173,33 +194,39 @@ Consensus records explain how failed evidence, findings, or disagreements were r
 
 `outcome` is one of:
 
-- `consensus`: Claude and Codex agree after inspecting evidence.
-- `claude_decision`: Claude proceeds with recorded rationale.
-- `user_action_required`: human input is required. This never resolves a gate blocker.
+- `consensus`: Claude and Codex agree after weighing the evidence.
+- `claude_decision`: Claude proceeds with a recorded rationale.
+- `user_action_required`: a human must act. This never resolves a gate blocker.
 
-`requires_user: true` also prevents the consensus from clearing anything, even if `outcome` is
-otherwise resolving.
+`requires_user: true` also stops the consensus from clearing anything, regardless of `outcome`.
 
-Resolution bases:
+**Resolution bases:** the reason a consensus gives for clearing a failure.
 
-| Basis | Meaning | Use when | Can clear |
+| Basis | In plain words | Use when | Can clear |
 | --- | --- | --- | --- |
-| `rerun_passed` | The same check passed later. | A failed executable check was rerun. | Failed executable or acceptance checks only with a valid rerun link. |
-| `repro_not_reproduced` | A stochastic failure did not reproduce. | A flaky check was rerun enough times. | Same as `rerun_passed`, but stochastic checks need 3 passing attempts. |
-| `accepted_risk` | A known non-executable risk is accepted. | The issue is a convention, documentation, or policy risk. | Command-less non-acceptance verification failures and findings by `finding:<id>`. |
-| `non_executable_convention` | Legacy/default basis for command-less convention decisions. | Old ledgers or convention-only failures. | Command-less non-acceptance verification failures. |
-| `user_override` | Explicit human override. | A human explicitly accepts the outcome. | Executable non-acceptance verification failures and findings. It cannot clear acceptance tests in 0.4.0. |
+| `rerun_passed` | The same command was run again and passed. | A runnable check failed, then passed on re-run. | Failed runnable or acceptance checks — only with a valid rerun link. |
+| `repro_not_reproduced` | A flaky check stopped failing when re-run. | A flaky (`stochastic`) check was re-run enough times. | Same as `rerun_passed`, but flaky checks need 2 passing attempts. |
+| `accepted_risk` | A judgment call (nothing to re-run) is accepted as a known risk. | The issue is a convention, documentation, or policy call. | Command-less non-acceptance failures, and findings by `finding:<id>`. |
+| `non_executable_convention` | The older/default label for `accepted_risk`, mainly for old run records. | Legacy ledgers, or when no basis was given. | Command-less non-acceptance failures. |
+| `user_override` | A human decided to accept the outcome anyway. | An explicit human call. | Runnable non-acceptance failures and findings. It cannot clear acceptance tests. |
 
-`clears` says what the consensus resolves. It is ref-addressed, and a consensus with a non-empty
-`clears` list never falls back to text matching. `evidence_refs` points to proof records; it never
-addresses a verification by itself. Both fields use `verification:<id>` and `finding:<id>` refs.
+`clears` lists what the consensus resolves. It is addressed by ref, and a non-empty `clears` never
+falls back to text matching. `evidence_refs` points to proof records, but never clears a verification
+on its own. Both use `verification:<id>` and `finding:<id>` refs.
 
-Legacy consensus records without `resolution_basis` default to `non_executable_convention` for gate
-logic. That preserves old behavior only for command-less, non-acceptance convention items.
+A consensus with no `resolution_basis` defaults to `non_executable_convention`, which only clears
+command-less, non-acceptance items — this keeps old ledgers working.
 
 ## The Clear Matrix
 
-Verification clearability:
+Which clearing method is allowed depends on two things about the failed check:
+
+1. **Does it have a command?** If yes, you can re-run it to prove it passes now. If no, it's a
+   judgment call with nothing to re-run.
+2. **Is it an acceptance test?** — the check that decides whether the task is actually done.
+
+The rule is *match the proof to the failure*: re-run and pass a runnable failure; accept the risk on
+a judgment call; and never clear an acceptance test unless it genuinely passes.
 
 | Verification failure | `rerun_passed` | `repro_not_reproduced` | `accepted_risk` | `non_executable_convention` | `user_override` |
 | --- | --- | --- | --- | --- | --- |
@@ -208,65 +235,22 @@ Verification clearability:
 | Command-less, not acceptance | Blocks | Blocks | Clears | Clears | Clears |
 | Command-less acceptance test | Blocks | Blocks | Blocks | Blocks | Blocks |
 
-Valid rerun links require all of:
+A valid rerun link requires all of:
 
 - the linked verification result is `passed`;
-- the linked verification is recorded earlier in the ledger than the consensus that cites it;
-- linked verification `recorded_at` is parseable and strictly newer than the failed verification;
-- same `task_id`, treating missing as an empty string;
+- it is recorded earlier in the ledger than the consensus that cites it;
+- its `recorded_at` is parseable and strictly newer than the failed verification;
+- same `task_id` (missing counts as empty);
 - same `kind`;
 - both records have a non-empty `command`;
 - `computed_command_hash(link.command) == computed_command_hash(failed.command)`;
-- same `acceptance_test` truth value;
-- linked verification id resolves to exactly one record, not a duplicate;
+- same `acceptance_test` value;
+- the linked id resolves to exactly one record, not a duplicate;
 - linked `attempt_count` meets the basis minimum.
-
-## Gate Blocking Reasons And Doctor Checks
-
-Gate blocking prefixes:
-
-- `malformed-ledger`: a ledger line is not valid JSON.
-- `missing-report`: `report.md` does not exist.
-- `stale-report`: `report.md` is older than the latest non-gate ledger event.
-- `file-claim-conflict`: active file claims overlap.
-- `unclaimed-change`: a completed task changed a path outside its allowlist.
-- `active-task`: a task is not in a terminal status.
-- `missing-checkpoint`: a completed task has no `task_checkpoint`.
-- `unmet-verification`: a completed task has an unsatisfied `verification_required` entry.
-- `unresolved-verification`: a failed, inconclusive, or human-review verification lacks a later
-  valid resolving consensus.
-- `pending-repro`: a P0/P1 blocking finding still lacks enough later passing repro evidence.
-- `unresolved-consensus`: a consensus still requires user action.
-- `missing-final-review`: no passing run-wide final review is recorded.
-
-Gate warning prefixes:
-
-- `low-parser-confidence`: a monitored session has low parser confidence.
-- `finding-no-repro-command`: a P0/P1 blocking finding lacks `repro_command`; it cannot block.
-
-Doctor prefixes:
-
-- `malformed-ledger`: a ledger line is not valid JSON.
-- `invalid-event`: a typed event fails runtime validation.
-- `unknown-event`: an unknown non-legacy event type appears.
-- `dispatch-missing-paths`: a dispatch record is missing `prompt_path` or `log_path`.
-- `malformed-ref`: a consensus ref is not `verification:<id>` or `finding:<id>`.
-- `dangling-ref`: a consensus references an unknown verification or finding id.
-- `invalid-rerun-link`: a rerun-basis consensus has no valid passing rerun link.
-- `ineffective-clear`: a basis cannot clear the verification it targets.
-- `duplicate-verification-id`: a verification id appears more than once.
-- `duplicate-finding-id`: a blocking finding id appears more than once.
-- `command-hash-mismatch`: stored `command_hash` disagrees with the command.
-- `finding-missing-repro`: a blocking finding has no `repro_command`.
-- `missing-checkpoint`: a task has no checkpoint.
-- `missing-verification`: a completed task has no verification or review evidence.
-- `accepted-run-unresolved-check`: an accepted run still has unresolved verification evidence.
-- `missing-report`: `report.md` does not exist.
-- `stale-report`: `report.md` is older than the latest non-gate ledger event.
 
 ## Worked Examples
 
-### A Failed Test Cleared By A Rerun
+### A failed test cleared by a rerun
 
 1. Record failed verification `V1` with `command: "python3 -m unittest discover -s tests -v"`.
 2. Rerun the exact command and record passing verification `V2` later in the ledger.
@@ -285,13 +269,14 @@ Doctor prefixes:
 }
 ```
 
-Gate passes this part only if `V2` was already recorded before the consensus, is passed, strictly
-newer, same kind, same task, same command hash, same acceptance flag, and the id is not duplicated.
+`gate` accepts this only if `V2` was recorded before the consensus, has result `passed`, is strictly
+newer than `V1`, and matches `V1` on kind, task, command hash, and acceptance flag — with no
+duplicate id.
 
-### Accepted Risk Over A Style Convention
+### Accepted risk over a style convention
 
-A manual review verification `V1` fails without a command and is not an acceptance test. Consensus
-can clear it with:
+A `manual_review` verification `V1` fails with no command and is not an acceptance test. A consensus
+clears it with:
 
 ```json
 {
@@ -305,34 +290,59 @@ can clear it with:
 }
 ```
 
-This would not clear a failed test command or an acceptance check.
+The same consensus would **not** clear a failed test command or an acceptance check.
 
-### Blocked Plain Agreement Over A Failed Executable Test
+### Plain agreement cannot clear a failed executable test
 
-A failed test verification has a command. A later consensus with matching text but no basis, clears
-ref, or rerun evidence does not clear it in 0.4.0. Gate emits `unresolved-verification`.
+A failed test verification has a command. A later consensus with matching text but no basis, `clears`
+ref, or rerun evidence does **not** clear it — `gate` emits `unresolved-verification`.
 
-### Finding Not Reproduced In Three Attempts
+### A finding cleared by repro attempts
 
-A review files `F1` as P1 with `repro_command`. Later, three passing verifications with
-`finding_id: "F1"` run that exact command after the review. Once their total `attempt_count` reaches
-the finding's `min_repro_attempts`, the finding stops blocking. If maintainers decide the issue is
-accepted risk instead, a later consensus with `resolution_basis: "accepted_risk"` and
-`clears: ["finding:F1"]` also clears the finding by explicit ref.
+A review files `F1` as P1 with `repro_command` and `min_repro_attempts: 3`. Later, passing
+verifications with `finding_id: "F1"` run that exact command after the review; once their total
+`attempt_count` reaches 3, the finding stops blocking. Alternatively, a later consensus with
+`resolution_basis: "accepted_risk"` and `clears: ["finding:F1"]` clears it by explicit ref.
 
-## What Changed In 0.4.0 And Why
+## Reference: Gate And Doctor Codes
 
-Before 0.4.0, matching agreement text could clear failed evidence too easily. That is unsafe for an
-ensemble workflow because models can converge on the same plausible but wrong answer. 0.4.0 makes
-resolution basis explicit and machine-checkable:
+**Gate blocking reasons:**
 
-- failed executable or acceptance verifications need a valid linked passing rerun, or an explicit
-  `user_override` for non-acceptance checks;
-- `accepted_risk` and `non_executable_convention` are limited to command-less non-acceptance items;
-- review `blocking_findings` can block until repro evidence is recorded;
-- `doctor` flags malformed refs, duplicate ids, hash spoofing, and ineffective clears;
-- generated reports render accepted risks and user overrides visibly.
+- `malformed-ledger`: a ledger line is not valid JSON.
+- `missing-report`: `report.md` does not exist.
+- `stale-report`: `report.md` is older than the latest non-gate ledger event.
+- `file-claim-conflict`: active file claims overlap.
+- `unclaimed-change`: a completed task changed a path outside its allowlist.
+- `active-task`: a task is not in a terminal status.
+- `missing-checkpoint`: a completed task has no `task_checkpoint`.
+- `unmet-verification`: a completed task has an unsatisfied `verification_required` entry.
+- `unresolved-verification`: a failed, inconclusive, or human-review verification lacks a later valid
+  resolving consensus.
+- `pending-repro`: a P0/P1 blocking finding still lacks enough later passing repro evidence.
+- `unresolved-consensus`: a consensus still requires user action.
+- `missing-final-review`: no passing run-wide final review is recorded.
 
-For old ledgers, add explicit `resolution_basis`, `clears`, and `evidence_refs` to consensus records
-that resolve failed executable checks. Legacy no-basis consensus still defaults to
-`non_executable_convention`, which only clears command-less non-acceptance items.
+**Gate warnings:**
+
+- `low-parser-confidence`: a monitored session has low parser confidence.
+- `finding-no-repro-command`: a P0/P1 blocking finding lacks `repro_command`, so it cannot block.
+
+**Doctor checks:**
+
+- `malformed-ledger`: a ledger line is not valid JSON.
+- `invalid-event`: a typed event fails runtime validation.
+- `unknown-event`: an unknown non-legacy event type appears.
+- `dispatch-missing-paths`: a dispatch record is missing `prompt_path` or `log_path`.
+- `malformed-ref`: a consensus ref is not `verification:<id>` or `finding:<id>`.
+- `dangling-ref`: a consensus references an unknown verification or finding id.
+- `invalid-rerun-link`: a rerun-basis consensus has no valid passing rerun link.
+- `ineffective-clear`: a basis cannot clear the verification it targets.
+- `duplicate-verification-id`: a verification id appears more than once.
+- `duplicate-finding-id`: a blocking finding id appears more than once.
+- `command-hash-mismatch`: stored `command_hash` disagrees with the command.
+- `finding-missing-repro`: a blocking finding has no `repro_command`.
+- `missing-checkpoint`: a task has no checkpoint.
+- `missing-verification`: a completed task has no verification or review evidence.
+- `accepted-run-unresolved-check`: an accepted run still has unresolved verification evidence.
+- `missing-report`: `report.md` does not exist.
+- `stale-report`: `report.md` is older than the latest non-gate ledger event.
