@@ -125,6 +125,24 @@ prompts/ and logs/                             = paired prompt and JSONL files b
 Do not treat these shell snippets as the source of truth. Parser output and recorded evidence are
 the source of truth.
 
+### Bundled Run Monitor
+
+The plugin bundles `${CLAUDE_PLUGIN_ROOT}/bin/codex-orch-monitor` as a ready-made native-Monitor
+command. Launch it on demand during this monitoring phase; the plugin does not auto-start it on
+enable. Scope it to the active run and Claude wakes on each emitted event:
+
+```bash
+# native Monitor command: watch the active run's newest captured log(s)
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/codex-orch-monitor" --run-id <run-id> --repo <repo>
+# or watch one specific captured stream and exit nonzero if that session fails
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/codex-orch-monitor" --log "$EXEC_LOG" --fail-on-session-failure
+```
+
+Its stdout is the event stream: it emits compact `codex_session_complete`, `codex_session_failed`,
+and `codex_session_stale` events, does not mutate the ledger, and exits once every watched log is
+complete, failed, or stale. Always scope it to `--run-id` or `--log`; the no-arg auto-discovery mode
+is a long-lived poll loop meant for manual use, not for arming inside a run.
+
 ### Exec Completion
 
 For exec completion, use one Bash `run_in_background` notification. Launch and `wait` in the same

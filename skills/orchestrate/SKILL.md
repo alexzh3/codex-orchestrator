@@ -100,7 +100,9 @@ prompts, rereviews, and handoffs, and reference both paths from the relevant led
 6. Resume the same relevant Codex session when possible. Start a new session only for unrelated
    work, required isolation, low parser confidence after bounded inspection, or explicit user
    request.
-7. Monitor active Codex sessions. Do not edit overlapping implementation files while a Codex agent
+7. Monitor active Codex sessions. Launch monitoring on demand for this phase: arm the native Monitor with the bundled
+   `${CLAUDE_PLUGIN_ROOT}/bin/codex-orch-monitor` scoped to the active run, or use the parser recipes
+   in `references/monitoring.md`. Do not edit overlapping implementation files while a Codex agent
    owns them; wait until Codex yields, completes, or a serialized handoff is recorded.
 8. After Codex yields or completes, review artifacts and run the consensus-gated review loop.
 9. Record verification evidence, consensus decisions, and final report state durably.

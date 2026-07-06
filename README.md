@@ -200,8 +200,7 @@ Code / tests / manifests / logs / git history
 .claude-plugin/   plugin manifest and marketplace metadata
 commands/         thin slash-command triggers that load skills
 skills/           orchestration, workflow, and report playbooks
-bin/              executable entrypoints for the CLI shim and monitor
-monitors/         plugin monitor definitions
+bin/              executable entrypoints for the CLI shim and the on-demand run monitor
 templates/        task and review prompt templates
 scripts/          Python implementation: ledger CLI, parser, report compiler, runtime helpers
 schemas/          plugin contract schemas
