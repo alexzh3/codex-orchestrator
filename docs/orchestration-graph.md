@@ -12,9 +12,9 @@ The generated `## Orchestration Graph` in `report.md` is an agentic trace graph 
 | Shape | Generated node | Meaning |
 | --- | --- | --- |
 | Hexagon | `A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}` | Claude control plane. |
-| Subroutine | `A_<SLUG>[["agent<br/>model · effort<br/>mode · status"]]` | Non-hub Codex agent session. |
+| Subroutine | `A_<SLUG>[["agent · role<br/>session n · model · effort<br/>mode · status"]]` | One non-hub Codex session. Later fresh restarts get `_S<n>` node ids and a `session n (fresh restart)` label. |
 | Rectangle | `T_<slug>["task_id: compact title (status)"]` | Task artifact from task ledger records. Titles are compacted; ids and status stay visible. |
-| Parallelogram | `V<n>[/"Vn · kind: result"/]`, `R<n>[/"Rn · kind review: result<br/>reviewer-or-run-wide"/]` | Evidence that can be inspected, cited, cleared, or replayed. |
+| Parallelogram | `V<n>[/"Vn · kind: result"/]`, `R<n>[/"Rn · kind review: result"/]` | Evidence that can be inspected, cited, cleared, or replayed. Run-wide review labels append ` · run-wide`. |
 | Diamond | `C<n>{"consensus: outcome"}`, `G{"gate: ok"}` | Consensus and gate decisions. |
 | Triple circle | `DONE((("run accepted")))` | Accepted terminal state when the latest gate passes. |
 
@@ -22,20 +22,28 @@ The generated `## Orchestration Graph` in `report.md` is an agentic trace graph 
 
 | Edge | Ledger event label | Meaning |
 | --- | --- | --- |
-| `-->` | `task_created`, `dispatch_started`, `review`, `consensus`, gate transitions | Transient orchestration action. |
-| `==>` | `task_checkpoint`, `dispatch_completed`, `add_verification` | State-changing work or recorded verification. |
-| `-.->` | `clears`, `reviews`, `covers` | Read-only citation from evidence to consensus or to its subject task. |
+| `-->` | `task_created`, `dispatch ×N`, `produced`, positional task-to-evidence links, `consensus`, gate transitions | Transient orchestration action or structural trace link. `task_created` appears only for tasks with no session delivery edge. |
+| `==>` | Session-to-task delivery status such as `complete`, `blocked`, or `failed` | State-changing work delivered by a Codex session. |
+| `-.->` | `clears` | Read-only citation from rendered evidence to a consensus record. |
 
-Gate edges from rendered evidence or consensus nodes to `G` are unlabeled acceptance inputs. A blocked
-gate loops back to `A_CLAUDE`; an ok gate points to `DONE`. Run-wide evidence has no subject edge
-by design.
+Dispatch edges are collapsed to one edge per session, for example `dispatch ×2`; a single-dispatch
+session includes the task id in the edge label. Evidence is placed between its subject task and the
+gate: `T_x --> Vn --> G` or `T_x --> Rn --> G`. Run-wide evidence has no task parent and goes
+directly to `G`. Reviews produced by a non-hub peer reviewer have a `produced` edge from the
+reviewer session to the review node. Failed reviews loop back to the session that delivered the
+reviewed task.
+
+The generated graph does not emit producer edges from Claude such as `review` or `add_verification`,
+and it does not emit labeled evidence subject edges such as `reviews` or `covers`; pipeline position
+shows the subject.
 
 ## Node IDs
 
 | Prefix | Source |
 | --- | --- |
 | `A_CLAUDE` | Claude control-plane hub; `claude` and `claude-code` reviewer names collapse here. |
-| `A_<SLUG>` | Non-hub agent names, uppercased with non-alphanumeric characters changed to `_`; collisions get `_2`, `_3`. |
+| `A_<SLUG>` | First session for a non-hub agent name, uppercased with non-alphanumeric characters changed to `_`; collisions get `_2`, `_3`. |
+| `A_<SLUG>_S<n>` | Later fresh session restart for that agent, with the same collision rules. |
 | `T...` | Task IDs, slugged from `task_created` / task protocol records. |
 | `V<n>` | Non-review verification records in ledger order. |
 | `R<n>` | Review-kind verifications and typed `review` records in ledger order. |
@@ -47,7 +55,7 @@ by design.
 `V<n>` and `R<n>` are stable within a rendered report and are assigned in ledger order. The same
 ids appear in the graph and in the `## Consensus` detail headings, for example
 `- **V1 — Test** (passed)` and `- **R1 — Diff Review** (passed)`. Graph labels stay compact and
-carry only the id, kind, result, and optional reviewer/run-wide line; the full summary, command,
+carry only the id, kind, result, and optional run-wide suffix; the full summary, command,
 artifacts, findings, and notes live in the Consensus details.
 
 ## Status Colors
@@ -60,7 +68,7 @@ The graph uses three optional classes:
 | `attention` | Skipped, inconclusive, needs-human-review, user-action-required, unresolved, or other non-final outcomes. |
 | `bad` | Failed, blocked, or rejected outcomes. |
 
-Agent nodes and `A_CLAUDE` are neutral and never colored because they are entities, not outcomes.
+Session nodes and `A_CLAUDE` are neutral and never colored because they are entities, not outcomes.
 Color encodes outcome only, shape encodes type, and labels always carry the state word so color
 never needs to carry meaning by itself.
 

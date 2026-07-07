@@ -125,106 +125,19 @@ def task_node_id(task_id: str) -> str:
     return f"T_{slug}"
 
 
-def collect_agent_info(
-    state: dict[str, object],
-    ledger: list[dict[str, object]],
-    tasks: list[dict[str, object]],
-) -> tuple[list[str], dict[str, dict[str, object]]]:
-    sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
-    agent_order: list[str] = []
-    agent_info: dict[str, dict[str, object]] = {}
-
-    def ensure_agent(name: object) -> str:
-        agent = text_field(name)
-        if not agent or is_hub_agent(agent):
-            return ""
-        if agent not in agent_info:
-            agent_info[agent] = {
-                "mode": "",
-                "status": "",
-                "model": "",
-                "reasoning_effort": "",
-                "has_session": False,
-            }
-            agent_order.append(agent)
-        return agent
-
-    for session in sessions:
-        if not isinstance(session, dict):
-            continue
-        agent = ensure_agent(session.get("name"))
-        if not agent:
-            continue
-        info = agent_info[agent]
-        info["mode"] = text_field(session.get("mode"))
-        info["status"] = text_field(session.get("status"))
-        info["has_session"] = True
-
-    for task in tasks:
-        ensure_agent(task.get("owner"))
-
-    for record in ledger:
-        record_type = record.get("type")
-        if record_type == "dispatch_started":
-            agent = ensure_agent(record.get("agent"))
-            if not agent:
-                continue
-            info = agent_info[agent]
-            if not info.get("has_session") and not text_field(info.get("mode")):
-                info["mode"] = text_field(record.get("mode"))
-            for field in ("model", "reasoning_effort"):
-                if not text_field(info.get(field)):
-                    info[field] = text_field(record.get(field))
-        elif record_type in {"dispatch_completed", "task_checkpoint"}:
-            agent = ensure_agent(record.get("agent"))
-            status = text_field(record.get("status"))
-            if agent and status and not agent_info[agent].get("has_session"):
-                agent_info[agent]["status"] = status
-        elif record_type == "review":
-            ensure_agent(record.get("reviewer"))
-
-    return agent_order, agent_info
-
-
-def agent_node_ids(agent_order: list[str]) -> dict[str, str]:
-    node_ids: dict[str, str] = {}
-    used: set[str] = {"A_CLAUDE"}
-    for agent in agent_order:
-        base = f"A_{graph_slug(agent)}"
-        node_id = base
-        suffix = 2
-        while node_id in used:
-            node_id = f"{base}_{suffix}"
-            suffix += 1
-        used.add(node_id)
-        node_ids[agent] = node_id
-    return node_ids
-
-
-def agent_node_id(agent: object, node_ids: dict[str, str]) -> str:
-    if is_hub_agent(agent):
-        return "A_CLAUDE"
-    return node_ids.get(text_field(agent), "A_CLAUDE")
-
-
 def review_label(record: dict[str, object], *, typed: bool, evidence_id: str) -> str:
     kind = text_field(record.get("kind")) or "review"
     result = text_field(record.get("result")) or "unknown"
-    label = f"{evidence_id} · {kind} review: {result}" if evidence_id else f"{kind} review: {result}"
-    reviewer = text_field(record.get("reviewer"))
-    second_line = ""
-    if reviewer:
-        second_line = reviewer
-    elif not evidence_task_refs(record, include_covers_tasks=not typed):
-        second_line = "run-wide"
-    return mermaid_node_label([label, second_line])
+    label = f"{evidence_id} · {kind} review: {result}"
+    if not evidence_task_refs(record, include_covers_tasks=not typed):
+        label += " · run-wide"
+    return mermaid_label(label)
 
 
 def verification_label(record: dict[str, object], *, evidence_id: str) -> str:
     kind = text_field(record.get("kind")) or "verification"
     result = text_field(record.get("result")) or "unknown"
-    prefix = f"{evidence_id} · " if evidence_id else ""
-    return mermaid_label(f"{prefix}{kind}: {result}")
+    return mermaid_label(f"{evidence_id} · {kind}: {result}")
 
 
 def task_node_label(task: dict[str, object]) -> str:
@@ -299,41 +212,6 @@ def graph_record_nodes(
     return verification_nodes, review_nodes, consensus_nodes, verification_ref_nodes
 
 
-def task_owner_by_id(tasks: list[dict[str, object]]) -> dict[str, str]:
-    owners: dict[str, str] = {}
-    for task in tasks:
-        task_id = text_field(task.get("id"))
-        owner = text_field(task.get("owner"))
-        if task_id and owner:
-            owners[task_id] = owner
-    return owners
-
-
-def add_review_edges(
-    node: dict[str, object],
-    node_ids: dict[str, str],
-    task_owners: dict[str, str],
-    add_edge: object,
-) -> None:
-    record = node["record"]
-    if not isinstance(record, dict):
-        return
-    reviewer = text_field(record.get("reviewer"))
-    result = text_field(record.get("result")) or "unknown"
-    kind = text_field(record.get("kind")) or "review"
-    target = str(node["id"])
-    if not reviewer or is_hub_agent(reviewer):
-        add_edge("A_CLAUDE", "-->", "review", target, f"review {kind} {result}")
-    else:
-        reviewer_id = agent_node_id(reviewer, node_ids)
-        add_edge("A_CLAUDE", "-->", "request review", reviewer_id)
-        add_edge(reviewer_id, "-->", "review", target, f"review {kind} {result}")
-    task_id = text_field(record.get("task_id"))
-    owner = task_owners.get(task_id)
-    if result == "failed" and owner:
-        add_edge(target, "-->", "blocked: fix required", agent_node_id(owner, node_ids))
-
-
 def evidence_task_refs(record: dict[str, object], *, include_covers_tasks: bool) -> list[str]:
     refs: list[str] = []
     task_id = text_field(record.get("task_id"))
@@ -384,6 +262,160 @@ def consensus_outcome_class(outcome: object) -> str:
     return "attention"
 
 
+def role_label(roles: set[str]) -> str:
+    if "implementer" in roles and "reviewer" in roles:
+        return "implementer · reviewer"
+    if "reviewer" in roles:
+        return "peer reviewer"
+    if "implementer" in roles:
+        return "implementer"
+    return ""
+
+
+def build_session_trace(
+    state: dict[str, object],
+    ledger: list[dict[str, object]],
+) -> dict[str, object]:
+    sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
+    session_order: list[dict[str, object]] = []
+    sessions_by_agent: dict[str, list[dict[str, object]]] = {}
+    current_by_agent: dict[str, dict[str, object]] = {}
+    state_by_agent: dict[str, dict[str, object]] = {}
+    roles_by_agent: dict[str, set[str]] = {}
+    agent_base_ids: dict[str, str] = {}
+    used_node_ids: set[str] = {"A_CLAUDE"}
+    agent_seen_dispatch: set[str] = set()
+    session_task_status: dict[tuple[str, str], dict[str, str]] = {}
+    task_delivery_session: dict[str, str] = {}
+    review_session_by_record: dict[int, str] = {}
+
+    def unique_node_id(base: str) -> str:
+        node_id = base
+        suffix = 2
+        while node_id in used_node_ids:
+            node_id = f"{base}_{suffix}"
+            suffix += 1
+        used_node_ids.add(node_id)
+        return node_id
+
+    def base_for_agent(agent: str) -> str:
+        if agent not in agent_base_ids:
+            agent_base_ids[agent] = unique_node_id(f"A_{graph_slug(agent)}")
+        return agent_base_ids[agent]
+
+    def ensure_roles(agent: str) -> set[str]:
+        return roles_by_agent.setdefault(agent, set())
+
+    def create_session(agent: str) -> dict[str, object]:
+        number = len(sessions_by_agent.get(agent, [])) + 1
+        base = base_for_agent(agent)
+        node_id = base if number == 1 else unique_node_id(f"{base}_S{number}")
+        session = {
+            "agent": agent,
+            "number": number,
+            "node_id": node_id,
+            "dispatches": [],
+            "model": "",
+            "reasoning_effort": "",
+            "mode": "",
+            "status": "",
+        }
+        sessions_by_agent.setdefault(agent, []).append(session)
+        current_by_agent[agent] = session
+        session_order.append(session)
+        ensure_roles(agent)
+        return session
+
+    def ensure_session(agent: object) -> dict[str, object] | None:
+        agent_name = text_field(agent)
+        if not agent_name or is_hub_agent(agent_name):
+            return None
+        return current_by_agent.get(agent_name) or create_session(agent_name)
+
+    def set_session_field(session: dict[str, object], field: str, value: object) -> None:
+        text = text_field(value)
+        if text and not text_field(session.get(field)):
+            session[field] = text
+
+    def task_status_slot(session: dict[str, object], task_id: str) -> dict[str, str]:
+        key = (str(session["node_id"]), task_id)
+        task_delivery_session[task_id] = str(session["node_id"])
+        return session_task_status.setdefault(key, {"dispatch_completed": "", "task_checkpoint": ""})
+
+    for session in sessions:
+        if not isinstance(session, dict):
+            continue
+        agent = text_field(session.get("name"))
+        if not agent or is_hub_agent(agent):
+            continue
+        state_by_agent[agent] = session
+        ensure_session(agent)
+
+    for record in ledger:
+        record_type = record.get("type")
+        if record_type == "dispatch_started":
+            agent = text_field(record.get("agent"))
+            if not agent or is_hub_agent(agent):
+                continue
+            if agent in agent_seen_dispatch and record.get("fresh_session") is True:
+                session = create_session(agent)
+            else:
+                session = ensure_session(agent)
+            if not session:
+                continue
+            agent_seen_dispatch.add(agent)
+            ensure_roles(agent).add("implementer")
+            session["dispatches"].append(record)
+            set_session_field(session, "model", record.get("model"))
+            set_session_field(session, "reasoning_effort", record.get("reasoning_effort"))
+            set_session_field(session, "mode", record.get("mode"))
+            task_id = text_field(record.get("task_id"))
+            if task_id:
+                task_status_slot(session, task_id)
+        elif record_type in {"dispatch_completed", "task_checkpoint"}:
+            session = ensure_session(record.get("agent"))
+            if not session:
+                continue
+            ensure_roles(text_field(session.get("agent"))).add("implementer")
+            task_id = text_field(record.get("task_id"))
+            status = text_field(record.get("status"))
+            if task_id:
+                task_status_slot(session, task_id)[record_type] = status
+            if status:
+                session["status"] = status
+        elif record_type == "review":
+            reviewer = text_field(record.get("reviewer"))
+            if reviewer and not is_hub_agent(reviewer):
+                session = ensure_session(reviewer)
+                if session:
+                    ensure_roles(reviewer).add("reviewer")
+                    review_session_by_record[id(record)] = str(session["node_id"])
+        elif record_type == "verification" and record.get("kind") in REVIEW_KINDS:
+            reviewer = text_field(record.get("reviewer"))
+            if reviewer and not is_hub_agent(reviewer):
+                session = ensure_session(reviewer)
+                if session:
+                    ensure_roles(reviewer).add("reviewer")
+                    review_session_by_record[id(record)] = str(session["node_id"])
+
+    for agent, state_session in state_by_agent.items():
+        latest = current_by_agent.get(agent)
+        if not latest:
+            continue
+        set_session_field(latest, "mode", state_session.get("mode"))
+        state_status = text_field(state_session.get("status"))
+        if state_status:
+            latest["status"] = state_status
+
+    return {
+        "sessions": session_order,
+        "roles_by_agent": roles_by_agent,
+        "session_task_status": session_task_status,
+        "task_delivery_session": task_delivery_session,
+        "review_session_by_record": review_session_by_record,
+    }
+
+
 def render_orchestration_graph(
     lines: list[str],
     state: dict[str, object],
@@ -391,7 +423,12 @@ def render_orchestration_graph(
 ) -> None:
     lines.extend(["## Orchestration Graph", ""])
     tasks = task_graph_records(ledger)
-    agent_order, agent_info = collect_agent_info(state, ledger, tasks)
+    session_trace = build_session_trace(state, ledger)
+    session_nodes = session_trace["sessions"]
+    roles_by_agent = session_trace["roles_by_agent"]
+    session_task_status = session_trace["session_task_status"]
+    task_delivery_session = session_trace["task_delivery_session"]
+    review_session_by_record = session_trace["review_session_by_record"]
     verification_nodes, review_nodes, consensus_nodes, verification_ref_nodes = graph_record_nodes(ledger)
     gate_record = latest_record(ledger, "gate_result")
     protocol_events = any(
@@ -407,26 +444,21 @@ def render_orchestration_graph(
         }
         for record in ledger
     )
-    if not tasks and not agent_order and not protocol_events:
+    if not tasks and not session_nodes and not protocol_events:
         lines.extend([ORCHESTRATION_GRAPH_PLACEHOLDER, ""])
         return
 
-    node_ids = agent_node_ids(agent_order)
     task_nodes = {text_field(task.get("id")): task_node_id(text_field(task.get("id"))) for task in tasks}
-    task_owners = task_owner_by_id(tasks)
-    latest_checkpoint_by_task: dict[str, dict[str, object]] = {}
-    latest_dispatch_completed_by_task: dict[str, dict[str, object]] = {}
-
-    for record in ledger:
-        task_id = text_field(record.get("task_id"))
-        if record.get("type") == "task_checkpoint" and task_id:
-            latest_checkpoint_by_task[task_id] = record
-        elif record.get("type") == "dispatch_completed" and task_id:
-            latest_dispatch_completed_by_task[task_id] = record
 
     edge_lines: list[str] = []
     fallback_edges: list[str] = []
+    seen_fallback_edges: set[str] = set()
     seen_edges: set[tuple[str, str, str, str]] = set()
+
+    def add_fallback(text: str) -> None:
+        if text and text not in seen_fallback_edges:
+            seen_fallback_edges.add(text)
+            fallback_edges.append(text)
 
     def add_edge(source: str, arrow: str, label: str, target: str, fallback: str = "") -> None:
         safe_label = mermaid_label(label)
@@ -437,13 +469,7 @@ def render_orchestration_graph(
         label_part = f'|"{safe_label}"|' if safe_label else ""
         edge_lines.append(f"  {source} {arrow}{label_part} {target}")
         if fallback:
-            fallback_edges.append(fallback)
-
-    def add_subject_edges(source: str, refs: list[str], label: str) -> None:
-        for ref in refs:
-            target = task_nodes.get(ref)
-            if target:
-                add_edge(source, "-.->", label, target)
+            add_fallback(fallback)
 
     evidence_node_ids = [node["id"] for node in verification_nodes + review_nodes + consensus_nodes]
     used_classes: set[str] = set()
@@ -455,20 +481,28 @@ def render_orchestration_graph(
 
     lines.extend(["```mermaid", "flowchart TD"])
     lines.append(f'  A_CLAUDE{{{{"{mermaid_node_label(["Claude Code", "planner · orchestrator"])}"}}}}')
-    for agent in agent_order:
-        info = agent_info[agent]
-        label_parts = [agent]
-        model = text_field(info.get("model"))
-        reasoning_effort = text_field(info.get("reasoning_effort"))
+    for session in session_nodes:
+        if not isinstance(session, dict):
+            continue
+        agent = text_field(session.get("agent"))
+        role = role_label(roles_by_agent.get(agent, set()))
+        label_parts = [f"{agent} · {role}" if role else agent]
+        number = int(session.get("number") or 1)
+        session_line = f"session {number}"
+        if number >= 2:
+            session_line += " (fresh restart)"
+        model = text_field(session.get("model"))
+        reasoning_effort = text_field(session.get("reasoning_effort"))
         if model or reasoning_effort:
-            label_parts.append(f"{model or 'unknown'} · {reasoning_effort or 'unknown'}")
-        mode = text_field(info.get("mode"))
-        status = text_field(info.get("status"))
+            session_line += f" · {model or 'unknown'} · {reasoning_effort or 'unknown'}"
+        label_parts.append(session_line)
+        mode = text_field(session.get("mode"))
+        status = text_field(session.get("status"))
         if mode or status:
             label_parts.append(f"{mode or 'unknown'} · {status or 'unknown'}")
         else:
             label_parts.append("unknown")
-        lines.append(f'  {node_ids[agent]}[["{mermaid_node_label(label_parts)}"]]')
+        lines.append(f'  {session["node_id"]}[["{mermaid_node_label(label_parts)}"]]')
     for task in tasks:
         task_id = text_field(task.get("id"))
         if not task_id:
@@ -498,90 +532,88 @@ def render_orchestration_graph(
         if ok:
             lines.append(f'  DONE((("run accepted"))){node_class("ok")}')
 
-    for task in tasks:
-        task_id = text_field(task.get("id"))
-        target = task_nodes.get(task_id)
-        if target:
-            add_edge("A_CLAUDE", "-->", "task_created", target)
     verification_node_by_record = {id(node["record"]): node for node in verification_nodes}
     review_node_by_record = {id(node["record"]): node for node in review_nodes}
     consensus_node_by_record = {id(node["record"]): node for node in consensus_nodes}
-    seen_dispatch_tasks: set[str] = set()
+    delivered_tasks = {task_id for _, task_id in session_task_status}
 
-    for record in ledger:
-        record_type = record.get("type")
-        task_id = text_field(record.get("task_id"))
-        if record_type == "dispatch_started":
-            if not task_id or task_id in seen_dispatch_tasks:
-                continue
-            seen_dispatch_tasks.add(task_id)
-            agent = text_field(record.get("agent"))
-            target = agent_node_id(agent, node_ids)
-            freshness = "fresh" if record.get("fresh_session") is not False else "reuse"
+    for task in tasks:
+        task_id = text_field(task.get("id"))
+        target = task_nodes.get(task_id)
+        if target and task_id not in delivered_tasks:
+            add_edge("A_CLAUDE", "-->", "task_created", target)
+
+    for session in session_nodes:
+        if not isinstance(session, dict):
+            continue
+        session_id = str(session.get("node_id"))
+        dispatches = session.get("dispatches")
+        if isinstance(dispatches, list) and dispatches:
+            label = f"dispatch ×{len(dispatches)}"
+            if len(dispatches) == 1:
+                task_id = text_field(dispatches[0].get("task_id"))
+                if task_id:
+                    label += f": {task_id}"
             add_edge(
                 "A_CLAUDE",
                 "-->",
-                f"dispatch_started: {task_id} ({freshness})",
-                target,
-                f"dispatch {task_id} ({freshness})",
+                label,
+                session_id,
+                label,
             )
-        elif record_type == "task_checkpoint":
-            if not task_id or latest_checkpoint_by_task.get(task_id) is not record:
+        for (node_id, task_id), statuses in session_task_status.items():
+            if node_id != session_id:
                 continue
             target = task_nodes.get(task_id)
             if not target:
                 continue
-            source = agent_node_id(record.get("agent"), node_ids)
-            status = text_field(record.get("status")) or "unknown"
-            add_edge(source, "==>", f"task_checkpoint: {status}", target)
-        elif record_type == "dispatch_completed":
-            if (
-                not task_id
-                or task_id in latest_checkpoint_by_task
-                or latest_dispatch_completed_by_task.get(task_id) is not record
-            ):
-                continue
-            target = task_nodes.get(task_id)
-            if not target:
-                continue
-            source = agent_node_id(record.get("agent"), node_ids)
-            status = text_field(record.get("status")) or "unknown"
-            add_edge(source, "==>", f"dispatch_completed: {status}", target)
-        elif record_type == "verification":
+            status = statuses.get("dispatch_completed") or statuses.get("task_checkpoint") or "unknown"
+            add_edge(session_id, "==>", status, target)
+
+    def chain_evidence_to_tasks(
+        record: dict[str, object], node_id: str, *, include_covers_tasks: bool, descriptor: str
+    ) -> None:
+        refs = evidence_task_refs(record, include_covers_tasks=include_covers_tasks)
+        for ref in refs:
+            target = task_nodes.get(ref)
+            if target:
+                add_edge(target, "-->", "", node_id)
+        add_fallback(f"{refs[0]} → {descriptor}" if refs else f"run-wide {descriptor}")
+
+    def add_review_chain(record: dict[str, object], node_id: str, *, include_covers_tasks: bool) -> None:
+        produced_by = review_session_by_record.get(id(record))
+        if produced_by:
+            add_edge(produced_by, "-->", "produced", node_id)
+        kind = text_field(record.get("kind")) or "review"
+        result = text_field(record.get("result")) or "unknown"
+        chain_evidence_to_tasks(
+            record, node_id, include_covers_tasks=include_covers_tasks, descriptor=f"{kind} review {result}"
+        )
+        task_id = text_field(record.get("task_id"))
+        if result == "failed" and task_id in task_delivery_session:
+            add_edge(node_id, "-->", "blocked: fix required", str(task_delivery_session[task_id]))
+
+    for record in ledger:
+        record_type = record.get("type")
+        if record_type == "verification":
             verification_node = verification_node_by_record.get(id(record))
             if verification_node:
                 kind = text_field(record.get("kind")) or "verification"
                 result = text_field(record.get("result")) or "unknown"
-                add_edge(
-                    "A_CLAUDE",
-                    "==>",
-                    "add_verification",
+                chain_evidence_to_tasks(
+                    record,
                     str(verification_node["id"]),
-                    f"verification {kind} {result}",
-                )
-                add_subject_edges(
-                    str(verification_node["id"]),
-                    evidence_task_refs(record, include_covers_tasks=True),
-                    "covers",
+                    include_covers_tasks=True,
+                    descriptor=f"{kind} {result}",
                 )
                 continue
             review_node = review_node_by_record.get(id(record))
             if review_node:
-                add_review_edges(review_node, node_ids, task_owners, add_edge)
-                add_subject_edges(
-                    str(review_node["id"]),
-                    evidence_task_refs(record, include_covers_tasks=True),
-                    "reviews",
-                )
+                add_review_chain(record, str(review_node["id"]), include_covers_tasks=True)
         elif record_type == "review":
             review_node = review_node_by_record.get(id(record))
             if review_node:
-                add_review_edges(review_node, node_ids, task_owners, add_edge)
-                add_subject_edges(
-                    str(review_node["id"]),
-                    evidence_task_refs(record, include_covers_tasks=False),
-                    "reviews",
-                )
+                add_review_chain(record, str(review_node["id"]), include_covers_tasks=False)
         elif record_type == "consensus":
             node = consensus_node_by_record.get(id(record))
             if not node:

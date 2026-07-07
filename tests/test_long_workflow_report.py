@@ -50,22 +50,21 @@ class LongWorkflowReportTests(unittest.TestCase):
         self.assertIn("- Reviews: 2", result.generated_report)
         self.assertIn("```mermaid\nflowchart TD", orchestration_graph_section)
         self.assertIn('A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}', orchestration_graph_section)
-        self.assertIn('A_CODEX_EXEC_A[["codex-exec-a<br/>exec · complete"]]', orchestration_graph_section)
+        self.assertIn('A_CODEX_EXEC_A[["codex-exec-a · implementer<br/>session 1<br/>exec · complete"]]', orchestration_graph_section)
+        self.assertIn('A_CODEX_IDE_REVIEW[["codex-ide-review<br/>session 1<br/>ide · idle"]]', orchestration_graph_section)
         self.assertIn('T001["T001: Create replay case descriptor (complete)"]:::ok', orchestration_graph_section)
         self.assertIn('T005["T005: Refresh golden report after ren… (blocked)"]:::bad', orchestration_graph_section)
         self.assertIn('V1[/"V1 · test: failed"/]:::bad', orchestration_graph_section)
-        self.assertIn('R2[/"R2 · diff review: passed<br/>claude"/]:::ok', orchestration_graph_section)
+        self.assertIn('R2[/"R2 · diff review: passed"/]:::ok', orchestration_graph_section)
         self.assertIn('C1{"consensus: user_action_required"}:::attention', orchestration_graph_section)
-        self.assertIn(
-            'A_CLAUDE -->|"dispatch_started: T001 (fresh)"| A_CODEX_EXEC_A',
-            orchestration_graph_section,
-        )
-        self.assertIn(
-            'A_CLAUDE -->|"dispatch_started: T005 (reuse)"| A_CODEX_EXEC_A',
-            orchestration_graph_section,
-        )
-        self.assertIn('A_CODEX_EXEC_A ==>|"task_checkpoint: complete"| T001', orchestration_graph_section)
-        self.assertIn('A_CODEX_EXEC_A ==>|"task_checkpoint: blocked"| T005', orchestration_graph_section)
+        self.assertIn('A_CLAUDE -->|"dispatch ×2"| A_CODEX_EXEC_A', orchestration_graph_section)
+        self.assertIn('A_CODEX_EXEC_A ==>|"complete"| T001', orchestration_graph_section)
+        self.assertIn('A_CODEX_EXEC_A ==>|"blocked"| T005', orchestration_graph_section)
+        self.assertIn("T005 --> R2", orchestration_graph_section)
+        self.assertNotIn('"review"', orchestration_graph_section)
+        self.assertNotIn('"add_verification"', orchestration_graph_section)
+        self.assertNotIn('"reviews"', orchestration_graph_section)
+        self.assertNotIn('"covers"', orchestration_graph_section)
         self.assertIn('G{"gate: blocked"}:::bad', orchestration_graph_section)
         self.assertIn('G -->|"blocked: failed verification remains"| A_CLAUDE', orchestration_graph_section)
         self.assertIn("classDef ok fill:#dcefdc,stroke:#0ca30c,color:#10320f", orchestration_graph_section)

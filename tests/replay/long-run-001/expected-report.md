@@ -87,25 +87,19 @@ No authored changes recorded.
 ```mermaid
 flowchart TD
   A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}
-  A_CODEX_EXEC_A[["codex-exec-a<br/>exec · complete"]]
-  A_CODEX_IDE_REVIEW[["codex-ide-review<br/>ide · idle"]]
+  A_CODEX_EXEC_A[["codex-exec-a · implementer<br/>session 1<br/>exec · complete"]]
+  A_CODEX_IDE_REVIEW[["codex-ide-review<br/>session 1<br/>ide · idle"]]
   T001["T001: Create replay case descriptor (complete)"]:::ok
   T005["T005: Refresh golden report after ren… (blocked)"]:::bad
   V1[/"V1 · test: failed"/]:::bad
-  R1[/"R1 · manual_review review: passed<br/>run-wide"/]:::ok
-  R2[/"R2 · diff review: passed<br/>claude"/]:::ok
+  R1[/"R1 · manual_review review: passed · run-wide"/]:::ok
+  R2[/"R2 · diff review: passed"/]:::ok
   C1{"consensus: user_action_required"}:::attention
   G{"gate: blocked"}:::bad
-  A_CLAUDE -->|"task_created"| T001
-  A_CLAUDE -->|"task_created"| T005
-  A_CLAUDE -->|"dispatch_started: T001 (fresh)"| A_CODEX_EXEC_A
-  A_CODEX_EXEC_A ==>|"task_checkpoint: complete"| T001
-  A_CLAUDE -->|"dispatch_started: T005 (reuse)"| A_CODEX_EXEC_A
-  A_CODEX_EXEC_A ==>|"task_checkpoint: blocked"| T005
-  A_CLAUDE ==>|"add_verification"| V1
-  A_CLAUDE -->|"review"| R1
-  A_CLAUDE -->|"review"| R2
-  R2 -.->|"reviews"| T005
+  A_CLAUDE -->|"dispatch ×2"| A_CODEX_EXEC_A
+  A_CODEX_EXEC_A ==>|"complete"| T001
+  A_CODEX_EXEC_A ==>|"blocked"| T005
+  T005 --> R2
   A_CLAUDE -->|"consensus"| C1
   V1 --> G
   R1 --> G
@@ -117,7 +111,7 @@ flowchart TD
   classDef bad fill:#f8d7d7,stroke:#d03b3b,color:#3f0f0f
 ```
 
-Flow: dispatch T001 (fresh) · dispatch T005 (reuse) · verification test failed · review manual_review passed · review diff passed · consensus user_action_required · gate blocked: failed verification remains
+Flow: dispatch ×2 · run-wide test failed · run-wide manual_review review passed · T005 → diff review passed · consensus user_action_required · gate blocked: failed verification remains
 
 - **T001**: Create replay case descriptor (complete)
   - Owner: codex-exec-a
