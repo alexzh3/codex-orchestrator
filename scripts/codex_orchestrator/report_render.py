@@ -11,27 +11,48 @@ def verification_kind_label(kind: object) -> str:
     return VERIFICATION_KIND_LABELS.get(kind, kind.replace("_", " ").title())
 
 
+def field_lines(
+    record: dict[str, object],
+    fields: tuple[tuple[str, str], ...],
+    code_fields: frozenset[str] = frozenset(),
+) -> list[str]:
+    lines: list[str] = []
+    for field, label in fields:
+        value = text_field(record.get(field))
+        if not value:
+            continue
+        if field in code_fields:
+            value = inline_code(value)
+        lines.append(f"  - {label}: {value}")
+    return lines
+
+
+def indented_list(lines: list[str], label: str, items: list[str], *, code: bool = False) -> None:
+    if not items:
+        return
+    lines.append(f"  - {label}")
+    lines.extend(f"    - {inline_code(item) if code else item}" for item in items)
+
+
 def record_lines(record: dict[str, object], evidence_id: str = "") -> list[str]:
     result = text_field(record.get("result")) or "unknown"
     label = verification_kind_label(record.get("kind"))
     if evidence_id:
         label = f"{evidence_id} — {label}"
     lines = [f"- **{label}** ({result})"]
-    for field, label in (("summary", "Summary"), ("command", "Command"), ("notes", "Notes")):
-        value = text_field(record.get(field))
-        if not value:
-            continue
-        value = inline_code(value) if field == "command" else value
-        lines.append(f"  - {label}: {value}")
+    lines.extend(
+        field_lines(
+            record,
+            (("summary", "Summary"), ("command", "Command"), ("notes", "Notes")),
+            frozenset({"command"}),
+        )
+    )
     if record.get("exit_code") is not None:
         lines.append(f"  - Exit Code: {inline_code(record.get('exit_code'))}")
-    artifacts = record.get("artifacts")
-    if isinstance(artifacts, list):
-        artifact_items = [text_field(item) for item in artifacts]
-        artifact_items = [item for item in artifact_items if item]
-        if artifact_items:
-            lines.append("  - Artifacts:")
-            lines.extend(f"    - {inline_code(item)}" for item in artifact_items)
+    artifacts_value = record.get("artifacts")
+    if isinstance(artifacts_value, list):
+        artifacts = [item for item in (text_field(entry) for entry in artifacts_value) if item]
+        indented_list(lines, "Artifacts:", artifacts, code=True)
     return lines
 
 
@@ -42,22 +63,20 @@ def typed_review_lines(record: dict[str, object], evidence_id: str = "") -> list
     if evidence_id:
         label = f"{evidence_id} — {label}"
     lines = [f"- **{label}** ({result})"]
-    for field, label in (
-        ("reviewer", "Reviewer"),
-        ("summary", "Summary"),
-        ("command", "Command"),
-        ("prompt_path", "Prompt"),
-        ("log_path", "Log"),
-    ):
-        value = text_field(record.get(field))
-        if not value:
-            continue
-        value = inline_code(value) if field in {"command", "prompt_path", "log_path"} else value
-        lines.append(f"  - {label}: {value}")
-    findings = string_list(record.get("findings"))
-    if findings:
-        lines.append("  - Findings:")
-        lines.extend(f"    - {finding}" for finding in findings)
+    lines.extend(
+        field_lines(
+            record,
+            (
+                ("reviewer", "Reviewer"),
+                ("summary", "Summary"),
+                ("command", "Command"),
+                ("prompt_path", "Prompt"),
+                ("log_path", "Log"),
+            ),
+            frozenset({"command", "prompt_path", "log_path"}),
+        )
+    )
+    indented_list(lines, "Findings:", string_list(record.get("findings")))
     blocking_findings = record.get("blocking_findings")
     if isinstance(blocking_findings, list):
         rendered_findings: list[str] = []
@@ -80,48 +99,8 @@ def typed_review_lines(record: dict[str, object], evidence_id: str = "") -> list
     return lines
 
 
-def verification_tally(records: list[dict[str, object]]) -> str:
-    if not records:
-        return "none recorded"
-    counts: dict[str, int] = {}
-    for record in records:
-        result = text_field(record.get("result")) or "unknown"
-        counts[result] = counts.get(result, 0) + 1
-    ordered_results = [result for result in ALLOWED_VERIFICATION_RESULTS if result in counts]
-    ordered_results.extend(sorted(result for result in counts if result not in ALLOWED_VERIFICATION_RESULTS))
-    return ", ".join(f"{counts[result]} {result}" for result in ordered_results)
-
-
-def consensus_outcome(record: dict[str, object]) -> str:
-    outcome = text_field(record.get("outcome"))
-    if outcome:
-        return outcome
-    legacy_status = text_field(record.get("status"))
-    if legacy_status:
-        return LEGACY_CONSENSUS_STATUS_OUTCOMES.get(legacy_status, legacy_status)
-    return "unknown"
-
-
 def consensus_outcome_label(outcome: str) -> str:
     return CONSENSUS_OUTCOME_LABELS.get(outcome, outcome.replace("_", " "))
-
-
-def consensus_outcome_tally(records: list[dict[str, object]]) -> str:
-    if not records:
-        return "none"
-    counts: dict[str, int] = {}
-    for record in records:
-        outcome = consensus_outcome(record)
-        counts[outcome] = counts.get(outcome, 0) + 1
-    ordered_outcomes = [outcome for outcome in CONSENSUS_OUTCOME_ORDER if outcome in counts]
-    ordered_outcomes.extend(sorted(outcome for outcome in counts if outcome not in CONSENSUS_OUTCOME_ORDER))
-    return ", ".join(
-        f"{counts[outcome]} {consensus_outcome_label(outcome)}" for outcome in ordered_outcomes
-    )
-
-
-def resolution_basis_label(basis: str) -> str:
-    return basis.replace("_", " ")
 
 
 def resolution_basis_counts(records: list[dict[str, object]]) -> dict[str, int]:
@@ -133,26 +112,8 @@ def resolution_basis_counts(records: list[dict[str, object]]) -> dict[str, int]:
     return counts
 
 
-def task_status_tally(records: list[dict[str, object]]) -> str:
-    if not records:
-        return "none"
-    counts: dict[str, int] = {}
-    for record in records:
-        status = text_field(record.get("status")) or "unknown"
-        counts[status] = counts.get(status, 0) + 1
-    parts = [f"{counts[status]} {status}" for status in TASK_STATUS_ORDER if status in counts]
-    parts.extend(f"{counts[status]} {status}" for status in sorted(counts) if status not in TASK_STATUS_ORDER)
-    return ", ".join(parts) if parts else "none"
-
-
 def task_title(record: dict[str, object]) -> str:
     return text_field(record.get("title")) or text_field(record.get("id")) or "Task record"
-
-
-def truncate_summary_item(text: str) -> str:
-    if len(text) <= SUMMARY_OPEN_ITEM_LIMIT:
-        return text
-    return text[: SUMMARY_OPEN_ITEM_LIMIT - 1].rstrip() + "…"
 
 
 def unresolved_items(
@@ -207,12 +168,7 @@ def render_task_records(lines: list[str], task_records: list[dict[str, object]])
     lines.append("")
 
 
-def render_reproducibility(
-    lines: list[str],
-    run_meta: dict[str, object] | None,
-    completeness: dict[str, object],
-) -> None:
-    del completeness
+def render_reproducibility(lines: list[str], run_meta: dict[str, object] | None) -> None:
     lines.extend(["## Reproducibility", ""])
     if run_meta:
         for field, label in (
@@ -245,29 +201,13 @@ def render_gate_result(lines: list[str], ledger: list[dict[str, object]]) -> Non
     ok = gate_result_ok(record)
     ok_text = "unknown" if ok is None else str(ok).lower()
     lines.append(f"- OK: {inline_code(ok_text)}")
-
-    blocking = string_list(record.get("blocking"))
-    if blocking:
-        lines.append("- Blocking:")
-        lines.extend(f"  - {item}" for item in blocking)
-    else:
-        lines.append("- Blocking: none")
-
-    warnings = string_list(record.get("warnings"))
-    if warnings:
-        lines.append("- Warnings:")
-        lines.extend(f"  - {item}" for item in warnings)
-    else:
-        lines.append("- Warnings: none")
+    for label, items in (("Blocking", string_list(record.get("blocking"))), ("Warnings", string_list(record.get("warnings")))):
+        if items:
+            lines.append(f"- {label}:")
+            lines.extend(f"  - {item}" for item in items)
+        else:
+            lines.append(f"- {label}: none")
     lines.append("")
-
-
-def accepted_risk_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
-    return [
-        record
-        for record in records
-        if text_field(record.get("resolution_basis")) in {"accepted_risk", "user_override"}
-    ]
 
 
 def render_accepted_risks_and_overrides(
@@ -275,7 +215,11 @@ def render_accepted_risks_and_overrides(
     consensus_records: list[dict[str, object]],
     ledger: list[dict[str, object]],
 ) -> bool:
-    records = accepted_risk_records(consensus_records)
+    records = [
+        record
+        for record in consensus_records
+        if text_field(record.get("resolution_basis")) in {"accepted_risk", "user_override"}
+    ]
     if not records:
         return False
     by_id = verifications_by_id(ledger)
@@ -364,7 +308,6 @@ def render_report(
     consensus_records = [record for record in ledger if record.get("type") == "consensus"]
     task_records = [record for record in ledger if record.get("type") == "task"]
     run_meta = latest_record(ledger, "run_meta")
-    completeness = report_completeness_score(state, ledger)
     open_risks = unresolved_items(warnings, verifications, consensus_records, task_records)
     sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
     basis_counts = resolution_basis_counts(consensus_records)
@@ -386,13 +329,16 @@ def render_report(
             f"- Acceptance: {acceptance_decision(state.get('status'), open_risks)}",
         ])
         if task_records:
-            lines.append(f"- Changes: {len(task_records)} ({task_status_tally(task_records)})")
-            lines.extend(f"  - {truncate_summary_item(task_title(record))}" for record in task_records)
+            statuses = [text_field(record.get("status")) or "unknown" for record in task_records]
+            tally = tally_line(statuses, TASK_STATUS_ORDER, empty="none")
+            lines.append(f"- Changes: {len(task_records)} ({tally})")
+            lines.extend(f"  - {truncate(task_title(record))}" for record in task_records)
         else:
             lines.append("- Changes: none")
+        outcomes = [consensus_outcome(record) for record in consensus_records]
         lines.extend([
             f"- Reviews: {len(all_review_records)}",
-            f"- Consensus: {consensus_outcome_tally(consensus_records)}",
+            f"- Consensus: {tally_line(outcomes, CONSENSUS_OUTCOME_ORDER, empty='none', label=consensus_outcome_label)}",
         ])
         accepted_risks = basis_counts.get("accepted_risk", 0)
         user_overrides = basis_counts.get("user_override", 0)
@@ -404,12 +350,12 @@ def render_report(
             lines.append(f"- Sessions: {len(sessions)}")
         if open_risks:
             lines.append(f"- Open items ({len(open_risks)}):")
-            lines.extend(f"  - {truncate_summary_item(item)}" for item in open_risks)
+            lines.extend(f"  - {truncate(item)}" for item in open_risks)
         else:
             lines.append("- Open items: none")
         lines.append("")
 
-    render_reproducibility(lines, run_meta, completeness)
+    render_reproducibility(lines, run_meta)
 
     lines.extend(["## Changes", ""])
     authored_changes = authored_changes_section(existing_report)
@@ -463,15 +409,9 @@ def render_report(
             lines.append(f"  - **Outcome:** {consensus_outcome_label(consensus_outcome(record))}")
             basis = text_field(record.get("resolution_basis"))
             if basis:
-                lines.append(f"  - **Basis:** {resolution_basis_label(basis)}")
-            clears = string_list(record.get("clears"))
-            if clears:
-                lines.append("  - **Clears:**")
-                lines.extend(f"    - {inline_code(item)}" for item in clears)
-            evidence_refs = string_list(record.get("evidence_refs"))
-            if evidence_refs:
-                lines.append("  - **Evidence Refs:**")
-                lines.extend(f"    - {inline_code(item)}" for item in evidence_refs)
+                lines.append(f"  - **Basis:** {basis.replace('_', ' ')}")
+            indented_list(lines, "**Clears:**", string_list(record.get("clears")), code=True)
+            indented_list(lines, "**Evidence Refs:**", string_list(record.get("evidence_refs")), code=True)
             risk_level = text_field(record.get("risk_level"))
             if risk_level:
                 lines.append(f"  - **Risk Level:** {risk_level}")
@@ -480,11 +420,8 @@ def render_report(
                 lines.append(f"  - **Requires User:** {requires_user}")
             evidence = record.get("evidence")
             if isinstance(evidence, list):
-                evidence_items = [text_field(item) for item in evidence]
-                evidence_items = [item for item in evidence_items if item]
-                if evidence_items:
-                    lines.append("  - **Evidence:**")
-                    lines.extend(f"    - {item}" for item in evidence_items)
+                evidence_items = [item for item in (text_field(entry) for entry in evidence) if item]
+                indented_list(lines, "**Evidence:**", evidence_items)
             else:
                 evidence_text = text_field(evidence)
                 if evidence_text:

@@ -13,20 +13,11 @@ def brief_string_list(value: object, *, code: bool = False, limit: int = 3) -> s
     items = string_list(value)
     if not items:
         return ""
-    rendered: list[str] = []
-    for item in items[:limit]:
-        text = inline_code(item) if code else truncate_graph_item(item)
-        rendered.append(text)
+    rendered = [inline_code(item) if code else truncate(item) for item in items[:limit]]
     remaining = len(items) - limit
     if remaining > 0:
         rendered.append(f"+{remaining} more")
     return ", ".join(rendered)
-
-
-def truncate_graph_item(text: str, limit: int = SUMMARY_OPEN_ITEM_LIMIT) -> str:
-    if len(text) <= limit:
-        return text
-    return text[: limit - 1].rstrip() + "…"
 
 
 def mermaid_label(value: object, *, limit: int = MERMAID_LABEL_LIMIT) -> str:
@@ -50,12 +41,6 @@ def mermaid_node_label(parts: list[str]) -> str:
 
 def is_hub_agent(name: object) -> bool:
     return text_field(name).strip().casefold() in {"claude", "claude-code"}
-
-
-def graph_task_label(task: dict[str, object] | None, task_id: str) -> str:
-    if task is None:
-        return task_id
-    return text_field(task.get("title")) or text_field(task.get("goal")) or task_id
 
 
 def task_graph_records(ledger: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -103,16 +88,6 @@ def task_graph_records(ledger: list[dict[str, object]]) -> list[dict[str, object
     return [tasks[task_id] for task_id in order]
 
 
-def graph_consensus_outcome(record: dict[str, object]) -> str:
-    outcome = text_field(record.get("outcome"))
-    if outcome:
-        return outcome
-    legacy_status = text_field(record.get("status"))
-    if legacy_status:
-        return LEGACY_CONSENSUS_STATUS_OUTCOMES.get(legacy_status, legacy_status)
-    return "unknown"
-
-
 def graph_slug(value: object) -> str:
     slug = re.sub(r"[^0-9A-Za-z]", "_", mermaid_label(value, limit=120)).strip("_")
     return slug.upper() or "UNKNOWN"
@@ -142,16 +117,25 @@ def verification_label(record: dict[str, object], *, evidence_id: str) -> str:
 
 def task_node_label(task: dict[str, object]) -> str:
     task_id = text_field(task.get("id")) or "unknown"
-    title = mermaid_label(graph_task_label(task, task_id), limit=32)
+    title_source = text_field(task.get("title")) or text_field(task.get("goal")) or task_id
+    title = mermaid_label(title_source, limit=32)
     status = text_field(task.get("status")) or "unknown"
     return mermaid_label(f"{task_id}: {title} ({status})", limit=120)
 
 
-def first_blocking_reason(record: dict[str, object]) -> str:
-    blocking = string_list(record.get("blocking"))
-    if blocking:
-        return blocking[0]
-    return "gate failed"
+def session_node_label(session: dict[str, object], agent: str, role: str) -> str:
+    parts = [f"{agent} · {role}" if role else agent]
+    number = int(session.get("number") or 1)
+    session_line = f"session {number}" + (" (fresh restart)" if number >= 2 else "")
+    model = text_field(session.get("model"))
+    effort = text_field(session.get("reasoning_effort"))
+    if model or effort:
+        session_line += f" · {model or 'unknown'} · {effort or 'unknown'}"
+    parts.append(session_line)
+    mode = text_field(session.get("mode"))
+    status = text_field(session.get("status"))
+    parts.append(f"{mode or 'unknown'} · {status or 'unknown'}" if mode or status else "unknown")
+    return mermaid_node_label(parts)
 
 
 def evidence_record_ids(ledger: list[dict[str, object]]) -> dict[int, str]:
@@ -227,10 +211,6 @@ def evidence_task_refs(record: dict[str, object], *, include_covers_tasks: bool)
         seen.add(ref)
         deduped.append(ref)
     return deduped
-
-
-def class_suffix(class_name: str) -> str:
-    return f":::{class_name}" if class_name else ""
 
 
 def task_status_class(status: object) -> str:
@@ -475,9 +455,10 @@ def render_orchestration_graph(
     used_classes: set[str] = set()
 
     def node_class(class_name: str) -> str:
-        if class_name:
-            used_classes.add(class_name)
-        return class_suffix(class_name)
+        if not class_name:
+            return ""
+        used_classes.add(class_name)
+        return f":::{class_name}"
 
     lines.extend(["```mermaid", "flowchart TD"])
     lines.append(f'  A_CLAUDE{{{{"{mermaid_node_label(["Claude Code", "planner · orchestrator"])}"}}}}')
@@ -486,23 +467,8 @@ def render_orchestration_graph(
             continue
         agent = text_field(session.get("agent"))
         role = role_label(roles_by_agent.get(agent, set()))
-        label_parts = [f"{agent} · {role}" if role else agent]
-        number = int(session.get("number") or 1)
-        session_line = f"session {number}"
-        if number >= 2:
-            session_line += " (fresh restart)"
-        model = text_field(session.get("model"))
-        reasoning_effort = text_field(session.get("reasoning_effort"))
-        if model or reasoning_effort:
-            session_line += f" · {model or 'unknown'} · {reasoning_effort or 'unknown'}"
-        label_parts.append(session_line)
-        mode = text_field(session.get("mode"))
-        status = text_field(session.get("status"))
-        if mode or status:
-            label_parts.append(f"{mode or 'unknown'} · {status or 'unknown'}")
-        else:
-            label_parts.append("unknown")
-        lines.append(f'  {session["node_id"]}[["{mermaid_node_label(label_parts)}"]]')
+        label = session_node_label(session, agent, role)
+        lines.append(f'  {session["node_id"]}[["{label}"]]')
     for task in tasks:
         task_id = text_field(task.get("id"))
         if not task_id:
@@ -522,7 +488,7 @@ def render_orchestration_graph(
             f'  {node["id"]}[/"{review_label(record, typed=bool(node["typed"]), evidence_id=str(node["id"]))}"/]{result_class}'
         )
     for node in consensus_nodes:
-        outcome = graph_consensus_outcome(node["record"])
+        outcome = consensus_outcome(node["record"])
         outcome_class = node_class(consensus_outcome_class(outcome))
         lines.append(f'  {node["id"]}{{"consensus: {mermaid_label(outcome)}"}}{outcome_class}')
     if gate_record:
@@ -619,13 +585,7 @@ def render_orchestration_graph(
             if not node:
                 continue
             target = str(node["id"])
-            add_edge(
-                "A_CLAUDE",
-                "-->",
-                "consensus",
-                target,
-                f"consensus {graph_consensus_outcome(record)}",
-            )
+            add_edge("A_CLAUDE", "-->", "consensus", target, f"consensus {consensus_outcome(record)}")
             for ref in [*string_list(record.get("clears")), *string_list(record.get("evidence_refs"))]:
                 parsed = parse_ref(ref)
                 if parsed is None:
@@ -643,7 +603,8 @@ def render_orchestration_graph(
         if ok:
             add_edge("G", "-->", "ok", "DONE", "gate ok")
         else:
-            reason = first_blocking_reason(gate_record)
+            blocking = string_list(gate_record.get("blocking"))
+            reason = blocking[0] if blocking else "gate failed"
             add_edge("G", "-->", f"blocked: {reason}", "A_CLAUDE", f"gate blocked: {reason}")
 
     lines.extend(edge_lines)

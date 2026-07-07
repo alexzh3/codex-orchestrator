@@ -160,6 +160,34 @@ def string_list(value: object) -> list[str]:
     return []
 
 
+def truncate(text: str, limit: int = SUMMARY_OPEN_ITEM_LIMIT) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def consensus_outcome(record: dict[str, object]) -> str:
+    outcome = text_field(record.get("outcome"))
+    if outcome:
+        return outcome
+    legacy_status = text_field(record.get("status"))
+    if legacy_status:
+        return LEGACY_CONSENSUS_STATUS_OUTCOMES.get(legacy_status, legacy_status)
+    return "unknown"
+
+
+def tally_line(values, order, *, empty: str, label=lambda value: value) -> str:
+    """Count values and render e.g. '2 passed, 1 failed', honoring a preferred order."""
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    if not counts:
+        return empty
+    ordered = [value for value in order if value in counts]
+    ordered.extend(sorted(value for value in counts if value not in order))
+    return ", ".join(f"{counts[value]} {label(value)}" for value in ordered)
+
+
 def latest_record(ledger: list[dict[str, object]], record_type: str) -> dict[str, object] | None:
     records = [record for record in ledger if record.get("type") == record_type]
     return records[-1] if records else None
