@@ -593,6 +593,12 @@
         "worktree": {
           "type": "string"
         },
+        "model": {
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "type": "string"
+        },
         "recorded_at": {
           "type": "string",
           "format": "date-time"

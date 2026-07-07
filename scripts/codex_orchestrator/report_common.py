@@ -8,10 +8,9 @@ CONSENSUS_PLACEHOLDER = "No consensus decisions recorded."
 REVIEW_PLACEHOLDER = "No review notes recorded."
 SUMMARY_PLACEHOLDER = "No authored summary recorded."
 CHANGES_PLACEHOLDER = "No authored changes recorded."
-EVIDENCE_PLACEHOLDER = "No evidence recorded."
 RISKS_PLACEHOLDER = "No unresolved risks or follow-ups recorded."
 RUN_META_PLACEHOLDER = "No run metadata recorded."
-TASK_GRAPH_PLACEHOLDER = "No task graph records recorded."
+ORCHESTRATION_GRAPH_PLACEHOLDER = "No orchestration graph records recorded."
 GATE_RESULT_PLACEHOLDER = "No gate result recorded."
 REVIEW_KINDS = {"manual_review", "git_diff"}
 FINAL_REVIEW_KINDS = {"review", "manual_review", "git_diff"}
@@ -69,7 +68,13 @@ def report_section(text: str, heading: str, default: str) -> str:
 
 def manual_consensus_section(text: str) -> str:
     section = report_section(text, "Consensus", "")
-    for generated_marker in ("### Reviews", "### Accepted Risks & Overrides", "### Decisions", "### Ledger Records"):
+    for generated_marker in (
+        "### Verification Checks",
+        "### Reviews",
+        "### Accepted Risks & Overrides",
+        "### Decisions",
+        "### Ledger Records",
+    ):
         if generated_marker in section:
             section = section.split(generated_marker, 1)[0].strip()
     return "\n".join(

@@ -42,15 +42,27 @@ class LongWorkflowReportTests(unittest.TestCase):
         risks_section = self.report_section(result.generated_report, "## Risks / Follow-ups")
         consensus_section = self.report_section(result.generated_report, "## Consensus")
         gate_section = self.report_section(result.generated_report, "## Gate Result")
-        task_graph_section = self.report_section(result.generated_report, "## Task Graph")
+        orchestration_graph_section = self.report_section(result.generated_report, "## Orchestration Graph")
         ledger = self.fixture_ledger()
         session_dispatch = [record for record in ledger if record.get("type") == "session_dispatch"]
         components = self.fixture_score()["components"]
 
         self.assertIn("- Reviews: 2", result.generated_report)
-        self.assertIn("- **T001**: Create replay case descriptor (complete)", task_graph_section)
-        self.assertIn("- **T005**: Refresh golden report after renderer change (blocked)", task_graph_section)
-        self.assertIn("Latest checkpoint: complete", task_graph_section)
+        self.assertIn("```mermaid\nflowchart LR", orchestration_graph_section)
+        self.assertIn(
+            'claude -->|"dispatch T001: Create replay case descriptor (fresh)"| agent_codex_exec_a',
+            orchestration_graph_section,
+        )
+        self.assertIn(
+            'claude -->|"dispatch T005: Refresh golden report after renderer… (reuse)"| agent_codex_exec_a',
+            orchestration_graph_section,
+        )
+        self.assertIn("- **T001**: Create replay case descriptor (complete)", orchestration_graph_section)
+        self.assertIn(
+            "- **T005**: Refresh golden report after renderer change (blocked)",
+            orchestration_graph_section,
+        )
+        self.assertIn("Latest checkpoint: complete", orchestration_graph_section)
         self.assertEqual(len(session_dispatch), 1)
         self.assertEqual(prompt_log_pair_ratio(session_dispatch), 1.0)
         self.assertEqual(

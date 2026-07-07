@@ -18,7 +18,7 @@ REPORT_HEADINGS = [
     "## Summary",
     "## Reproducibility",
     "## Changes",
-    "## Evidence",
+    "## Orchestration Graph",
     "## Consensus",
     "## Gate Result",
     "## Risks / Follow-ups",
@@ -27,8 +27,7 @@ GENERATED_REPORT_HEADINGS = [
     "## Summary",
     "## Reproducibility",
     "## Changes",
-    "## Task Graph",
-    "## Evidence",
+    "## Orchestration Graph",
     "## Consensus",
     "## Gate Result",
     "## Risks / Follow-ups",
@@ -286,17 +285,21 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIn("- Run ID: run", summary_section)
         self.assertIn("- Status: active", summary_section)
         self.assertIn("- Acceptance: No acceptance decision recorded; this run needs review.", summary_section)
-        self.assertIn("- Report Completeness: 0.00", summary_section)
         self.assertIn("- Changes: none", summary_section)
-        self.assertIn("- Evidence: none recorded", summary_section)
         self.assertIn("- Reviews: 0", summary_section)
         self.assertIn("- Consensus: none", summary_section)
         self.assertIn("- Open items: none", summary_section)
+        self.assertNotIn("- Report Completeness:", summary_section)
+        self.assertNotIn("- Evidence:", summary_section)
         self.assertIn("No run metadata recorded.", self.report_section(report, "## Reproducibility"))
-        self.assertIn("- Report Completeness: 0.00", self.report_section(report, "## Reproducibility"))
+        self.assertNotIn("### Report Completeness", self.report_section(report, "## Reproducibility"))
         self.assertIn("No authored changes recorded.", self.report_section(report, "## Changes"))
-        self.assertIn("No task graph records recorded.", self.report_section(report, "## Task Graph"))
-        self.assertIn("No evidence recorded.", report)
+        self.assertIn(
+            "No orchestration graph records recorded.",
+            self.report_section(report, "## Orchestration Graph"),
+        )
+        self.assertNotIn("## Evidence", report)
+        self.assertNotIn("No evidence recorded.", report)
         self.assertIn("No gate result recorded.", self.report_section(report, "## Gate Result"))
         self.assertNotIn("## Final Report", report)
 
@@ -315,7 +318,8 @@ class CodexOrchCliTests(unittest.TestCase):
         report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
         summary_section = self.report_section(report, "## Summary")
         self.assertIn("Parser warning requires manual inspection", report)
-        self.assertIn("- Evidence: none recorded", summary_section)
+        self.assertNotIn("- Evidence:", summary_section)
+        self.assertNotIn("No evidence recorded.", report)
         self.assertIn("- Reviews: 1", summary_section)
         self.assertIn("- Open items (1):", summary_section)
         self.assertIn(
@@ -373,7 +377,7 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIn("  - Notes: No blocking findings.", consensus_section)
         self.assertNotIn("No consensus decisions recorded.", report)
 
-    def test_report_keeps_automated_evidence_under_verification(self) -> None:
+    def test_report_keeps_automated_evidence_under_consensus_verification_checks(self) -> None:
         self.init_run()
         summary = "Unit test suite passed under Python"
         self.run_cli(
@@ -397,16 +401,138 @@ class CodexOrchCliTests(unittest.TestCase):
         )
         self.run_cli("report", "--run-id", "run")
         report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
-        evidence_section = self.report_section(report, "## Evidence")
+        consensus_section = self.report_section(report, "## Consensus")
 
-        self.assertIn("- **Test** (passed)", evidence_section)
-        self.assertIn(summary, evidence_section)
-        self.assertIn("  - Command: `python3 -m unittest discover -s tests -v`", evidence_section)
-        self.assertIn("  - Exit Code: `0`", evidence_section)
-        self.assertIn("  - Notes: Full suite green.", evidence_section)
-        self.assertIn("  - Artifacts:", evidence_section)
-        self.assertIn("    - `logs/tests.txt`", evidence_section)
-        self.assertIn("- Evidence: 1 passed", self.report_section(report, "## Summary"))
+        self.assertNotIn("## Evidence", report)
+        self.assertIn("### Verification Checks", consensus_section)
+        self.assertIn("- **Test** (passed)", consensus_section)
+        self.assertIn(summary, consensus_section)
+        self.assertIn("  - Command: `python3 -m unittest discover -s tests -v`", consensus_section)
+        self.assertIn("  - Exit Code: `0`", consensus_section)
+        self.assertIn("  - Notes: Full suite green.", consensus_section)
+        self.assertIn("  - Artifacts:", consensus_section)
+        self.assertIn("    - `logs/tests.txt`", consensus_section)
+        self.assertNotIn("- Evidence:", self.report_section(report, "## Summary"))
+
+    def test_orchestration_graph_mermaid_and_review_only_report_contract(self) -> None:
+        self.init_run()
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "task_created",
+                    "id": "T001",
+                    "title": "Implement graph label test",
+                    "status": "complete",
+                    "owner": "codex-exec-a",
+                }
+            ),
+        )
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "dispatch_started",
+                    "task_id": "T001",
+                    "agent": "codex-exec-a",
+                    "mode": "exec",
+                    "prompt_path": "prompts/T001.md",
+                    "log_path": "logs/T001.jsonl",
+                    "fresh_session": True,
+                    "model": "gpt-5.4",
+                    "reasoning_effort": "high",
+                }
+            ),
+        )
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "dispatch_completed",
+                    "task_id": "T001",
+                    "agent": "codex-exec-a",
+                    "status": "complete",
+                }
+            ),
+        )
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "review",
+                    "task_id": "T001",
+                    "reviewer": "Claude",
+                    "kind": "diff",
+                    "result": "passed",
+                    "findings": [],
+                }
+            ),
+        )
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "consensus",
+                    "finding": "Graph target selection",
+                    "outcome": "consensus",
+                    "resolution": "Prefer the real Codex agent over a Claude self-loop.",
+                    "evidence": ["Claude review and Codex dispatch are recorded."],
+                }
+            ),
+        )
+
+        self.run_cli("report", "--run-id", "run")
+        report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
+        graph_section = self.report_section(report, "## Orchestration Graph")
+
+        self.assertIn("```mermaid\nflowchart LR", graph_section)
+        self.assertIn(
+            'agent_codex_exec_a["codex-exec-a<br/>gpt-5.4 · high<br/>exec · complete"]',
+            graph_section,
+        )
+        self.assertIn(
+            'claude -->|"dispatch T001: Implement graph label test (fresh)"| agent_codex_exec_a',
+            graph_section,
+        )
+        self.assertNotIn("agent_claude", graph_section)
+        self.assertIn('claude -->|"self-review (diff): passed"| claude', graph_section)
+        self.assertNotIn('claude -->|"request review (diff)"| claude', graph_section)
+        self.assertIn('claude -->|"consensus: consensus"| agent_codex_exec_a', graph_section)
+        self.assertNotIn('claude -->|"consensus: consensus"| claude', graph_section)
+        self.assertIn("Flow: Claude → codex-exec-a dispatch T001 (complete)", graph_section)
+        self.assertNotIn("## Task Graph", report)
+        self.assertNotIn("## Evidence", report)
+
+        self.run_cli("init", "--run-id", "review-only", "--repo", str(self.repo))
+        self.run_cli(
+            "add-verification",
+            "--run-id",
+            "review-only",
+            "--kind",
+            "manual_review",
+            "--result",
+            "passed",
+            "--summary",
+            "Review-only run passed.",
+        )
+        self.run_cli("report", "--run-id", "review-only")
+        review_only_report = (self.ledger_dir("review-only") / "report.md").read_text(encoding="utf-8")
+        review_only_consensus = self.report_section(review_only_report, "## Consensus")
+
+        self.assertNotIn("No evidence recorded.", review_only_report)
+        self.assertNotIn("## Evidence", review_only_report)
+        self.assertNotIn("### Verification Checks", review_only_consensus)
+        self.assertIn("- **Manual / agent review** (passed)", review_only_consensus)
 
     def test_report_shows_consensus_placeholder_without_records(self) -> None:
         self.init_run()
@@ -508,7 +634,7 @@ class CodexOrchCliTests(unittest.TestCase):
             "- Acceptance: Accepted, but 3 unresolved item(s) remain — see Risks / Follow-ups.",
             summary_section,
         )
-        self.assertIn("- Evidence: 1 failed", summary_section)
+        self.assertNotIn("- Evidence:", summary_section)
         self.assertIn("- Reviews: 0", summary_section)
         self.assertIn("- Consensus: 1 consensus, 1 user action required", summary_section)
         self.assertIn("- Sessions: 1", summary_section)
@@ -781,6 +907,7 @@ class CodexOrchCliTests(unittest.TestCase):
         )
         self.assertIn("Manual review note.", self.report_section(second_report, "## Consensus"))
         self.assertIn("Manual consensus note.", self.report_section(second_report, "## Consensus"))
+        self.assertNotIn("## Evidence", second_report)
         self.assertEqual(self.normalized_report(first_report), self.normalized_report(second_report))
 
     def test_report_strict_fails_on_incomplete_run(self) -> None:
@@ -792,9 +919,8 @@ class CodexOrchCliTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertFalse(payload["ok"])
         self.assertIn("run metadata", payload["missing"])
-        self.assertIn("task graph", payload["missing"])
+        self.assertIn("orchestration graph", payload["missing"])
         self.assertIn("changes evidence", payload["missing"])
-        self.assertIn("verification evidence", payload["missing"])
         self.assertIn("consensus or review evidence", payload["missing"])
         self.assertNotIn("gate result", payload["missing"])
 

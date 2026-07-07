@@ -49,8 +49,8 @@ Use a durable run ledger for orchestration state:
 Keep durable facts in these files, not only in model context. Runtime records follow
 `schemas/codex-orchestrator.schema.json`. Claude authors the `Summary` and `Changes` sections of
 `report.md` after inspecting the diff, ledger, prompts, logs, and verification; the report helper
-preserves those sections and regenerates `Evidence`, `Consensus`, `Risks / Follow-ups`,
-`Reproducibility`, `Task Graph`, and `Gate Result`.
+preserves those sections and regenerates `Consensus`, `Risks / Follow-ups`, `Reproducibility`,
+`Orchestration Graph`, and `Gate Result`.
 
 Useful helpers:
 

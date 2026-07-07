@@ -85,6 +85,8 @@ class TaskProtocolTests(unittest.TestCase):
                 "fresh_session": True,
                 "reuse_reason": "same task follow-up",
                 "worktree": "/tmp/task-a",
+                "model": "gpt-5.4",
+                "reasoning_effort": "high",
             },
             {"type": "dispatch_completed", "task_id": "task-a", "agent": "codex-a", "status": "complete"},
             {

@@ -158,7 +158,8 @@ class RunMetaTests(unittest.TestCase):
         self.assertIn("- Schema Version: `1.0`", report)
         self.assertIn("- Benchmark Suite: `suite-a`", report)
         self.assertIn("- Benchmark Case: `case-b`", report)
-        self.assertIn("- Report Completeness: 0.15", report)
+        self.assertNotIn("### Report Completeness", report)
+        self.assertNotIn("- Report Completeness:", report)
 
     def test_ensure_run_uses_plugin_root_metadata_not_target_repo(self) -> None:
         target_head = self.init_target_git_repo()

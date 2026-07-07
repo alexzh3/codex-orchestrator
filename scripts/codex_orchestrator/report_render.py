@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import re
+
 from .report_common import *
 from .resolution import clears_refs, is_acceptance, is_executable, parse_ref, verifications_by_id
+
+
+MERMAID_LABEL_LIMIT = 60
 
 
 def verification_kind_label(kind: object) -> str:
@@ -162,6 +167,46 @@ def brief_string_list(value: object, *, code: bool = False, limit: int = 3) -> s
     return ", ".join(rendered)
 
 
+def mermaid_label(value: object, *, limit: int = MERMAID_LABEL_LIMIT) -> str:
+    text = text_field(value)
+    text = (
+        text.replace('"', "'")
+        .replace("|", "/")
+        .replace("`", "'")
+        .replace("<", "(")
+        .replace(">", ")")
+    )
+    text = " ".join(text.split())
+    if len(text) > limit:
+        text = text[: limit - 1].rstrip() + "…"
+    return text
+
+
+def mermaid_node_label(parts: list[str]) -> str:
+    return "<br/>".join(label for part in parts if (label := mermaid_label(part)))
+
+
+def mermaid_agent_id(name: str) -> str:
+    node_name = re.sub(r"[^0-9A-Za-z_]", "_", mermaid_label(name, limit=120)).strip("_")
+    return f"agent_{node_name or 'unknown'}"
+
+
+def is_hub_agent(name: object) -> bool:
+    return text_field(name).strip().casefold() in {"claude", "claude-code"}
+
+
+def graph_task_label(task: dict[str, object] | None, task_id: str) -> str:
+    if task is None:
+        return task_id
+    return text_field(task.get("title")) or text_field(task.get("goal")) or task_id
+
+
+def dispatch_edge_label(task_id: str, title: str, freshness: str) -> str:
+    overhead = len(f"dispatch {task_id}:  ({freshness})")
+    title_limit = max(12, MERMAID_LABEL_LIMIT - overhead)
+    return f"dispatch {task_id}: {mermaid_label(title, limit=title_limit)} ({freshness})"
+
+
 def unresolved_items(
     warnings: list[str],
     verification_records: list[dict[str, object]],
@@ -231,7 +276,7 @@ def task_graph_records(ledger: list[dict[str, object]]) -> list[dict[str, object
             if not task_id:
                 continue
             task = task_for(task_id)
-            for field in ("title", "status", "owner"):
+            for field in ("title", "status", "owner", "goal"):
                 value = text_field(record.get(field))
                 if value:
                     task[field] = value
@@ -259,12 +304,242 @@ def task_graph_records(ledger: list[dict[str, object]]) -> list[dict[str, object
     return [tasks[task_id] for task_id in order]
 
 
-def render_task_graph(lines: list[str], ledger: list[dict[str, object]]) -> None:
-    lines.extend(["## Task Graph", ""])
+def render_orchestration_graph(
+    lines: list[str],
+    state: dict[str, object],
+    ledger: list[dict[str, object]],
+) -> None:
+    lines.extend(["## Orchestration Graph", ""])
     tasks = task_graph_records(ledger)
-    if not tasks:
-        lines.extend([TASK_GRAPH_PLACEHOLDER, ""])
+    sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
+    agent_order: list[str] = []
+    agent_info: dict[str, dict[str, object]] = {}
+
+    def ensure_agent(name: object) -> str:
+        agent = text_field(name)
+        if not agent:
+            return ""
+        if is_hub_agent(agent):
+            return "claude"
+        if agent not in agent_info:
+            agent_info[agent] = {
+                "name": agent,
+                "mode": "",
+                "status": "",
+                "model": "",
+                "reasoning_effort": "",
+                "has_session": False,
+            }
+            agent_order.append(agent)
+        return agent
+
+    for session in sessions:
+        if not isinstance(session, dict):
+            continue
+        agent = ensure_agent(session.get("name"))
+        if not agent or agent == "claude":
+            continue
+        info = agent_info[agent]
+        info["mode"] = text_field(session.get("mode"))
+        info["status"] = text_field(session.get("status"))
+        info["has_session"] = True
+
+    task_by_id = {text_field(task.get("id")): task for task in tasks if text_field(task.get("id"))}
+    latest_checkpoint_by_task: dict[str, dict[str, object]] = {}
+    completed_status_by_task: dict[str, str] = {}
+    primary_agent = ""
+
+    for record in ledger:
+        record_type = record.get("type")
+        if record_type == "dispatch_started":
+            agent = ensure_agent(record.get("agent"))
+            if agent and not primary_agent:
+                primary_agent = agent
+            if agent and agent != "claude":
+                info = agent_info[agent]
+                if not info.get("has_session") and not text_field(info.get("mode")):
+                    info["mode"] = text_field(record.get("mode"))
+                for field in ("model", "reasoning_effort"):
+                    if not text_field(info.get(field)):
+                        info[field] = text_field(record.get(field))
+        elif record_type == "dispatch_completed":
+            agent = ensure_agent(record.get("agent"))
+            task_id = text_field(record.get("task_id"))
+            status = text_field(record.get("status"))
+            if task_id and status:
+                completed_status_by_task[task_id] = status
+            if agent and agent != "claude" and status and not agent_info[agent].get("has_session"):
+                agent_info[agent]["status"] = status
+        elif record_type == "task_checkpoint":
+            agent = ensure_agent(record.get("agent"))
+            task_id = text_field(record.get("task_id"))
+            status = text_field(record.get("status"))
+            if task_id:
+                latest_checkpoint_by_task[task_id] = record
+            if agent and agent != "claude" and status and not agent_info[agent].get("has_session"):
+                agent_info[agent]["status"] = status
+        elif record_type == "review":
+            ensure_agent(record.get("reviewer"))
+
+    if not primary_agent:
+        for task in tasks:
+            primary_agent = ensure_agent(task.get("owner"))
+            if primary_agent:
+                break
+    if not primary_agent and agent_order:
+        primary_agent = agent_order[0]
+
+    if not tasks and not agent_order and not any(
+        record.get("type") in {"dispatch_started", "review", "consensus"} for record in ledger
+    ):
+        lines.extend([ORCHESTRATION_GRAPH_PLACEHOLDER, ""])
         return
+
+    node_ids: dict[str, str] = {}
+    used_node_ids: set[str] = {"claude"}
+
+    for agent in agent_order:
+        base_id = mermaid_agent_id(agent)
+        node_id = base_id
+        suffix = 2
+        while node_id in used_node_ids:
+            node_id = f"{base_id}_{suffix}"
+            suffix += 1
+        used_node_ids.add(node_id)
+        node_ids[agent] = node_id
+
+    edge_lines: list[str] = []
+    fallback_edges: list[str] = []
+    consensus_nodes: list[tuple[str, str]] = []
+    seen_edges: set[tuple[str, str, str]] = set()
+    seen_dispatch_tasks: set[str] = set()
+    latest_reviewer = ""
+
+    def node_id_for_agent(agent: str) -> str:
+        if is_hub_agent(agent):
+            return "claude"
+        if agent not in node_ids:
+            ensure_agent(agent)
+            base_id = mermaid_agent_id(agent)
+            node_id = base_id
+            suffix = 2
+            while node_id in used_node_ids:
+                node_id = f"{base_id}_{suffix}"
+                suffix += 1
+            used_node_ids.add(node_id)
+            node_ids[agent] = node_id
+        return node_ids[agent]
+
+    def add_edge(source: str, label: str, target: str, fallback: str = "") -> None:
+        safe_label = mermaid_label(label)
+        key = (source, safe_label, target)
+        if key in seen_edges:
+            return
+        seen_edges.add(key)
+        edge_lines.append(f'  {source} -->|"{safe_label}"| {target}')
+        if fallback:
+            fallback_edges.append(fallback)
+
+    for record in ledger:
+        record_type = record.get("type")
+        if record_type == "dispatch_started":
+            task_id = text_field(record.get("task_id"))
+            if not task_id or task_id in seen_dispatch_tasks:
+                continue
+            seen_dispatch_tasks.add(task_id)
+            task = task_by_id.get(task_id)
+            agent = ensure_agent(record.get("agent")) or ensure_agent(task.get("owner") if task else "")
+            if not agent:
+                continue
+            freshness = "fresh" if record.get("fresh_session") is not False else "reuse"
+            title = graph_task_label(task, task_id)
+            status = (
+                completed_status_by_task.get(task_id)
+                or text_field(latest_checkpoint_by_task.get(task_id, {}).get("status"))
+                or "unknown"
+            )
+            target = node_id_for_agent(agent)
+            add_edge(
+                "claude",
+                dispatch_edge_label(task_id, title, freshness),
+                target,
+                f"Claude → {agent} dispatch {task_id} ({status})",
+            )
+            add_edge(
+                target,
+                status,
+                "claude",
+            )
+        elif record_type == "review":
+            reviewer = ensure_agent(record.get("reviewer"))
+            if not reviewer:
+                continue
+            latest_reviewer = reviewer
+            reviewer_id = node_id_for_agent(reviewer)
+            kind = text_field(record.get("kind")) or "review"
+            result = text_field(record.get("result")) or "unknown"
+            if reviewer_id == "claude":
+                add_edge(
+                    "claude",
+                    f"self-review ({kind}): {result}",
+                    "claude",
+                    f"Claude self-review {kind} ({result})",
+                )
+                continue
+            add_edge(
+                "claude",
+                f"request review ({kind})",
+                reviewer_id,
+                f"Claude ↔ {reviewer} review {kind} ({result})",
+            )
+            add_edge(
+                reviewer_id,
+                f"review: {result}",
+                "claude",
+            )
+        elif record_type == "consensus":
+            outcome = consensus_outcome(record)
+            counterpart = ""
+            if primary_agent and not is_hub_agent(primary_agent):
+                counterpart = primary_agent
+            elif latest_reviewer and not is_hub_agent(latest_reviewer):
+                counterpart = latest_reviewer
+            if counterpart:
+                target = node_id_for_agent(counterpart)
+            elif (primary_agent or latest_reviewer) and not agent_order:
+                target = "claude"
+            else:
+                target = f"consensus_{len(consensus_nodes) + 1}"
+                consensus_nodes.append((target, mermaid_label(f"consensus: {outcome}")))
+            add_edge(
+                "claude",
+                f"consensus: {outcome}",
+                target,
+                f"consensus: {outcome}",
+            )
+
+    lines.extend(["```mermaid", "flowchart LR"])
+    lines.append(f'  claude(["{mermaid_node_label(["Claude", "planner · orchestrator"])}"])')
+    for agent in agent_order:
+        info = agent_info[agent]
+        label_parts = [agent]
+        model = text_field(info.get("model"))
+        reasoning_effort = text_field(info.get("reasoning_effort"))
+        if model or reasoning_effort:
+            label_parts.append(f"{model or 'unknown'} · {reasoning_effort or 'unknown'}")
+        mode = text_field(info.get("mode"))
+        status = text_field(info.get("status"))
+        if mode or status:
+            label_parts.append(f"{mode or 'unknown'} · {status or 'unknown'}")
+        else:
+            label_parts.append("unknown")
+        lines.append(f'  {node_ids[agent]}["{mermaid_node_label(label_parts)}"]')
+    for node_id, label in consensus_nodes:
+        lines.append(f'  {node_id}{{{{"{label}"}}}}')
+    lines.extend(edge_lines)
+    lines.extend(["```", ""])
+    lines.append("Flow: " + (" · ".join(fallback_edges) if fallback_edges else "no protocol edges recorded"))
+    lines.append("")
 
     for task in tasks:
         task_id = text_field(task.get("id")) or "unknown"
@@ -275,7 +550,6 @@ def render_task_graph(lines: list[str], ledger: list[dict[str, object]]) -> None
         lines.append(
             f"  - Files allowed: {brief_string_list(task.get('files_allowed'), code=True) or 'not recorded'}"
         )
-        lines.append(f"  - Acceptance: {brief_string_list(task.get('acceptance')) or 'not recorded'}")
         checkpoint = task.get("latest_checkpoint")
         if isinstance(checkpoint, dict):
             checkpoint_status = text_field(checkpoint.get("status")) or "unknown"
@@ -294,6 +568,7 @@ def render_reproducibility(
     run_meta: dict[str, object] | None,
     completeness: dict[str, object],
 ) -> None:
+    del completeness
     lines.extend(["## Reproducibility", ""])
     if run_meta:
         for field, label in (
@@ -313,9 +588,6 @@ def render_reproducibility(
                 lines.append(f"  - {field}: {metadata_value(config.get(field))}")
     else:
         lines.append(RUN_META_PLACEHOLDER)
-    lines.extend(["", "### Report Completeness", ""])
-    lines.append(f"- Report Completeness: {score_total(completeness):.2f}")
-    lines.extend(score_component_lines(completeness))
     lines.append("")
 
 
@@ -419,12 +691,10 @@ def strict_report_missing_evidence(
     missing: list[str] = []
     if RUN_META_PLACEHOLDER in report:
         missing.append("run metadata")
-    if TASK_GRAPH_PLACEHOLDER in report:
-        missing.append("task graph")
+    if ORCHESTRATION_GRAPH_PLACEHOLDER in report:
+        missing.append("orchestration graph")
     if CHANGES_PLACEHOLDER in report and not has_change_evidence(ledger):
         missing.append("changes evidence")
-    if EVIDENCE_PLACEHOLDER in report:
-        missing.append("verification evidence")
     if REVIEW_PLACEHOLDER in report:
         missing.append("review notes")
     if CONSENSUS_PLACEHOLDER in report:
@@ -469,7 +739,6 @@ def render_report(
             f"- Status: {state.get('status')}",
             f"- Generated at: {generated_at}",
             f"- Acceptance: {acceptance_decision(state.get('status'), open_risks)}",
-            f"- Report Completeness: {score_total(completeness):.2f}",
         ])
         if task_records:
             lines.append(f"- Changes: {len(task_records)} ({task_status_tally(task_records)})")
@@ -477,7 +746,6 @@ def render_report(
         else:
             lines.append("- Changes: none")
         lines.extend([
-            f"- Evidence: {verification_tally(evidence_records)}",
             f"- Reviews: {len(all_review_records)}",
             f"- Consensus: {consensus_outcome_tally(consensus_records)}",
         ])
@@ -510,16 +778,9 @@ def render_report(
     else:
         lines.extend([CHANGES_PLACEHOLDER, ""])
 
-    render_task_graph(lines, ledger)
+    render_orchestration_graph(lines, state, ledger)
 
-    lines.extend(["## Evidence", ""])
-    if evidence_records:
-        for record in evidence_records:
-            lines.extend(record_lines(record))
-    else:
-        lines.append(EVIDENCE_PLACEHOLDER)
-
-    lines.extend(["", "## Consensus", ""])
+    lines.extend(["## Consensus", ""])
     wrote_consensus_content = False
     manual_review = manual_review_section(existing_report)
     manual_consensus = manual_consensus_section(existing_report)
@@ -528,6 +789,12 @@ def render_report(
         wrote_consensus_content = True
     if manual_consensus:
         lines.extend([manual_consensus, ""])
+        wrote_consensus_content = True
+    if evidence_records:
+        lines.extend(["### Verification Checks", ""])
+        for record in evidence_records:
+            lines.extend(record_lines(record))
+        lines.append("")
         wrote_consensus_content = True
     if all_review_records:
         lines.extend(["### Reviews", ""])

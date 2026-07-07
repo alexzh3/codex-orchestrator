@@ -10,7 +10,6 @@ No authored summary recorded.
 - Status: needs_review
 - Generated at: 2026-06-29T09:00:00Z
 - Acceptance: No acceptance decision recorded; this run needs review.
-- Report Completeness: 1.00
 - Changes: 10 (8 complete, 1 blocked, 1 failed)
   - Create replay case descriptor
   - Capture session state fixture
@@ -22,7 +21,6 @@ No authored summary recorded.
   - Add benchmark comparison command
   - Add long workflow report test
   - Document deterministic replay protocol
-- Evidence: 1 failed
 - Reviews: 2
 - Consensus: 1 user action required
 - Sessions: 2
@@ -46,18 +44,6 @@ No authored summary recorded.
   - session_reuse_policy: `reuse-idle`
   - require_final_codex_review: `True`
   - require_file_claims: `True`
-
-### Report Completeness
-
-- Report Completeness: 1.00
-  - run_meta present: 0.15/0.15
-  - all tasks listed: 0.15/0.15
-  - all changed files attributed: 0.15/0.15
-  - verification records complete: 0.15/0.15
-  - final review present: 0.15/0.15
-  - risks reflect failed/inconclusive checks: 0.10/0.10
-  - gate result present: 0.10/0.10
-  - prompt/log pairs complete: 0.05/0.05
 
 ## Changes
 
@@ -96,22 +82,37 @@ No authored changes recorded.
   - Owner: codex-exec-a
   - Notes: Kept network and agent calls out of the replay harness.
 
-## Task Graph
+## Orchestration Graph
+
+```mermaid
+flowchart LR
+  claude(["Claude<br/>planner · orchestrator"])
+  agent_codex_exec_a["codex-exec-a<br/>exec · complete"]
+  agent_codex_ide_review["codex-ide-review<br/>ide · idle"]
+  claude -->|"dispatch T001: Create replay case descriptor (fresh)"| agent_codex_exec_a
+  agent_codex_exec_a -->|"complete"| claude
+  claude -->|"dispatch T005: Refresh golden report after renderer… (reuse)"| agent_codex_exec_a
+  agent_codex_exec_a -->|"blocked"| claude
+  claude -->|"self-review (diff): passed"| claude
+  claude -->|"consensus: user_action_required"| agent_codex_exec_a
+```
+
+Flow: Claude → codex-exec-a dispatch T001 (complete) · Claude → codex-exec-a dispatch T005 (blocked) · Claude self-review diff (passed) · consensus: user_action_required
 
 - **T001**: Create replay case descriptor (complete)
   - Owner: codex-exec-a
   - Files allowed: `bench/cases/replay/long-run-001/case.json`, `bench/cases/replay/long-run-001/state.json`
-  - Acceptance: case descriptor points at deterministic fixture files, state records both monitored Codex sessions
   - Latest checkpoint: complete - Created the deterministic replay descriptor and state fixture.
   - Files changed: `bench/cases/replay/long-run-001/case.json`, `bench/cases/replay/long-run-001/state.json`
 - **T005**: Refresh golden report after renderer change (blocked)
   - Owner: codex-exec-a
   - Files allowed: `bench/cases/replay/long-run-001/ledger.jsonl`, `bench/cases/replay/long-run-001/expected-report.md`
-  - Acceptance: ledger captures task history and verification evidence, golden report refresh remains explicitly tracked
   - Latest checkpoint: blocked - Recorded task protocol events and left the golden refresh blocked for the review gate.
   - Files changed: `bench/cases/replay/long-run-001/ledger.jsonl`, `bench/cases/replay/long-run-001/expected-report.md`
 
-## Evidence
+## Consensus
+
+### Verification Checks
 
 - **Test** (failed)
   - Summary: Replay smoke test failed on stale parser warning assertion
@@ -121,8 +122,6 @@ No authored changes recorded.
   - Artifacts:
     - `prompts/test-suite.md`
     - `logs/test-suite.jsonl`
-
-## Consensus
 
 ### Reviews
 

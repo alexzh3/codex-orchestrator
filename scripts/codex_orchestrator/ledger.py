@@ -32,7 +32,7 @@ def initial_report_text() -> str:
         "## Summary\n\n"
         "## Reproducibility\n\n"
         "## Changes\n\n"
-        "## Evidence\n\n"
+        "## Orchestration Graph\n\n"
         "## Consensus\n\n"
         "## Gate Result\n\n"
         "## Risks / Follow-ups\n\n"
