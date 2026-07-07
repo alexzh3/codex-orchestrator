@@ -170,6 +170,17 @@ See `docs/consensus-and-reviews.md` for the full details.
 
 ---
 
+## Orchestration graph
+
+Generated reports include an agent-centric orchestration graph that traces tasks, Codex sessions,
+verification evidence, reviews, consensus, and the final gate. Agent nodes show the model/effort
+when recorded plus the harness mode and status. Evidence that affects acceptance is a node because
+it may need to be inspected, cited, cleared, or replayed; consensus is shown as a resolution gate,
+not an agent. See [`docs/orchestration-graph.md`](./docs/orchestration-graph.md) for the grammar and
+canonical architecture diagram.
+
+---
+
 ## Workflow Architecture
 
 When using the `workflow` command, it will follow this architecture:

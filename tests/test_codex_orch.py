@@ -436,6 +436,20 @@ class CodexOrchCliTests(unittest.TestCase):
             "run",
             json.dumps(
                 {
+                    "type": "verification",
+                    "id": "VREF",
+                    "kind": "test",
+                    "result": "passed",
+                    "summary": "Graph verification passed.",
+                }
+            ),
+        )
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
                     "type": "dispatch_started",
                     "task_id": "T001",
                     "agent": "codex-exec-a",
@@ -487,6 +501,7 @@ class CodexOrchCliTests(unittest.TestCase):
                     "outcome": "consensus",
                     "resolution": "Prefer the real Codex agent over a Claude self-loop.",
                     "evidence": ["Claude review and Codex dispatch are recorded."],
+                    "clears": ["verification:VREF"],
                 }
             ),
         )
@@ -495,21 +510,30 @@ class CodexOrchCliTests(unittest.TestCase):
         report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
         graph_section = self.report_section(report, "## Orchestration Graph")
 
-        self.assertIn("```mermaid\nflowchart LR", graph_section)
+        self.assertIn("```mermaid\nflowchart TD", graph_section)
+        self.assertIn('A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}', graph_section)
         self.assertIn(
-            'agent_codex_exec_a["codex-exec-a<br/>gpt-5.4 · high<br/>exec · complete"]',
+            'A_CODEX_EXEC_A[["codex-exec-a<br/>gpt-5.4 · high<br/>exec · complete"]]',
             graph_section,
         )
         self.assertIn(
-            'claude -->|"dispatch T001: Implement graph label test (fresh)"| agent_codex_exec_a',
+            'A_CLAUDE -->|"dispatch_started: T001 (fresh)"| A_CODEX_EXEC_A',
             graph_section,
         )
+        self.assertIn('A_CODEX_EXEC_A ==>|"dispatch_completed: complete"| T001', graph_section)
+        self.assertIn('V1[/"test: passed — Graph verification passed."/]', graph_section)
+        self.assertIn('R1[/"review diff: passed — reviewer: Claude"/]', graph_section)
+        self.assertIn('A_CLAUDE -->|"review"| R1', graph_section)
+        self.assertIn('C1{"consensus: consensus"}', graph_section)
+        self.assertIn('V1 -.->|"clears"| C1', graph_section)
+        self.assertIn("==>", graph_section)
+        self.assertIn("-.->", graph_section)
         self.assertNotIn("agent_claude", graph_section)
-        self.assertIn('claude -->|"self-review (diff): passed"| claude', graph_section)
-        self.assertNotIn('claude -->|"request review (diff)"| claude', graph_section)
-        self.assertIn('claude -->|"consensus: consensus"| agent_codex_exec_a', graph_section)
-        self.assertNotIn('claude -->|"consensus: consensus"| claude', graph_section)
-        self.assertIn("Flow: Claude → codex-exec-a dispatch T001 (complete)", graph_section)
+        self.assertNotIn("A_CLAUDE_2", graph_section)
+        self.assertNotIn("self-review", graph_section)
+        self.assertNotIn('A_CLAUDE -->|"request review"| A_CLAUDE', graph_section)
+        self.assertNotIn('A_CLAUDE -->|"consensus: consensus"| A_CLAUDE', graph_section)
+        self.assertIn("dispatch T001 (fresh)", graph_section)
         self.assertNotIn("## Task Graph", report)
         self.assertNotIn("## Evidence", report)
 
@@ -533,6 +557,51 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertNotIn("## Evidence", review_only_report)
         self.assertNotIn("### Verification Checks", review_only_consensus)
         self.assertIn("- **Manual / agent review** (passed)", review_only_consensus)
+        self.assertIn('R1[/"manual_review: passed — Review-only run passed."/]', self.report_section(review_only_report, "## Orchestration Graph"))
+
+    def test_orchestration_graph_failed_review_loops_back_to_task_owner(self) -> None:
+        self.init_run()
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "task_created",
+                    "id": "T002",
+                    "title": "Fix failed review finding",
+                    "status": "active",
+                    "owner": "codex-fixer",
+                }
+            ),
+        )
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "review",
+                    "task_id": "T002",
+                    "reviewer": "codex-reviewer",
+                    "kind": "diff",
+                    "result": "failed",
+                    "summary": "Blocking issue found.",
+                    "findings": ["Fix required."],
+                }
+            ),
+        )
+
+        self.run_cli("report", "--run-id", "run")
+        report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
+        graph_section = self.report_section(report, "## Orchestration Graph")
+
+        self.assertIn('A_CODEX_FIXER[["codex-fixer<br/>unknown"]]', graph_section)
+        self.assertIn('A_CODEX_REVIEWER[["codex-reviewer<br/>unknown"]]', graph_section)
+        self.assertIn('R1[/"review diff: failed — reviewer: codex-reviewer — Blocking', graph_section)
+        self.assertIn('A_CLAUDE -->|"request review"| A_CODEX_REVIEWER', graph_section)
+        self.assertIn('A_CODEX_REVIEWER -->|"review"| R1', graph_section)
+        self.assertIn('R1 -->|"blocked: fix required"| A_CODEX_FIXER', graph_section)
 
     def test_report_shows_consensus_placeholder_without_records(self) -> None:
         self.init_run()

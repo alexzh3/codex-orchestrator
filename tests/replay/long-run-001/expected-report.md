@@ -85,19 +85,35 @@ No authored changes recorded.
 ## Orchestration Graph
 
 ```mermaid
-flowchart LR
-  claude(["Claude<br/>planner · orchestrator"])
-  agent_codex_exec_a["codex-exec-a<br/>exec · complete"]
-  agent_codex_ide_review["codex-ide-review<br/>ide · idle"]
-  claude -->|"dispatch T001: Create replay case descriptor (fresh)"| agent_codex_exec_a
-  agent_codex_exec_a -->|"complete"| claude
-  claude -->|"dispatch T005: Refresh golden report after renderer… (reuse)"| agent_codex_exec_a
-  agent_codex_exec_a -->|"blocked"| claude
-  claude -->|"self-review (diff): passed"| claude
-  claude -->|"consensus: user_action_required"| agent_codex_exec_a
+flowchart TD
+  A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}
+  A_CODEX_EXEC_A[["codex-exec-a<br/>exec · complete"]]
+  A_CODEX_IDE_REVIEW[["codex-ide-review<br/>ide · idle"]]
+  T001["T001: Create replay case descriptor (complete)"]
+  T005["T005: Refresh golden report after renderer change (blocked)"]
+  V1[/"test: failed — Replay smoke test failed on stale parser war…"/]
+  R1[/"manual_review: passed — Final Codex review passed with the…"/]
+  R2[/"review diff: passed — reviewer: claude — Typed review passe…"/]
+  C1{"consensus: user_action_required"}
+  G{"gate: blocked"}
+  A_CLAUDE -->|"task_created"| T001
+  A_CLAUDE -->|"task_created"| T005
+  A_CLAUDE -->|"dispatch_started: T001 (fresh)"| A_CODEX_EXEC_A
+  A_CODEX_EXEC_A ==>|"task_checkpoint: complete"| T001
+  A_CLAUDE -->|"dispatch_started: T005 (reuse)"| A_CODEX_EXEC_A
+  A_CODEX_EXEC_A ==>|"task_checkpoint: blocked"| T005
+  A_CLAUDE ==>|"add_verification"| V1
+  A_CLAUDE -->|"review"| R1
+  A_CLAUDE -->|"review"| R2
+  A_CLAUDE -->|"consensus"| C1
+  V1 --> G
+  R1 --> G
+  R2 --> G
+  C1 --> G
+  G -->|"blocked: failed verification remains"| A_CLAUDE
 ```
 
-Flow: Claude → codex-exec-a dispatch T001 (complete) · Claude → codex-exec-a dispatch T005 (blocked) · Claude self-review diff (passed) · consensus: user_action_required
+Flow: dispatch T001 (fresh) · dispatch T005 (reuse) · verification test failed · review manual_review passed · review diff passed · consensus user_action_required · gate blocked: failed verification remains
 
 - **T001**: Create replay case descriptor (complete)
   - Owner: codex-exec-a

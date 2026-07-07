@@ -48,15 +48,25 @@ class LongWorkflowReportTests(unittest.TestCase):
         components = self.fixture_score()["components"]
 
         self.assertIn("- Reviews: 2", result.generated_report)
-        self.assertIn("```mermaid\nflowchart LR", orchestration_graph_section)
+        self.assertIn("```mermaid\nflowchart TD", orchestration_graph_section)
+        self.assertIn('A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}', orchestration_graph_section)
+        self.assertIn('A_CODEX_EXEC_A[["codex-exec-a<br/>exec · complete"]]', orchestration_graph_section)
+        self.assertIn('V1[/"test: failed', orchestration_graph_section)
+        self.assertIn('R2[/"review diff: passed — reviewer: claude', orchestration_graph_section)
         self.assertIn(
-            'claude -->|"dispatch T001: Create replay case descriptor (fresh)"| agent_codex_exec_a',
+            'A_CLAUDE -->|"dispatch_started: T001 (fresh)"| A_CODEX_EXEC_A',
             orchestration_graph_section,
         )
         self.assertIn(
-            'claude -->|"dispatch T005: Refresh golden report after renderer… (reuse)"| agent_codex_exec_a',
+            'A_CLAUDE -->|"dispatch_started: T005 (reuse)"| A_CODEX_EXEC_A',
             orchestration_graph_section,
         )
+        self.assertIn('A_CODEX_EXEC_A ==>|"task_checkpoint: complete"| T001', orchestration_graph_section)
+        self.assertIn('A_CODEX_EXEC_A ==>|"task_checkpoint: blocked"| T005', orchestration_graph_section)
+        self.assertIn('G{"gate: blocked"}', orchestration_graph_section)
+        self.assertIn('G -->|"blocked: failed verification remains"| A_CLAUDE', orchestration_graph_section)
+        self.assertNotIn("agent_claude", orchestration_graph_section)
+        self.assertNotIn("A_CLAUDE_2", orchestration_graph_section)
         self.assertIn("- **T001**: Create replay case descriptor (complete)", orchestration_graph_section)
         self.assertIn(
             "- **T005**: Refresh golden report after renderer change (blocked)",
