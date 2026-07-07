@@ -68,8 +68,38 @@ solves even un-timed. The compared commits were 0.2.0 (`4a69447`, tag `v0.2.0`) 
 The orchestrator model was Claude Opus 4.8 with effort=max. The implementer model was Codex gpt-5.5
 with reasoning effort xhigh.
 
+## Token usage (as-run)
+
 Both-sides token usage was captured: Claude usage from Harbor, and GPT/Codex usage from collected
-Codex session JSONL logs.
+Codex session JSONL logs. Numbers are for the as-run (timed) regime — one run per `(task, config)`.
+
+Totals per configuration:
+
+| Configuration | Σ tokens (as-run) | Claude Σ | Codex Σ | Codex sess |
+|---|--:|--:|--:|--:|
+| 0.2.0 (orchestrated)       | 29.99M | 24.98M |  5.01M | 23 |
+| 0.4.1 (orchestrated)       | 31.77M | 27.71M |  4.06M | 19 |
+| solo Claude (Opus 4.8 max) | 14.49M | 14.49M |  —     |  — |
+| solo Codex (gpt-5.5 xhigh) |  5.44M | —      |  5.44M | 20 |
+
+Orchestrated runs split tokens across the **Claude** orchestrator and the **Codex** implementer; a
+solo run uses one model. The orchestrated configs spend ~2–6× the tokens of the solo baselines —
+scoped dispatch plus the review/consensus loop is the cost of the higher no-timeout pass rate.
+
+Combined Claude+Codex tokens per task (solo = single model):
+
+| # | Task | 0.2.0 | 0.4.1 | solo Claude | solo Codex |
+|---|------|:--:|:--:|:--:|:--:|
+| 1 | `book-portfolio-analysis` | 4.56M | 5.14M | 1.26M | 458K |
+| 2 | `corrupted-filesystem-recovery` | 2.16M | 580K | 846K | 170K |
+| 3 | `breast-cancer-mlflow` | 2.60M | 3.17M | 1.18M | 851K |
+| 4 | `bloom-filter-cache-penetration-prevention` | 2.94M | 3.35M | 1.26M | 556K |
+| 5 | `reproducibility-and-envsetup` | 703K | 788K | 270K | 160K |
+| 6 | `service-deployment-wave-planner` | 5.64M | 6.64M | 5.29M | 454K |
+| 7 | `mech-system` | 2.43M | 2.51M | 604K | 318K |
+| 8 | `multi-labeller` | 2.43M | 2.87M | 402K | 231K |
+| 9 | `react-typescript-debugg` | 1.11M | 1.84M | 1.93M | 1.44M |
+| 10 | `token-auth-websocket` | 5.41M | 4.88M | 1.44M | 798K |
 
 Full raw artifacts, the intermediate versions, aggregation tooling, and run instructions live in the
 [`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repo. The
