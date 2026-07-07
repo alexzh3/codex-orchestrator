@@ -11,9 +11,12 @@ def verification_kind_label(kind: object) -> str:
     return VERIFICATION_KIND_LABELS.get(kind, kind.replace("_", " ").title())
 
 
-def record_lines(record: dict[str, object]) -> list[str]:
+def record_lines(record: dict[str, object], evidence_id: str = "") -> list[str]:
     result = text_field(record.get("result")) or "unknown"
-    lines = [f"- **{verification_kind_label(record.get('kind'))}** ({result})"]
+    label = verification_kind_label(record.get("kind"))
+    if evidence_id:
+        label = f"{evidence_id} — {label}"
+    lines = [f"- **{label}** ({result})"]
     for field, label in (("summary", "Summary"), ("command", "Command"), ("notes", "Notes")):
         value = text_field(record.get(field))
         if not value:
@@ -32,10 +35,13 @@ def record_lines(record: dict[str, object]) -> list[str]:
     return lines
 
 
-def typed_review_lines(record: dict[str, object]) -> list[str]:
+def typed_review_lines(record: dict[str, object], evidence_id: str = "") -> list[str]:
     result = text_field(record.get("result")) or "unknown"
     kind = text_field(record.get("kind")) or "review"
-    lines = [f"- **{kind.replace('_', ' ').title()} Review** ({result})"]
+    label = f"{kind.replace('_', ' ').title()} Review"
+    if evidence_id:
+        label = f"{evidence_id} — {label}"
+    lines = [f"- **{label}** ({result})"]
     for field, label in (
         ("reviewer", "Reviewer"),
         ("summary", "Summary"),
@@ -362,6 +368,7 @@ def render_report(
     open_risks = unresolved_items(warnings, verifications, consensus_records, task_records)
     sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
     basis_counts = resolution_basis_counts(consensus_records)
+    evidence_ids = evidence_record_ids(ledger)
 
     lines = ["# Report", "", "## Summary", ""]
     authored_summary = authored_summary_section(existing_report)
@@ -431,15 +438,15 @@ def render_report(
     if evidence_records:
         lines.extend(["### Verification Checks", ""])
         for record in evidence_records:
-            lines.extend(record_lines(record))
+            lines.extend(record_lines(record, evidence_ids.get(id(record), "")))
         lines.append("")
         wrote_consensus_content = True
     if all_review_records:
         lines.extend(["### Reviews", ""])
         for record in review_records:
-            lines.extend(record_lines(record))
+            lines.extend(record_lines(record, evidence_ids.get(id(record), "")))
         for record in typed_review_records:
-            lines.extend(typed_review_lines(record))
+            lines.extend(typed_review_lines(record, evidence_ids.get(id(record), "")))
         lines.append("")
         wrote_consensus_content = True
     if consensus_records:

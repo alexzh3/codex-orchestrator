@@ -51,8 +51,11 @@ class LongWorkflowReportTests(unittest.TestCase):
         self.assertIn("```mermaid\nflowchart TD", orchestration_graph_section)
         self.assertIn('A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}', orchestration_graph_section)
         self.assertIn('A_CODEX_EXEC_A[["codex-exec-a<br/>exec · complete"]]', orchestration_graph_section)
-        self.assertIn('V1[/"test: failed', orchestration_graph_section)
-        self.assertIn('R2[/"review diff: passed — reviewer: claude', orchestration_graph_section)
+        self.assertIn('T001["T001: Create replay case descriptor (complete)"]:::ok', orchestration_graph_section)
+        self.assertIn('T005["T005: Refresh golden report after ren… (blocked)"]:::bad', orchestration_graph_section)
+        self.assertIn('V1[/"V1 · test: failed"/]:::bad', orchestration_graph_section)
+        self.assertIn('R2[/"R2 · diff review: passed<br/>claude"/]:::ok', orchestration_graph_section)
+        self.assertIn('C1{"consensus: user_action_required"}:::attention', orchestration_graph_section)
         self.assertIn(
             'A_CLAUDE -->|"dispatch_started: T001 (fresh)"| A_CODEX_EXEC_A',
             orchestration_graph_section,
@@ -63,8 +66,11 @@ class LongWorkflowReportTests(unittest.TestCase):
         )
         self.assertIn('A_CODEX_EXEC_A ==>|"task_checkpoint: complete"| T001', orchestration_graph_section)
         self.assertIn('A_CODEX_EXEC_A ==>|"task_checkpoint: blocked"| T005', orchestration_graph_section)
-        self.assertIn('G{"gate: blocked"}', orchestration_graph_section)
+        self.assertIn('G{"gate: blocked"}:::bad', orchestration_graph_section)
         self.assertIn('G -->|"blocked: failed verification remains"| A_CLAUDE', orchestration_graph_section)
+        self.assertIn("classDef ok fill:#dcefdc,stroke:#0ca30c,color:#10320f", orchestration_graph_section)
+        self.assertIn("classDef attention fill:#fdeecd,stroke:#b97b00,color:#3d2b00", orchestration_graph_section)
+        self.assertIn("classDef bad fill:#f8d7d7,stroke:#d03b3b,color:#3f0f0f", orchestration_graph_section)
         self.assertNotIn("agent_claude", orchestration_graph_section)
         self.assertNotIn("A_CLAUDE_2", orchestration_graph_section)
         self.assertIn("- **T001**: Create replay case descriptor (complete)", orchestration_graph_section)
@@ -89,8 +95,8 @@ class LongWorkflowReportTests(unittest.TestCase):
         )
         self.assertIn("- Session codex-ide-review has low parser confidence.", risks_section)
         self.assertIn("### Reviews", consensus_section)
-        self.assertIn("- **Manual / agent review** (passed)", consensus_section)
-        self.assertIn("- **Diff Review** (passed)", consensus_section)
+        self.assertIn("- **R1 — Manual / agent review** (passed)", consensus_section)
+        self.assertIn("- **R2 — Diff Review** (passed)", consensus_section)
         self.assertIn("Typed review passed after checking the refreshed report output.", consensus_section)
         self.assertIn(
             "Final Codex review passed with the failed verification documented",

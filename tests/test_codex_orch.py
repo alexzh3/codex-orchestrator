@@ -368,7 +368,7 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertIn(summary, report)
         self.assertIn("### Reviews", report)
         self.assertIn(summary, consensus_section)
-        self.assertIn("- **Manual / agent review** (passed)", consensus_section)
+        self.assertIn("- **R1 — Manual / agent review** (passed)", consensus_section)
         self.assertIn("  - Command: `codex exec review --uncommitted`", consensus_section)
         self.assertIn("  - Exit Code: `0`", consensus_section)
         self.assertIn("  - Artifacts:", consensus_section)
@@ -405,7 +405,7 @@ class CodexOrchCliTests(unittest.TestCase):
 
         self.assertNotIn("## Evidence", report)
         self.assertIn("### Verification Checks", consensus_section)
-        self.assertIn("- **Test** (passed)", consensus_section)
+        self.assertIn("- **V1 — Test** (passed)", consensus_section)
         self.assertIn(summary, consensus_section)
         self.assertIn("  - Command: `python3 -m unittest discover -s tests -v`", consensus_section)
         self.assertIn("  - Exit Code: `0`", consensus_section)
@@ -441,6 +441,22 @@ class CodexOrchCliTests(unittest.TestCase):
                     "kind": "test",
                     "result": "passed",
                     "summary": "Graph verification passed.",
+                    "task_id": "T001",
+                }
+            ),
+        )
+        self.run_cli(
+            "append-event",
+            "--run-id",
+            "run",
+            json.dumps(
+                {
+                    "type": "verification",
+                    "id": "VGLOBAL",
+                    "kind": "lint",
+                    "result": "passed",
+                    "summary": "Global lint passed.",
+                    "scope": "global",
                 }
             ),
         )
@@ -521,11 +537,18 @@ class CodexOrchCliTests(unittest.TestCase):
             graph_section,
         )
         self.assertIn('A_CODEX_EXEC_A ==>|"dispatch_completed: complete"| T001', graph_section)
-        self.assertIn('V1[/"test: passed — Graph verification passed."/]', graph_section)
-        self.assertIn('R1[/"review diff: passed — reviewer: Claude"/]', graph_section)
+        self.assertIn('T001["T001: Implement graph label test (complete)"]:::ok', graph_section)
+        self.assertIn('V1[/"V1 · test: passed"/]:::ok', graph_section)
+        self.assertIn('V2[/"V2 · lint: passed"/]:::ok', graph_section)
+        self.assertIn('R1[/"R1 · diff review: passed<br/>Claude"/]:::ok', graph_section)
+        self.assertNotIn("Graph verification passed", graph_section)
+        self.assertNotIn("Global lint passed", graph_section)
         self.assertIn('A_CLAUDE -->|"review"| R1', graph_section)
         self.assertIn('C1{"consensus: consensus"}', graph_section)
+        self.assertIn('V1 -.->|"covers"| T001', graph_section)
+        self.assertIn('R1 -.->|"reviews"| T001', graph_section)
         self.assertIn('V1 -.->|"clears"| C1', graph_section)
+        self.assertNotIn('V2 -.->|"covers"|', graph_section)
         self.assertIn("==>", graph_section)
         self.assertIn("-.->", graph_section)
         self.assertNotIn("agent_claude", graph_section)
@@ -533,6 +556,10 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertNotIn("self-review", graph_section)
         self.assertNotIn('A_CLAUDE -->|"request review"| A_CLAUDE', graph_section)
         self.assertNotIn('A_CLAUDE -->|"consensus: consensus"| A_CLAUDE', graph_section)
+        self.assertIn("classDef ok fill:#dcefdc,stroke:#0ca30c,color:#10320f", graph_section)
+        self.assertNotIn("classDef attention", graph_section)
+        self.assertNotIn("classDef bad", graph_section)
+        self.assertNotIn("A_CODEX_EXEC_A[[\"codex-exec-a<br/>gpt-5.4 · high<br/>exec · complete\"]]:::", graph_section)
         self.assertIn("dispatch T001 (fresh)", graph_section)
         self.assertNotIn("## Task Graph", report)
         self.assertNotIn("## Evidence", report)
@@ -556,8 +583,11 @@ class CodexOrchCliTests(unittest.TestCase):
         self.assertNotIn("No evidence recorded.", review_only_report)
         self.assertNotIn("## Evidence", review_only_report)
         self.assertNotIn("### Verification Checks", review_only_consensus)
-        self.assertIn("- **Manual / agent review** (passed)", review_only_consensus)
-        self.assertIn('R1[/"manual_review: passed — Review-only run passed."/]', self.report_section(review_only_report, "## Orchestration Graph"))
+        self.assertIn("- **R1 — Manual / agent review** (passed)", review_only_consensus)
+        self.assertIn(
+            'R1[/"R1 · manual_review review: passed<br/>run-wide"/]:::ok',
+            self.report_section(review_only_report, "## Orchestration Graph"),
+        )
 
     def test_orchestration_graph_failed_review_loops_back_to_task_owner(self) -> None:
         self.init_run()
@@ -598,7 +628,7 @@ class CodexOrchCliTests(unittest.TestCase):
 
         self.assertIn('A_CODEX_FIXER[["codex-fixer<br/>unknown"]]', graph_section)
         self.assertIn('A_CODEX_REVIEWER[["codex-reviewer<br/>unknown"]]', graph_section)
-        self.assertIn('R1[/"review diff: failed — reviewer: codex-reviewer — Blocking', graph_section)
+        self.assertIn('R1[/"R1 · diff review: failed<br/>codex-reviewer"/]:::bad', graph_section)
         self.assertIn('A_CLAUDE -->|"request review"| A_CODEX_REVIEWER', graph_section)
         self.assertIn('A_CODEX_REVIEWER -->|"review"| R1', graph_section)
         self.assertIn('R1 -->|"blocked: fix required"| A_CODEX_FIXER', graph_section)
@@ -899,7 +929,7 @@ class CodexOrchCliTests(unittest.TestCase):
         score = report_completeness_score(state, ledger)
 
         self.assertIn("- Reviews: 1", summary_section)
-        self.assertIn("- **Diff Review** (passed)", consensus_section)
+        self.assertIn("- **R1 — Diff Review** (passed)", consensus_section)
         self.assertIn("Typed review passed", consensus_section)
         self.assertEqual(
             prompt_log_pair_ratio([record for record in ledger if record.get("type") == "session_dispatch"]),

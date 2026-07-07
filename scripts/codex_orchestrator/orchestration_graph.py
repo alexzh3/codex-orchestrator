@@ -207,36 +207,31 @@ def agent_node_id(agent: object, node_ids: dict[str, str]) -> str:
     return node_ids.get(text_field(agent), "A_CLAUDE")
 
 
-def review_label(record: dict[str, object], *, typed: bool) -> str:
+def review_label(record: dict[str, object], *, typed: bool, evidence_id: str) -> str:
     kind = text_field(record.get("kind")) or "review"
     result = text_field(record.get("result")) or "unknown"
-    summary = text_field(record.get("summary"))
-    parts = [f"review {kind}: {result}" if typed else f"{kind}: {result}"]
+    label = f"{evidence_id} · {kind} review: {result}" if evidence_id else f"{kind} review: {result}"
     reviewer = text_field(record.get("reviewer"))
+    second_line = ""
     if reviewer:
-        parts.append(f"reviewer: {reviewer}")
-    if summary:
-        parts.append(summary)
-    blocking_findings = record.get("blocking_findings")
-    if isinstance(blocking_findings, list) and blocking_findings:
-        count = len(blocking_findings)
-        suffix = "s" if count != 1 else ""
-        parts.append(f"{count} blocking finding{suffix}")
-    return mermaid_label(" — ".join(parts))
+        second_line = reviewer
+    elif not evidence_task_refs(record, include_covers_tasks=not typed):
+        second_line = "run-wide"
+    return mermaid_node_label([label, second_line])
 
 
-def verification_label(record: dict[str, object]) -> str:
+def verification_label(record: dict[str, object], *, evidence_id: str) -> str:
     kind = text_field(record.get("kind")) or "verification"
     result = text_field(record.get("result")) or "unknown"
-    summary = text_field(record.get("summary"))
-    return mermaid_label(" — ".join(part for part in (f"{kind}: {result}", summary) if part))
+    prefix = f"{evidence_id} · " if evidence_id else ""
+    return mermaid_label(f"{prefix}{kind}: {result}")
 
 
 def task_node_label(task: dict[str, object]) -> str:
     task_id = text_field(task.get("id")) or "unknown"
-    title = graph_task_label(task, task_id)
+    title = mermaid_label(graph_task_label(task, task_id), limit=32)
     status = text_field(task.get("status")) or "unknown"
-    return mermaid_label(f"{task_id}: {title} ({status})")
+    return mermaid_label(f"{task_id}: {title} ({status})", limit=120)
 
 
 def first_blocking_reason(record: dict[str, object]) -> str:
@@ -244,6 +239,25 @@ def first_blocking_reason(record: dict[str, object]) -> str:
     if blocking:
         return blocking[0]
     return "gate failed"
+
+
+def evidence_record_ids(ledger: list[dict[str, object]]) -> dict[int, str]:
+    ids: dict[int, str] = {}
+    verification_count = 0
+    review_count = 0
+    for record in ledger:
+        record_type = record.get("type")
+        if record_type == "verification":
+            if record.get("kind") in REVIEW_KINDS:
+                review_count += 1
+                ids[id(record)] = f"R{review_count}"
+            else:
+                verification_count += 1
+                ids[id(record)] = f"V{verification_count}"
+        elif record_type == "review":
+            review_count += 1
+            ids[id(record)] = f"R{review_count}"
+    return ids
 
 
 def graph_record_nodes(
@@ -254,31 +268,30 @@ def graph_record_nodes(
     list[dict[str, object]],
     dict[str, str],
 ]:
+    record_ids = evidence_record_ids(ledger)
     verification_nodes: list[dict[str, object]] = []
     review_nodes: list[dict[str, object]] = []
     consensus_nodes: list[dict[str, object]] = []
     verification_ref_nodes: dict[str, str] = {}
-    verification_count = 0
-    review_count = 0
     consensus_count = 0
 
     for record in ledger:
         record_type = record.get("type")
         if record_type == "verification":
+            node_id = record_ids.get(id(record))
+            if not node_id:
+                continue
             if record.get("kind") in REVIEW_KINDS:
-                review_count += 1
-                node_id = f"R{review_count}"
                 review_nodes.append({"id": node_id, "record": record, "typed": False})
             else:
-                verification_count += 1
-                node_id = f"V{verification_count}"
                 verification_nodes.append({"id": node_id, "record": record})
             verification_id = text_field(record.get("id"))
             if verification_id:
                 verification_ref_nodes[verification_id] = node_id
         elif record_type == "review":
-            review_count += 1
-            review_nodes.append({"id": f"R{review_count}", "record": record, "typed": True})
+            node_id = record_ids.get(id(record))
+            if node_id:
+                review_nodes.append({"id": node_id, "record": record, "typed": True})
         elif record_type == "consensus":
             consensus_count += 1
             consensus_nodes.append({"id": f"C{consensus_count}", "record": record})
@@ -319,6 +332,56 @@ def add_review_edges(
     owner = task_owners.get(task_id)
     if result == "failed" and owner:
         add_edge(target, "-->", "blocked: fix required", agent_node_id(owner, node_ids))
+
+
+def evidence_task_refs(record: dict[str, object], *, include_covers_tasks: bool) -> list[str]:
+    refs: list[str] = []
+    task_id = text_field(record.get("task_id"))
+    if task_id:
+        refs.append(task_id)
+    if include_covers_tasks:
+        refs.extend(string_list(record.get("covers_tasks")))
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for ref in refs:
+        if ref in seen:
+            continue
+        seen.add(ref)
+        deduped.append(ref)
+    return deduped
+
+
+def class_suffix(class_name: str) -> str:
+    return f":::{class_name}" if class_name else ""
+
+
+def task_status_class(status: object) -> str:
+    status_text = text_field(status)
+    if status_text == "complete":
+        return "ok"
+    if status_text in {"failed", "blocked"}:
+        return "bad"
+    return ""
+
+
+def evidence_result_class(result: object) -> str:
+    result_text = text_field(result)
+    if result_text == "passed":
+        return "ok"
+    if result_text == "failed":
+        return "bad"
+    if result_text in {"skipped", "inconclusive", "needs_human_review"}:
+        return "attention"
+    return ""
+
+
+def consensus_outcome_class(outcome: object) -> str:
+    outcome_text = text_field(outcome)
+    if outcome_text in {"consensus", "rerun_passed"}:
+        return "ok"
+    if outcome_text == "rejected":
+        return "bad"
+    return "attention"
 
 
 def render_orchestration_graph(
@@ -376,7 +439,19 @@ def render_orchestration_graph(
         if fallback:
             fallback_edges.append(fallback)
 
+    def add_subject_edges(source: str, refs: list[str], label: str) -> None:
+        for ref in refs:
+            target = task_nodes.get(ref)
+            if target:
+                add_edge(source, "-.->", label, target)
+
     evidence_node_ids = [node["id"] for node in verification_nodes + review_nodes + consensus_nodes]
+    used_classes: set[str] = set()
+
+    def node_class(class_name: str) -> str:
+        if class_name:
+            used_classes.add(class_name)
+        return class_suffix(class_name)
 
     lines.extend(["```mermaid", "flowchart TD"])
     lines.append(f'  A_CLAUDE{{{{"{mermaid_node_label(["Claude Code", "planner · orchestrator"])}"}}}}')
@@ -398,19 +473,30 @@ def render_orchestration_graph(
         task_id = text_field(task.get("id"))
         if not task_id:
             continue
-        lines.append(f'  {task_nodes[task_id]}["{task_node_label(task)}"]')
+        status_class = node_class(task_status_class(task.get("status")))
+        lines.append(f'  {task_nodes[task_id]}["{task_node_label(task)}"]{status_class}')
     for node in verification_nodes:
-        lines.append(f'  {node["id"]}[/"{verification_label(node["record"])}"/]')
+        record = node["record"]
+        result_class = node_class(evidence_result_class(record.get("result")))
+        lines.append(
+            f'  {node["id"]}[/"{verification_label(record, evidence_id=str(node["id"]))}"/]{result_class}'
+        )
     for node in review_nodes:
-        lines.append(f'  {node["id"]}[/"{review_label(node["record"], typed=bool(node["typed"]))}"/]')
+        record = node["record"]
+        result_class = node_class(evidence_result_class(record.get("result")))
+        lines.append(
+            f'  {node["id"]}[/"{review_label(record, typed=bool(node["typed"]), evidence_id=str(node["id"]))}"/]{result_class}'
+        )
     for node in consensus_nodes:
         outcome = graph_consensus_outcome(node["record"])
-        lines.append(f'  {node["id"]}{{"consensus: {mermaid_label(outcome)}"}}')
+        outcome_class = node_class(consensus_outcome_class(outcome))
+        lines.append(f'  {node["id"]}{{"consensus: {mermaid_label(outcome)}"}}{outcome_class}')
     if gate_record:
         ok = gate_result_ok(gate_record) is True
-        lines.append(f'  G{{"gate: {"ok" if ok else "blocked"}"}}')
+        gate_class = node_class("ok" if ok else "bad")
+        lines.append(f'  G{{"gate: {"ok" if ok else "blocked"}"}}{gate_class}')
         if ok:
-            lines.append('  DONE((("run accepted")))')
+            lines.append(f'  DONE((("run accepted"))){node_class("ok")}')
 
     for task in tasks:
         task_id = text_field(task.get("id"))
@@ -473,14 +559,29 @@ def render_orchestration_graph(
                     str(verification_node["id"]),
                     f"verification {kind} {result}",
                 )
+                add_subject_edges(
+                    str(verification_node["id"]),
+                    evidence_task_refs(record, include_covers_tasks=True),
+                    "covers",
+                )
                 continue
             review_node = review_node_by_record.get(id(record))
             if review_node:
                 add_review_edges(review_node, node_ids, task_owners, add_edge)
+                add_subject_edges(
+                    str(review_node["id"]),
+                    evidence_task_refs(record, include_covers_tasks=True),
+                    "reviews",
+                )
         elif record_type == "review":
             review_node = review_node_by_record.get(id(record))
             if review_node:
                 add_review_edges(review_node, node_ids, task_owners, add_edge)
+                add_subject_edges(
+                    str(review_node["id"]),
+                    evidence_task_refs(record, include_covers_tasks=False),
+                    "reviews",
+                )
         elif record_type == "consensus":
             node = consensus_node_by_record.get(id(record))
             if not node:
@@ -514,6 +615,14 @@ def render_orchestration_graph(
             add_edge("G", "-->", f"blocked: {reason}", "A_CLAUDE", f"gate blocked: {reason}")
 
     lines.extend(edge_lines)
+    class_defs = {
+        "ok": "classDef ok fill:#dcefdc,stroke:#0ca30c,color:#10320f",
+        "attention": "classDef attention fill:#fdeecd,stroke:#b97b00,color:#3d2b00",
+        "bad": "classDef bad fill:#f8d7d7,stroke:#d03b3b,color:#3f0f0f",
+    }
+    for class_name in ("ok", "attention", "bad"):
+        if class_name in used_classes:
+            lines.append(f"  {class_defs[class_name]}")
     lines.extend(["```", ""])
     lines.append("Flow: " + (" · ".join(fallback_edges) if fallback_edges else "no protocol edges recorded"))
     lines.append("")

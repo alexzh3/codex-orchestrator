@@ -89,13 +89,13 @@ flowchart TD
   A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}
   A_CODEX_EXEC_A[["codex-exec-a<br/>exec · complete"]]
   A_CODEX_IDE_REVIEW[["codex-ide-review<br/>ide · idle"]]
-  T001["T001: Create replay case descriptor (complete)"]
-  T005["T005: Refresh golden report after renderer change (blocked)"]
-  V1[/"test: failed — Replay smoke test failed on stale parser war…"/]
-  R1[/"manual_review: passed — Final Codex review passed with the…"/]
-  R2[/"review diff: passed — reviewer: claude — Typed review passe…"/]
-  C1{"consensus: user_action_required"}
-  G{"gate: blocked"}
+  T001["T001: Create replay case descriptor (complete)"]:::ok
+  T005["T005: Refresh golden report after ren… (blocked)"]:::bad
+  V1[/"V1 · test: failed"/]:::bad
+  R1[/"R1 · manual_review review: passed<br/>run-wide"/]:::ok
+  R2[/"R2 · diff review: passed<br/>claude"/]:::ok
+  C1{"consensus: user_action_required"}:::attention
+  G{"gate: blocked"}:::bad
   A_CLAUDE -->|"task_created"| T001
   A_CLAUDE -->|"task_created"| T005
   A_CLAUDE -->|"dispatch_started: T001 (fresh)"| A_CODEX_EXEC_A
@@ -105,12 +105,16 @@ flowchart TD
   A_CLAUDE ==>|"add_verification"| V1
   A_CLAUDE -->|"review"| R1
   A_CLAUDE -->|"review"| R2
+  R2 -.->|"reviews"| T005
   A_CLAUDE -->|"consensus"| C1
   V1 --> G
   R1 --> G
   R2 --> G
   C1 --> G
   G -->|"blocked: failed verification remains"| A_CLAUDE
+  classDef ok fill:#dcefdc,stroke:#0ca30c,color:#10320f
+  classDef attention fill:#fdeecd,stroke:#b97b00,color:#3d2b00
+  classDef bad fill:#f8d7d7,stroke:#d03b3b,color:#3f0f0f
 ```
 
 Flow: dispatch T001 (fresh) · dispatch T005 (reuse) · verification test failed · review manual_review passed · review diff passed · consensus user_action_required · gate blocked: failed verification remains
@@ -130,7 +134,7 @@ Flow: dispatch T001 (fresh) · dispatch T005 (reuse) · verification test failed
 
 ### Verification Checks
 
-- **Test** (failed)
+- **V1 — Test** (failed)
   - Summary: Replay smoke test failed on stale parser warning assertion
   - Command: `python3 -m unittest tests/test_parse.py`
   - Notes: Failure is retained to verify unresolved risks are surfaced in the report.
@@ -141,7 +145,7 @@ Flow: dispatch T001 (fresh) · dispatch T005 (reuse) · verification test failed
 
 ### Reviews
 
-- **Manual / agent review** (passed)
+- **R1 — Manual / agent review** (passed)
   - Summary: Final Codex review passed with the failed verification documented
   - Command: `codex exec review --fixture long-run-001`
   - Notes: The failed verification is documented as an unresolved risk and should block unattended acceptance.
@@ -149,7 +153,7 @@ Flow: dispatch T001 (fresh) · dispatch T005 (reuse) · verification test failed
   - Artifacts:
     - `prompts/final-review.md`
     - `logs/final-review.jsonl`
-- **Diff Review** (passed)
+- **R2 — Diff Review** (passed)
   - Reviewer: claude
   - Summary: Typed review passed after checking the refreshed report output.
   - Command: `codex exec review --base main`
