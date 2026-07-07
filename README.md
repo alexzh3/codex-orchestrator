@@ -172,12 +172,12 @@ See `docs/consensus-and-reviews.md` for the full details.
 
 ## Orchestration graph
 
-Generated reports include an agent-centric orchestration graph that traces tasks, Codex sessions,
-verification evidence, reviews, consensus, and the final gate. Agent nodes show the model/effort
-when recorded plus the harness mode and status. Evidence that affects acceptance is a node because
-it may need to be inspected, cited, cleared, or replayed; consensus is shown as a resolution gate,
-not an agent. See [`docs/orchestration-graph.md`](./docs/orchestration-graph.md) for the grammar and
-canonical architecture diagram.
+Generated reports include a session-centric orchestration graph that traces tasks, Codex sessions,
+verification evidence, reviews, consensus, and the final gate. Session nodes show the model/effort
+when recorded plus the harness mode and status, and a fresh restart of an agent becomes a new node.
+Evidence that affects acceptance is a node because it may need to be inspected, cited, cleared, or
+replayed; consensus is shown as a resolution gate, not an agent. See
+[`docs/orchestration-graph.md`](./docs/orchestration-graph.md) for the grammar and a worked example.
 
 ---
 
