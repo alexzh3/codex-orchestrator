@@ -234,7 +234,7 @@ are described by `schemas/codex-orchestrator.schema.json`.
 
 The current public benchmark is an OpenThoughts-TBLite / Terminal-Bench-style comparison on the 10 hardest tasks by published success rate. Each cell is one run per task/configuration, so the result is directional rather than statistical.
 
-Summary (figures for `codex-orchestrator` v0.4.1, the current `main`):
+Summary (figures for `codex-orchestrator` v0.4.1):
 
 | Regime               | Solo Claude (Opus 4.8, max reasoning) | Solo Codex (gpt-5.5, xhigh) | `codex-orchestrator` |
 | -------------------- | ------------------------------------: | --------------------------: | -------------------: |
