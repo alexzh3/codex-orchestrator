@@ -85,8 +85,6 @@ class TaskProtocolTests(unittest.TestCase):
                 "fresh_session": True,
                 "reuse_reason": "same task follow-up",
                 "worktree": "/tmp/task-a",
-                "model": "gpt-5.4",
-                "reasoning_effort": "high",
             },
             {"type": "dispatch_completed", "task_id": "task-a", "agent": "codex-a", "status": "complete"},
             {
@@ -269,7 +267,6 @@ class TaskProtocolTests(unittest.TestCase):
         self.assertEqual(verification[0]["task_id"], "task-a")
         self.assertEqual(verification[0]["scope"], "task")
 
-        self.run_cli("report", "--repo", str(self.repo), "--run-id", "run")
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
         self.assertNotEqual(result.returncode, 0)

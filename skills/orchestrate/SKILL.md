@@ -18,13 +18,13 @@ needed, captures each JSONL stream under the run directory, and monitors the str
 
 Use this skill for focused orchestration phases: dispatch, monitoring, review, consensus, handoff,
 or compute gating. Use `${CLAUDE_PLUGIN_ROOT}/skills/workflow/SKILL.md` only for the full end-to-end
-run, and `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` only to regenerate `report.md` from recorded
-evidence.
+run, and `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` only to author the final `report.md` after
+gate and validation from recorded evidence.
 
 This skill is prompt-directed: use the user prompt and recorded run state as scope, and do not create
 a full execution plan for focused monitoring, review, consensus, handoff, or compute-gating phases.
 Monitoring, review, consensus, handoff, compute gating, and ledger initialization are orchestration
-phases, not separate slash commands.
+phases, not separate commands.
 
 If the user explicitly asks only to open a ledger, run the internal init helper and stop:
 
@@ -47,10 +47,9 @@ Use a durable run ledger for orchestration state:
 ```
 
 Keep durable facts in these files, not only in model context. Runtime records follow
-`schemas/codex-orchestrator.schema.json`. Claude authors the `Summary` and `Changes` sections of
-`report.md` after inspecting the diff, ledger, prompts, logs, and verification; the report helper
-preserves those sections and regenerates `Consensus`, `Risks / Follow-ups`, `Reproducibility`,
-`Orchestration Graph`, and `Gate Result`.
+`schemas/codex-orchestrator.schema.json`. After gate and doctor complete, Claude authors all of
+`report.md` from the final diff, ledger, prompts, logs, artifacts, verification, consensus, and
+latest `gate_result`. No Python report renderer fills or rewrites report sections.
 
 Useful helpers:
 
@@ -69,7 +68,6 @@ Useful helpers:
   changes.
 - `doctor`: run post-gate consistency checks for the run ledger and artifacts.
 - `worktree`: create or inspect isolated worktrees for concurrent scoped agents.
-- `report --strict`: regenerate the report and fail when required evidence is missing.
 - `benchmark`: run deterministic or configured benchmark suites for the recorded plugin ref.
 
 Use `append-event` only as an advanced escape hatch for custom material facts that do not yet have a
@@ -105,9 +103,9 @@ prompts, rereviews, and handoffs, and reference both paths from the relevant led
    in `references/monitoring.md`. Do not edit overlapping implementation files while a Codex agent
    owns them; wait until Codex yields, completes, or a serialized handoff is recorded.
 8. After Codex yields or completes, review artifacts and run the consensus-gated review loop.
-9. Record verification evidence, consensus decisions, and final report state durably.
-10. Generate or update `report.md` for handoff or approval, then run `gate`, rerun
-    `report --strict` so the latest `gate_result` is rendered, and finish with `doctor`.
+9. Record verification evidence, consensus decisions, and final run state durably.
+10. Run `gate`, finish ledger and artifact validation with `doctor`, and only then use the report
+    skill to have Claude author the complete final `report.md` for handoff or approval.
 
 ## Reference Map
 

@@ -26,26 +26,13 @@ def initial_state(repo: Path, run_id: str) -> dict[str, object]:
     }
 
 
-def initial_report_text() -> str:
-    return (
-        "# Report\n\n"
-        "## Summary\n\n"
-        "## Reproducibility\n\n"
-        "## Changes\n\n"
-        "## Orchestration Graph\n\n"
-        "## Consensus\n\n"
-        "## Gate Result\n\n"
-        "## Risks / Follow-ups\n\n"
-    )
-
-
 def ensure_run_scaffold(repo: Path, run_id: str, *, force: bool = False) -> tuple[Path, dict[str, bool]]:
     directory = repo / ".codex-orchestrator" / "runs" / run_id
     directory.mkdir(parents=True, exist_ok=True)
     created = {
         "state.json": write_json(state_path(directory), initial_state(repo, run_id), force=force),
         "ledger.jsonl": write_text(ledger_path(directory), "", force=force),
-        "report.md": write_text(report_path(directory), initial_report_text(), force=force),
+        "report.md": write_text(report_path(directory), "", force=force),
     }
     for name in RUN_SUBDIRS:
         subdir = run_subdir(directory, name)
@@ -64,6 +51,11 @@ def ledger_records(directory: Path, record_type: str | None = None) -> list[dict
 
 def records_of_type(records: list[dict[str, object]], record_type: str) -> list[dict[str, object]]:
     return [record for record in records if record.get("type") == record_type]
+
+
+def latest_record(records: list[dict[str, object]], record_type: str) -> dict[str, object] | None:
+    matching = records_of_type(records, record_type)
+    return matching[-1] if matching else None
 
 
 def latest_verification(directory: Path) -> dict[str, object] | None:

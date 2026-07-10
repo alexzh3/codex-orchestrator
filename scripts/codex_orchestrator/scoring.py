@@ -1,47 +1,30 @@
 from __future__ import annotations
 
-from .report import (
-    is_final_review_verification,
-    prompt_log_pairs_complete as core_prompt_log_pairs_complete,
-    report_completeness_score,
-    score_total,
-)
+FINAL_REVIEW_KINDS = {"review", "manual_review", "git_diff"}
 
 
-def report_score(state: dict[str, object], ledger: list[dict[str, object]]) -> float:
-    """Return the core deterministic report completeness score."""
-    return score_total(report_completeness_score(state, ledger))
+def is_final_review_verification(record: dict[str, object]) -> bool:
+    return record.get("type") == "verification" and record.get("kind") in FINAL_REVIEW_KINDS
 
 
-def task_count(ledger: list[dict[str, object]]) -> int:
-    return sum(1 for record in ledger if record.get("type") == "task")
-
-
-def verification_coverage(_state: dict[str, object], ledger: list[dict[str, object]]) -> float:
-    verifications = [record for record in ledger if record.get("type") == "verification"]
-    if not verifications:
-        return 0.0
+def prompt_log_pair_ratio(ledger: list[dict[str, object]]) -> float:
+    dispatches = [
+        record
+        for record in ledger
+        if record.get("type") in {"dispatch_started", "session_dispatch"}
+    ]
+    if not dispatches:
+        return 1.0
     complete = sum(
         1
-        for record in verifications
-        if all(record.get(field) for field in ("kind", "result", "recorded_at", "summary"))
+        for record in dispatches
+        if isinstance(record.get("prompt_path"), str)
+        and record.get("prompt_path")
+        and isinstance(record.get("log_path"), str)
+        and record.get("log_path")
     )
-    return round(complete / len(verifications), 4)
+    return complete / len(dispatches)
 
 
-def review_coverage(_state: dict[str, object], ledger: list[dict[str, object]]) -> float:
-    return 1.0 if any(is_final_review_verification(record) for record in ledger) else 0.0
-
-
-def prompt_log_pair_stub(_state: dict[str, object], ledger: list[dict[str, object]]) -> float:
-    return 1.0 if core_prompt_log_pairs_complete(ledger) else 0.0
-
-
-def coverage_metrics(state: dict[str, object], ledger: list[dict[str, object]]) -> dict[str, object]:
-    return {
-        "verification_coverage": verification_coverage(state, ledger),
-        "review_coverage": review_coverage(state, ledger),
-        "task_count": task_count(ledger),
-        "prompt_log_pair_coverage": prompt_log_pair_stub(state, ledger),
-        "prompt_log_pairs_complete": core_prompt_log_pairs_complete(ledger),
-    }
+def prompt_log_pairs_complete(ledger: list[dict[str, object]]) -> bool:
+    return prompt_log_pair_ratio(ledger) == 1.0

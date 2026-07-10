@@ -40,11 +40,13 @@ Default typed protocol workflow:
 11. Resolve failed checks and blocking findings with basis-bearing `consensus` records. Plain
     agreement clears only command-less convention items; failed executable or acceptance checks need
     linked rerun evidence or an explicit valid override.
-12. Run `report --strict` to render evidence and catch missing required protocol records.
-13. Run `gate`; it must block missing task-scoped verification, file-claim conflicts, and unclaimed
+12. Run `gate`; it must block missing task-scoped verification, file-claim conflicts, and unclaimed
     changes outside a task allowlist.
-14. Run `report --strict` again so `report.md` includes the latest `gate_result`.
-15. Run `doctor` before handoff to catch ledger, prompt, log, and artifact inconsistencies.
+13. Run `doctor` to catch ledger, prompt, log, and artifact inconsistencies. Resolve fixable issues
+    and rerun gate when the ledger changes.
+14. When no further run work is planned, use `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` to have
+    Claude author the complete final report from the ledger, latest `gate_result`, validation output,
+    logs, artifacts, and repository diff.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for the full operating contract and
 concrete procedures.

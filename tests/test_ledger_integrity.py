@@ -40,9 +40,6 @@ class LedgerIntegrityTests(unittest.TestCase):
     def ledger_dir(self) -> Path:
         return self.repo / ".codex-orchestrator" / "runs" / "run"
 
-    def report_section(self, report: str, heading: str) -> str:
-        return report.split(heading, 1)[1].split("\n## ", 1)[0]
-
     def test_malformed_ledger_line_surfaces_warning_and_valid_records_remain(self) -> None:
         verification = {
             "type": "verification",
@@ -82,13 +79,6 @@ class LedgerIntegrityTests(unittest.TestCase):
         self.assertIn("Ledger contains 1 malformed JSON line(s).", warnings_text)
         self.assertIn("ledger.jsonl line 2", warnings_text)
 
-        self.run_cli("report", "--repo", str(self.repo), "--run-id", "run")
-        report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
-        risks_section = self.report_section(report, "## Risks / Follow-ups")
-        changes_section = self.report_section(report, "## Changes")
-        self.assertIn("- Ledger contains 1 malformed JSON line(s).", risks_section)
-        self.assertIn("- ledger.jsonl line 2:", risks_section)
-        self.assertIn("Valid task survived malformed ledger line", changes_section)
 
 
 if __name__ == "__main__":

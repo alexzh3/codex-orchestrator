@@ -11,9 +11,9 @@ from .events import *
 from .gate import *
 from .ledger import *
 from .prompts import *
-from .report import *
 from .resolution import computed_command_hash
 from .runmeta import *
+from .scoring import *
 from .store import *
 
 
@@ -168,7 +168,7 @@ def command_gate(args: argparse.Namespace) -> int:
     directory = run_dir(args.repo, args.run_id)
     state = load_json(state_path(directory))
     records, diagnostics = read_jsonl_with_warnings(ledger_path(directory))
-    blocking = gate_blocking_reasons(directory, records, diagnostics)
+    blocking = gate_blocking_reasons(records, diagnostics)
     warnings = low_confidence_warnings(state) + gate_warning_reasons(records)
     payload = {
         "ok": not blocking,
@@ -186,7 +186,7 @@ def command_doctor(args: argparse.Namespace) -> int:
     directory = run_dir(args.repo, args.run_id)
     state = load_json(state_path(directory))
     records, diagnostics = read_jsonl_with_warnings(ledger_path(directory))
-    issues = doctor_issues(directory, state, records, diagnostics)
+    issues = doctor_issues(state, records, diagnostics)
     print_json({"ok": not issues, "issues": issues})
     return 0 if not issues else 1
 
@@ -238,28 +238,6 @@ def command_worktree(args: argparse.Namespace) -> int:
     return 0
 
 
-def command_report(args: argparse.Namespace) -> int:
-    directory = run_dir(args.repo, args.run_id)
-    state = load_json(state_path(directory))
-    existing_report = report_path(directory).read_text(encoding="utf-8") if report_path(directory).exists() else ""
-    ledger, ledger_diagnostics = read_jsonl_with_warnings(ledger_path(directory))
-    path = report_path(directory)
-    report = render_report(
-        state=state,
-        ledger=ledger,
-        existing_report=existing_report,
-        warnings=collect_warnings(state, ledger_diagnostics),
-        generated_at=utc_now(),
-    )
-    atomic_write_text(path, report)
-    missing = strict_report_missing_evidence(state=state, ledger=ledger, report=report) if args.strict else []
-    payload = {"ok": not missing, "run_id": args.run_id, "report_path": str(path)}
-    if missing:
-        payload["missing"] = missing
-    print_json(payload)
-    return 1 if missing else 0
-
-
 def command_render_prompt(args: argparse.Namespace) -> int:
     directory = run_dir(args.repo, args.run_id)
     load_json(state_path(directory))
@@ -285,7 +263,6 @@ def command_benchmark(args: argparse.Namespace) -> int:
     repo = repo_root(args.repo)
     sessions = state.get("sessions") if isinstance(state.get("sessions"), list) else []
     gate_passed = latest_gate_passed(ledger)
-    score = report_completeness_score(state, ledger)
     plugin_checkout = plugin_root()
     passed = args.passed if args.passed is not UNSET else gate_passed
     payload: dict[str, object] = {
@@ -302,7 +279,6 @@ def command_benchmark(args: argparse.Namespace) -> int:
         "prompt_log_pairs_complete": prompt_log_pairs_complete(ledger),
         "ledger_errors": len(ledger_diagnostics),
         "gate_passed": gate_passed,
-        "report_score": score["total"],
         "external_score": None,
     }
     validate_benchmark_result(payload)
@@ -400,12 +376,6 @@ def build_parser() -> argparse.ArgumentParser:
     worktree_parser.add_argument("--thread-id", help="Thread id if already known.")
     worktree_parser.add_argument("--mode", choices=("ide", "exec"), default="exec")
     worktree_parser.set_defaults(func=command_worktree)
-
-    report_parser = subparsers.add_parser("report", help="Generate report.md.")
-    report_parser.add_argument("--repo", default=".", help="Repository root.")
-    report_parser.add_argument("--run-id", required=True, type=run_id_type)
-    report_parser.add_argument("--strict", action="store_true", help="Fail if required report evidence is missing.")
-    report_parser.set_defaults(func=command_report)
 
     prompt_parser = subparsers.add_parser("render-prompt", help="Render a Codex task or review prompt.")
     prompt_parser.add_argument("--repo", default=".", help="Repository root.")

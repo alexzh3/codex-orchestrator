@@ -6,10 +6,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import call, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from codex_orchestrator.runmeta import build_run_meta  # noqa: E402
 
 
 def git_head(path: Path) -> str | None:
@@ -100,7 +104,7 @@ class RunMetaTests(unittest.TestCase):
         self.assertIsNotNone(head)
         return str(head)
 
-    def test_ensure_run_writes_one_run_meta_and_report_reproducibility(self) -> None:
+    def test_ensure_run_writes_one_run_meta(self) -> None:
         first = json.loads(
             self.run_cli(
                 "ensure-run",
@@ -149,17 +153,20 @@ class RunMetaTests(unittest.TestCase):
         self.assertEqual(run_meta["benchmark_case_id"], "case-b")
         self.assertIsInstance(run_meta["config"], dict)
 
-        self.run_cli("report", "--repo", str(self.repo), "--run-id", "run")
-        report = (self.ledger_dir() / "report.md").read_text(encoding="utf-8")
-        self.assertIn("## Reproducibility", report)
-        self.assertIn(f"- Plugin Version: `{plugin_root_version()}`", report)
-        self.assertIn("- Plugin Git SHA: `plugin-sha-b`", report)
-        self.assertIn("- Protocol Version: `1.0`", report)
-        self.assertIn("- Schema Version: `1.0`", report)
-        self.assertIn("- Benchmark Suite: `suite-a`", report)
-        self.assertIn("- Benchmark Case: `case-b`", report)
-        self.assertNotIn("### Report Completeness", report)
-        self.assertNotIn("- Report Completeness:", report)
+    def test_build_run_meta_detects_claude_and_codex_versions(self) -> None:
+        versions = {
+            "claude": "Claude Code 2.1.0",
+            "codex": "codex-cli 1.4.0",
+        }
+        with patch(
+            "codex_orchestrator.runmeta.detect_command_version",
+            side_effect=lambda command: versions[command],
+        ) as detect:
+            run_meta = build_run_meta(repo=self.repo, run_id="run")
+
+        self.assertEqual(run_meta["claude_code_version"], versions["claude"])
+        self.assertEqual(run_meta["codex_cli_version"], versions["codex"])
+        self.assertEqual(detect.call_args_list, [call("claude"), call("codex")])
 
     def test_ensure_run_uses_plugin_root_metadata_not_target_repo(self) -> None:
         target_head = self.init_target_git_repo()

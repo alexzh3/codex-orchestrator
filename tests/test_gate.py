@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
@@ -69,13 +67,6 @@ class GateDoctorTests(unittest.TestCase):
     def append_raw_event(self, event: dict[str, object]) -> None:
         with self.ledger_path().open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, sort_keys=True) + "\n")
-
-    def refresh_report_mtime(self) -> None:
-        future = time.time() + 60
-        os.utime(self.report_path(), (future, future))
-
-    def stale_report_mtime(self) -> None:
-        os.utime(self.report_path(), (1, 1))
 
     def add_task(self, *, verification_required: list[str] | None = None) -> None:
         event: dict[str, object] = {
@@ -153,7 +144,6 @@ class GateDoctorTests(unittest.TestCase):
         final_review: bool = True,
         test_verification: bool = True,
         verification_required: list[str] | None = None,
-        fresh_report: bool = True,
     ) -> None:
         self.init_run()
         self.add_task(verification_required=verification_required)
@@ -164,8 +154,6 @@ class GateDoctorTests(unittest.TestCase):
         if final_review:
             self.add_final_review()
         self.append_event({"type": "run_closed", "status": "complete", "summary": "Run is ready."})
-        if fresh_report:
-            self.refresh_report_mtime()
 
     def assert_blocking_contains(self, payload: dict[str, object], needle: str) -> None:
         blocking = payload.get("blocking")
@@ -216,7 +204,6 @@ class GateDoctorTests(unittest.TestCase):
 
     def finish_run(self) -> None:
         self.append_event({"type": "run_closed", "status": "complete", "summary": "Run is ready."})
-        self.refresh_report_mtime()
 
     def start_gate_ready_run(self) -> None:
         self.init_run()
@@ -243,7 +230,7 @@ class GateDoctorTests(unittest.TestCase):
         self.assertEqual(payload["warnings"], [])
         self.assert_gate_result_appended(ok=True)
 
-    def test_gate_second_run_ignores_prior_gate_result_for_report_freshness(self) -> None:
+    def test_gate_can_run_repeatedly_before_report_authoring(self) -> None:
         self.make_complete_run(verification_required=[TEST_COMMAND])
         self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
 
@@ -252,14 +239,13 @@ class GateDoctorTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0)
         self.assertTrue(payload["ok"])
-        self.assertFalse(any("stale-report" in item for item in payload["blocking"]))
+        self.assertEqual(payload["blocking"], [])
 
     def test_gate_blocks_active_task_even_after_run_closed(self) -> None:
         self.init_run()
         self.add_active_task()
         self.add_final_review()
         self.append_event({"type": "run_closed", "status": "complete", "summary": "Closed too early."})
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -325,7 +311,6 @@ class GateDoctorTests(unittest.TestCase):
         )
         self.add_final_review()
         self.append_event({"type": "run_closed", "status": "complete", "summary": "Run is ready."})
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -344,7 +329,6 @@ class GateDoctorTests(unittest.TestCase):
                 "covers_tasks": ["task-b"],
             }
         )
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
         payload = json.loads(result.stdout)
@@ -371,7 +355,6 @@ class GateDoctorTests(unittest.TestCase):
             }
         )
         self.append_event({"type": "run_closed", "status": "complete", "summary": "Run is ready."})
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -398,7 +381,6 @@ class GateDoctorTests(unittest.TestCase):
             }
         )
         self.append_event({"type": "run_closed", "status": "complete", "summary": "Run is ready."})
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -532,7 +514,6 @@ class GateDoctorTests(unittest.TestCase):
                 "evidence_refs": ["verification:V2"],
             }
         )
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
         payload = json.loads(result.stdout)
@@ -951,7 +932,6 @@ class GateDoctorTests(unittest.TestCase):
         self.make_complete_run(verification_required=[TEST_COMMAND])
         with self.ledger_path().open("a", encoding="utf-8") as handle:
             handle.write("{not valid json\n")
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -961,16 +941,16 @@ class GateDoctorTests(unittest.TestCase):
         self.assert_blocking_contains(payload, "malformed-ledger")
         self.assert_gate_result_appended(ok=False)
 
-    def test_gate_blocks_stale_report(self) -> None:
-        self.make_complete_run(verification_required=[TEST_COMMAND], fresh_report=False)
-        self.stale_report_mtime()
+    def test_gate_does_not_require_report_before_final_authoring(self) -> None:
+        self.make_complete_run(verification_required=[TEST_COMMAND])
+        self.report_path().unlink()
 
-        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
+        result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
         payload = json.loads(result.stdout)
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(payload["ok"])
-        self.assert_blocking_contains(payload, "stale-report")
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["blocking"], [])
 
     def test_gate_blocks_unresolved_user_action_consensus(self) -> None:
         self.make_complete_run(verification_required=[TEST_COMMAND])
@@ -985,7 +965,6 @@ class GateDoctorTests(unittest.TestCase):
                 "evidence": ["Claude requested a decision."],
             }
         )
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -1016,7 +995,6 @@ class GateDoctorTests(unittest.TestCase):
                 "summary": "Task-scoped review passed.",
             }
         )
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -1034,7 +1012,6 @@ class GateDoctorTests(unittest.TestCase):
                 "summary": "Run-wide final review passed.",
             }
         )
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
         payload = json.loads(result.stdout)
@@ -1056,7 +1033,6 @@ class GateDoctorTests(unittest.TestCase):
                 "findings": [],
             }
         )
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -1077,7 +1053,6 @@ class GateDoctorTests(unittest.TestCase):
                 "findings": [],
             }
         )
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -1087,7 +1062,6 @@ class GateDoctorTests(unittest.TestCase):
         self.assert_blocking_contains(payload, "missing-final-review")
 
         self.add_final_review()
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
         payload = json.loads(result.stdout)
@@ -1114,7 +1088,6 @@ class GateDoctorTests(unittest.TestCase):
                 "allow": ["scripts/codex_orch.py"],
             }
         )
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -1135,7 +1108,6 @@ class GateDoctorTests(unittest.TestCase):
                 "files_changed": ["docs/outside.md"],
             }
         )
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -1165,7 +1137,6 @@ class GateDoctorTests(unittest.TestCase):
                 "files_changed": ["README.md"],
             }
         )
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=False)
         payload = json.loads(result.stdout)
@@ -1194,7 +1165,6 @@ class GateDoctorTests(unittest.TestCase):
                 "files_changed": ["README.md"],
             }
         )
-        self.refresh_report_mtime()
 
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run")
         payload = json.loads(result.stdout)
@@ -1217,7 +1187,6 @@ class GateDoctorTests(unittest.TestCase):
                 "evidence_refs": ["finding:F404", "also-bad"],
             }
         )
-        self.refresh_report_mtime()
 
         payload = self.run_doctor_unchanged()
         issues = payload["issues"]
@@ -1291,7 +1260,6 @@ class GateDoctorTests(unittest.TestCase):
                 "evidence_refs": ["verification:V3"],
             }
         )
-        self.refresh_report_mtime()
 
         payload = self.run_doctor_unchanged()
         issues = payload["issues"]
@@ -1328,7 +1296,6 @@ class GateDoctorTests(unittest.TestCase):
                 "clears": ["verification:V1"],
             }
         )
-        self.refresh_report_mtime()
 
         payload = self.run_doctor_unchanged()
 
@@ -1350,7 +1317,6 @@ class GateDoctorTests(unittest.TestCase):
             command=f"{TEST_COMMAND} --failfast",
             command_hash=spoofed_hash,
         )
-        self.refresh_report_mtime()
 
         payload = self.run_doctor_unchanged()
 
@@ -1383,7 +1349,6 @@ class GateDoctorTests(unittest.TestCase):
                 "prompt_path": "prompts/task-a.md",
             }
         )
-        self.refresh_report_mtime()
         before = self.ledger_path().read_text(encoding="utf-8")
 
         result = self.run_cli("doctor", "--repo", str(self.repo), "--run-id", "run", check=False)
@@ -1399,7 +1364,6 @@ class GateDoctorTests(unittest.TestCase):
     def test_doctor_allows_legacy_change_events(self) -> None:
         self.init_run()
         self.append_event({"type": "change", "summary": "Legacy change evidence."})
-        self.refresh_report_mtime()
 
         result = self.run_cli("doctor", "--repo", str(self.repo), "--run-id", "run")
         payload = json.loads(result.stdout)

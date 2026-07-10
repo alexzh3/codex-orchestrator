@@ -102,9 +102,4 @@ Combined Claude+Codex tokens per task (solo = single model):
 | 10 | `token-auth-websocket` | 5.41M | 4.88M | 1.44M | 798K |
 
 Full raw artifacts, the intermediate versions, aggregation tooling, and run instructions live in the
-[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repo. The
-deterministic replay self-test that remains in this repo is part of the unittest suite:
-
-```bash
-python3 -m unittest tests.test_long_workflow_report
-```
+[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repo.

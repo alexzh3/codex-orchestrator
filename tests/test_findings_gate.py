@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
@@ -44,15 +42,8 @@ class FindingsGateTests(unittest.TestCase):
     def ledger_path(self) -> Path:
         return self.ledger_dir() / "ledger.jsonl"
 
-    def report_path(self) -> Path:
-        return self.ledger_dir() / "report.md"
-
     def append_event(self, event: dict[str, object]) -> None:
         self.run_cli("append-event", "--repo", str(self.repo), "--run-id", "run", json.dumps(event))
-
-    def refresh_report_mtime(self) -> None:
-        future = time.time() + 60
-        os.utime(self.report_path(), (future, future))
 
     def add_final_review(self) -> None:
         self.append_event(
@@ -102,12 +93,10 @@ class FindingsGateTests(unittest.TestCase):
         self.append_event(record)
 
     def run_gate(self, *, check: bool = True) -> dict[str, object]:
-        self.refresh_report_mtime()
         result = self.run_cli("gate", "--repo", str(self.repo), "--run-id", "run", check=check)
         return json.loads(result.stdout)
 
     def run_doctor(self, *, check: bool = True) -> dict[str, object]:
-        self.refresh_report_mtime()
         result = self.run_cli("doctor", "--repo", str(self.repo), "--run-id", "run", check=check)
         return json.loads(result.stdout)
 

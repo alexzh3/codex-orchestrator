@@ -1,5 +1,5 @@
 ---
-description: Generate or update report.md from recorded state, monitor events, verification, and consensus evidence.
+description: Author the final report after the completed run has been gated and validated.
 ---
 
 # Report

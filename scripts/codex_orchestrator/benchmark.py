@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from .report import latest_record
+from .ledger import latest_record
 
 
 def nullable_bool_type(value: str) -> bool | None:
@@ -55,7 +55,6 @@ def validate_benchmark_result(payload: dict[str, object]) -> None:
         "prompt_log_pairs_complete",
         "ledger_errors",
         "gate_passed",
-        "report_score",
         "external_score",
     )
     missing = [field for field in required if field not in payload]
@@ -82,9 +81,6 @@ def validate_benchmark_result(payload: dict[str, object]) -> None:
             continue
         if type(value) is not int or value < 0:
             raise SystemExit(f"ERROR: benchmark field {field} must be a non-negative integer")
-    report_score = payload.get("report_score")
-    if not isinstance(report_score, (int, float)) or not 0 <= report_score <= 1:
-        raise SystemExit("ERROR: benchmark field report_score must be a number from 0 to 1")
     external_score = payload.get("external_score")
     if external_score is not None and not isinstance(external_score, dict):
         raise SystemExit("ERROR: benchmark field external_score must be an object or null")

@@ -104,8 +104,6 @@ LEDGER_EVENT_SCHEMAS = {
             "log_path",
             "reuse_reason",
             "worktree",
-            "model",
-            "reasoning_effort",
             "recorded_at",
         ),
         "enums": {"mode": DISPATCH_MODE_ORDER},

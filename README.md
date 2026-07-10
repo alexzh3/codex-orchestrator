@@ -100,7 +100,7 @@ Available slash commands:
 | --- | --- |
 | `/codex-orchestrator:orchestrate` | Invoke the orchestration command for prompt-directed Codex coordination, such as scoped dispatch, monitoring, review, handoff, consensus, or compute gating. |
 | `/codex-orchestrator:workflow` | Run the full end-to-end workflow: ledger, planning, Codex plan review when needed, dispatch, monitoring, review, verification, consensus, and report. |
-| `/codex-orchestrator:report` | Generate or update `report.md` from evidence already recorded in the run ledger. |
+| `/codex-orchestrator:report` | Have Claude author the final `report.md` after gate and validation from the completed run ledger and artifacts. |
 
 The orchestration playbooks live in the skills:
 [`skills/orchestrate/SKILL.md`](./skills/orchestrate/SKILL.md),
@@ -172,12 +172,11 @@ See `docs/consensus-and-reviews.md` for the full details.
 
 ## Orchestration graph
 
-Generated reports include a session-centric orchestration graph that traces tasks, Codex sessions,
-verification evidence, reviews, consensus, and the final gate. Session nodes show the model/effort
-when recorded plus the harness mode and status, and a fresh restart of an agent becomes a new node.
-Evidence that affects acceptance is a node because it may need to be inspected, cited, cleared, or
-replayed; consensus is shown as a resolution gate, not an agent. See
-[`docs/orchestration-graph.md`](./docs/orchestration-graph.md) for the grammar and a worked example.
+The report skill asks Claude to author a compact Mermaid orchestration graph from the completed run
+state and ledger. This keeps the diagram focused on the tasks, Codex sessions, evidence, decisions,
+and gate transitions that matter for that particular run instead of forcing every run through a
+fixed renderer grammar. Claude writes the graph as part of the complete post-gate report; no Python
+report renderer rewrites it. See [`skills/report/SKILL.md`](./skills/report/SKILL.md) for the instructions.
 
 ---
 

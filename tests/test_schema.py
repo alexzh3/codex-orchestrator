@@ -177,11 +177,6 @@ class SchemaTests(unittest.TestCase):
             defs["dispatch_started_event"]["properties"]["mode"]["enum"],
             list(DISPATCH_MODE_ORDER),
         )
-        self.assertEqual(defs["dispatch_started_event"]["properties"]["model"]["type"], "string")
-        self.assertEqual(
-            defs["dispatch_started_event"]["properties"]["reasoning_effort"]["type"],
-            "string",
-        )
         self.assertEqual(
             defs["dispatch_completed_event"]["properties"]["status"]["enum"],
             list(SESSION_STATUS_ORDER),

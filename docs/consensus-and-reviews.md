@@ -120,8 +120,8 @@ Fields:
 | `--scope` | `task` or `global`. |
 
 `gate` appends a `gate_result` and exits nonzero when blocking reasons remain. `doctor` runs
-read-only integrity checks and never mutates the ledger. `report --strict` renders `report.md` and
-fails if required sections still contain missing-evidence placeholders.
+read-only integrity checks and never mutates the ledger. After both checks, Claude authors the final
+`report.md` from the completed ledger, artifacts, and repository diff.
 
 ## Review Events And Blocking Findings
 
@@ -309,8 +309,6 @@ verifications with `finding_id: "F1"` run that exact command after the review; o
 **Gate blocking reasons:**
 
 - `malformed-ledger`: a ledger line is not valid JSON.
-- `missing-report`: `report.md` does not exist.
-- `stale-report`: `report.md` is older than the latest non-gate ledger event.
 - `file-claim-conflict`: active file claims overlap.
 - `unclaimed-change`: a completed task changed a path outside its allowlist.
 - `active-task`: a task is not in a terminal status.
@@ -344,5 +342,3 @@ verifications with `finding_id: "F1"` run that exact command after the review; o
 - `missing-checkpoint`: a task has no checkpoint.
 - `missing-verification`: a completed task has no verification or review evidence.
 - `accepted-run-unresolved-check`: an accepted run still has unresolved verification evidence.
-- `missing-report`: `report.md` does not exist.
-- `stale-report`: `report.md` is older than the latest non-gate ledger event.

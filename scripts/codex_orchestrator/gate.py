@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
-from datetime import datetime, timezone
-from pathlib import Path, PurePath
+from pathlib import PurePath
 
 from .claims import (
     TERMINAL_TASK_STATUSES,
@@ -13,7 +12,6 @@ from .claims import (
 )
 from .contract import LEGACY_CONSENSUS_STATUS_OUTCOMES
 from .events import LEDGER_EVENT_SCHEMAS, validate_ledger_event
-from .report import is_final_review_verification
 from .resolution import (
     USER_OVERRIDE_CLEARS_ACCEPTANCE,
     attempt_count,
@@ -30,7 +28,7 @@ from .resolution import (
     rerun_link_issues,
     verifications_by_id,
 )
-from .store import report_path
+from .scoring import is_final_review_verification
 
 
 UNRESOLVED_VERIFICATION_RESULTS = {"failed", "inconclusive", "needs_human_review"}
@@ -296,29 +294,6 @@ def is_run_wide_record(record: dict[str, object]) -> bool:
     return not text_value(record.get("task_id")) and text_value(record.get("scope")) != "task"
 
 
-def latest_recorded_at(records: list[dict[str, object]]) -> datetime | None:
-    timestamps = [
-        parsed
-        for record in records
-        if record.get("type") != "gate_result"
-        if (parsed := parse_recorded_at(record.get("recorded_at")))
-    ]
-    return max(timestamps) if timestamps else None
-
-
-def report_freshness_issue(directory: Path, records: list[dict[str, object]]) -> str | None:
-    latest = latest_recorded_at(records)
-    if latest is None:
-        return None
-    path = report_path(directory)
-    if not path.exists():
-        return "missing-report: report.md does not exist"
-    report_mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-    if report_mtime < latest:
-        return "stale-report: report.md is older than the latest ledger event"
-    return None
-
-
 def low_confidence_warnings(state: dict[str, object]) -> list[str]:
     warnings: list[str] = []
     sessions = state.get("sessions")
@@ -560,16 +535,12 @@ def unclaimed_change_blocking_reasons(records: list[dict[str, object]]) -> list[
     return reasons
 
 
-def gate_blocking_reasons(directory: Path, records: list[dict[str, object]], diagnostics: list[dict[str, object]]) -> list[str]:
+def gate_blocking_reasons(records: list[dict[str, object]], diagnostics: list[dict[str, object]]) -> list[str]:
     blocking: list[str] = []
     for diagnostic in diagnostics:
         blocking.append(
             f"malformed-ledger: ledger.jsonl line {diagnostic.get('line_no')}: {diagnostic.get('error')}"
         )
-
-    freshness_issue = report_freshness_issue(directory, records)
-    if freshness_issue:
-        blocking.append(freshness_issue)
 
     blocking.extend(file_claim_conflict_blocking_reasons(records))
     blocking.extend(unclaimed_change_blocking_reasons(records))
@@ -839,7 +810,7 @@ def finding_repro_issues(records: list[dict[str, object]]) -> list[str]:
     return issues
 
 
-def doctor_issues(directory: Path, state: dict[str, object], records: list[dict[str, object]], diagnostics: list[dict[str, object]]) -> list[str]:
+def doctor_issues(state: dict[str, object], records: list[dict[str, object]], diagnostics: list[dict[str, object]]) -> list[str]:
     issues: list[str] = []
     for diagnostic in diagnostics:
         issues.append(
@@ -866,7 +837,4 @@ def doctor_issues(directory: Path, state: dict[str, object], records: list[dict[
         for record in unresolved_verification_records(records):
             issues.append(f"accepted-run-unresolved-check: {verification_label(record)}")
 
-    freshness_issue = report_freshness_issue(directory, records)
-    if freshness_issue:
-        issues.append(freshness_issue)
     return issues

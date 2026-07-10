@@ -189,7 +189,7 @@ def build_run_meta(
         "plugin_git_sha": plugin_ref or detect_git_sha(plugin_checkout),
         "protocol_version": PROTOCOL_VERSION,
         "schema_version": SCHEMA_VERSION,
-        "claude_code_version": None,
+        "claude_code_version": detect_command_version("claude"),
         "codex_cli_version": detect_command_version("codex"),
         "repo_commit": repo_commit,
         "benchmark_suite": benchmark_suite,
