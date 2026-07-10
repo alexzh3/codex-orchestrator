@@ -622,9 +622,16 @@ def validate_run(run_dir: Path) -> dict[str, object]:
     tasks: dict[str, dict[str, object]] = {}
     executions: dict[tuple[str, str], dict[str, object]] = {}
     execution_results: dict[tuple[str, str], dict[str, object]] = {}
+    seen_ids: dict[str, set[str]] = {"verification": set(), "decision": set()}
 
     for record in known_records:
         kind = record.get("type")
+        if kind in seen_ids:
+            record_id = record.get("id")
+            if isinstance(record_id, str) and record_id:
+                if record_id in seen_ids[kind]:
+                    issues.append(f"{record_line(record)}: duplicate {kind} id {record_id}")
+                seen_ids[kind].add(record_id)
         if kind == "task":
             task_id = record.get("id")
             if isinstance(task_id, str) and task_id:
@@ -670,18 +677,35 @@ def validate_run(run_dir: Path) -> dict[str, object]:
             elif result != "passed":
                 non_passing.append(compact_verification(record))
             evidence = record.get("evidence", [])
-            if not isinstance(evidence, list) or not all(
-                isinstance(item, str) and item for item in evidence
-            ):
+            if not isinstance(evidence, list):
                 issues.append(f"{record_line(record)}: evidence must be a list of file paths")
             else:
-                for value in evidence:
-                    check_declared_file(run_dir, {**record, "evidence": value}, "evidence", issues)
+                for index, value in enumerate(evidence):
+                    if not isinstance(value, str) or not value:
+                        issues.append(
+                            f"{record_line(record)}: evidence[{index}] must name a file: {value!r}"
+                        )
+                    elif not declared_file_exists(run_dir, value):
+                        issues.append(
+                            f"{record_line(record)}: referenced evidence[{index}] "
+                            f"file does not exist: {value}"
+                        )
 
     for task_id, task in tasks.items():
         status = task.get("status")
         if status not in TERMINAL_TASK_STATUSES:
             issues.append(f"task {task_id} is not terminal; latest status is {status!r}")
+
+    for record in known_records:
+        kind = record.get("type")
+        task_id = record.get("task")
+        if (
+            kind in {"execution", "execution_result", "verification", "decision"}
+            and isinstance(task_id, str)
+            and task_id
+            and task_id not in tasks
+        ):
+            issues.append(f"{record_line(record)}: {kind} references unknown task {task_id}")
 
     for key, execution in executions.items():
         result = execution_results.get(key)

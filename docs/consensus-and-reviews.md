@@ -205,6 +205,7 @@ produces `run_closed.judgment: blocked`.
 - JSON objects and the seven event names;
 - one initial `run_started` and at most one final `run_closed`;
 - execution/result identities, pairing, order, and matching task IDs when recorded;
+- task references plus duplicate verification and decision IDs;
 - declared prompt, event, handoff, and evidence files;
 - terminal execution results and latest task states before closure;
 - nonempty completed-execution handoffs;

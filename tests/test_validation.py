@@ -206,7 +206,7 @@ class ValidationTests(unittest.TestCase):
             missing_evidence = validate_run(run_dir)
             self.assertFalse(missing_evidence["ok"])
             self.assertTrue(
-                any("evidence file" in issue for issue in missing_evidence["issues"])
+                any("evidence[0]" in issue for issue in missing_evidence["issues"])
             )
             (run_dir / "evidence" / "tests.txt").write_text("restored\n", encoding="utf-8")
 
@@ -277,6 +277,56 @@ class ValidationTests(unittest.TestCase):
                 for issue in missing_verification_result["issues"]
             )
         )
+
+    def test_task_references_must_name_recorded_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir, records = self.make_run(Path(tmp))
+            records[2]["task"] = "task-missing"
+            records[3]["task"] = "task-missing"
+            records[4]["task"] = "task-missing"
+            records.append(
+                {"type": "decision", "id": "decision-01", "task": "task-missing"}
+            )
+            write_ledger(run_dir, records)
+            payload = validate_run(run_dir)
+
+        self.assertFalse(payload["ok"])
+        for kind in ("execution", "execution_result", "verification", "decision"):
+            self.assertTrue(
+                any(
+                    f"{kind} references unknown task task-missing" in issue
+                    for issue in payload["issues"]
+                ),
+                (kind, payload["issues"]),
+            )
+
+    def test_verification_and_decision_ids_must_be_unique(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir, records = self.make_run(Path(tmp))
+            records.extend(
+                [
+                    {"type": "verification", "id": "check-01", "result": "passed"},
+                    {"type": "decision", "id": "decision-01"},
+                    {"type": "decision", "id": "decision-01"},
+                ]
+            )
+            write_ledger(run_dir, records)
+            payload = validate_run(run_dir)
+
+        self.assertFalse(payload["ok"])
+        self.assertTrue(any("duplicate verification id check-01" in x for x in payload["issues"]))
+        self.assertTrue(any("duplicate decision id decision-01" in x for x in payload["issues"]))
+
+    def test_evidence_errors_identify_the_list_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir, records = self.make_run(Path(tmp))
+            records[4]["evidence"] = ["evidence/missing.txt", 42]
+            write_ledger(run_dir, records)
+            payload = validate_run(run_dir)
+
+        self.assertFalse(payload["ok"])
+        self.assertTrue(any("evidence[0]" in issue for issue in payload["issues"]))
+        self.assertTrue(any("evidence[1]" in issue for issue in payload["issues"]))
 
     def test_sparse_decisions_and_optional_metadata_are_not_schema_checked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
