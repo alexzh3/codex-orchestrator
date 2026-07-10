@@ -45,6 +45,14 @@ class ReportSkillTests(unittest.TestCase):
         self.assertRegex(normalized, r"validate\s*(?:->|→)\s*run_closed\s*(?:->|→)\s*report\.md")
         self.assertIn("judgment", normalized)
 
+    def test_skill_uses_claim_specific_sources_and_creates_one_final_report(self) -> None:
+        skill = " ".join(REPORT_SKILL.read_text(encoding="utf-8").lower().split())
+
+        self.assertIn("actual delivery: final repository state and diff", skill)
+        self.assertIn("agent claims: exact handoffs", skill)
+        self.assertIn("not independent evidence", skill)
+        self.assertIn("create the final `report.md` once", skill)
+
     def test_skill_has_no_legacy_report_protocol_dependency(self) -> None:
         skill = REPORT_SKILL.read_text(encoding="utf-8")
         retired_event = "gate" + "_result"

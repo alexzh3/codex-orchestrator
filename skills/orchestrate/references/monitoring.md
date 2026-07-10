@@ -68,8 +68,8 @@ A live IDE session is identified by `codex://threads/<thread-uuid>`. When Claude
 observe a session that is already active, append an execution with `mode: "observe"`,
 `event_source: "ide"`, the native `session_id`, the absolute rollout path in `events`, and a local
 `handoff` path. Omit `prompt` because Claude sent no prompt; this is the only missing-prompt case
-validation accepts. Do not copy the rollout into the run directory. Save the exact final agent
-message locally as `handoff.md`.
+allowed by the journal contract. Do not copy the rollout into the run directory. Save the exact
+final agent message locally as `handoff.md`.
 
 If Claude later sends a follow-up, create the next normal prompted execution under the same agent:
 save its exact `prompt.md`, record its paths before sending it, and capture its final response as the
@@ -102,17 +102,18 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" state <session-id> -
 Persist no parser offset in the ledger. Callers retain `next_offset` while monitoring and can
 restart from zero after context loss because the parser returns compact output.
 
-The bundled run monitor discovers active runs from a `run_started` record without a later
-`run_closed`, then watches executions without terminal execution results:
+The bundled run monitor treats a `run_started` record without a later `run_closed` as Claude's
+active-run marker, then watches executions without recorded terminal execution results:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/bin/codex-orch-monitor" --repo <repo> --run-id <run-id>
 python3 "${CLAUDE_PLUGIN_ROOT}/bin/codex-orch-monitor" --log <events-jsonl> --fail-on-session-failure
 ```
 
-It emits compact completion, failure, and stale notifications and never writes the ledger. Explicit
-paths may point to local headless streams or external IDE rollouts. Use bounded raw tails only when
-parser confidence is low.
+It emits compact completion, failure, and stale notifications and never writes the ledger. These
+markers support discovery but do not independently prove lifecycle state. Explicit paths may point
+to local headless streams or external IDE rollouts. Use bounded raw tails only when parser
+confidence is low.
 
 Completion signals include a terminal parser state or the self-started `codex exec` process exit.
 Silence is not completion. A stale stream may mean the session ended, blocked, or is awaiting an

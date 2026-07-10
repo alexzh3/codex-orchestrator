@@ -14,8 +14,9 @@ by itself create a new agent.
 ## Parallel Work
 
 Every active task declares its allowed/owned file paths or globs in `files`. This is the planned
-boundary; an execution result's `files_changed` records what actually changed. Before parallel
-execution, compare the task `files` lists:
+boundary; an execution result's `files_changed` is Claude's compact attribution note, while the
+repository diff determines what actually changed. Before parallel execution, compare the task
+`files` lists:
 
 - Disjoint lists may run concurrently in the same repository when tools will not mutate shared
   generated files.

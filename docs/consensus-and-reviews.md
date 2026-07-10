@@ -1,22 +1,25 @@
 # Claims, Evidence, Verification, And Decisions
 
-The runtime ledger preserves a concise causal record; it is not a workflow engine. Claude makes the
-semantic judgments. The parser and validator only summarize event streams and check structural
-facts.
+The runtime ledger preserves Claude's concise causal journal and links to supporting material; it
+is not a workflow engine, independent evidence, or a mechanical event recorder. Claude makes the
+semantic judgments. The parser and validator only summarize event streams and check a small set of
+structural omissions.
 
 ## Trust Boundaries
 
-- **Prompt:** the exact immutable input sent for one execution. It proves assigned scope.
-- **Event stream:** raw Codex JSONL, or an external IDE rollout. It proves what the harness emitted
-  and supports monitoring or debugging.
+- **Prompt:** the exact immutable input sent for one execution. It records assigned scope.
+- **Event stream:** raw Codex JSONL, or an external IDE rollout. It records what the harness emitted
+  and supports lifecycle checks, monitoring, or debugging.
 - **Handoff:** the exact final agent response. It is a compact package of agent claims.
 - **Evidence:** an inspectable observation that supports or contradicts a verification or decision.
 - **Verification:** Claude's evaluation of a task criterion using an explicit check and observation.
 - **Decision:** Claude's recorded resolution of a consequential disagreement, risk, or user need.
+- **Ledger:** Claude's compact chronology, current task state, decisions, and links to these sources.
+- **Repository:** the final state and diff that determine what code was actually delivered.
 
-A handoff or event stream can establish that an agent *claimed* a test passed. It cannot establish
-that the test passed against the accepted repository state. Claude independently checks material
-claims before recording verification.
+A handoff can establish that an agent *claimed* a test passed, and an event stream can establish
+that the harness emitted that claim. Neither establishes that the test passed against the accepted
+repository state. Claude independently checks material claims before recording verification.
 
 Evidence need not always be a file. Keep a small command result or diff observation inline. Use the
 optional `evidence/` directory for lengthy output, screenshots, metrics, failure diagnostics, or
@@ -43,14 +46,14 @@ agent and gets a new execution; a deliberately fresh session gets a new agent na
 
 For IDE sessions, `execution.events` is an absolute rollout path and is not copied into the run.
 Attaching only to observe an already-active IDE session uses `mode: "observe"` and may omit `prompt`
-because Claude sent nothing; validation accepts that explicit exception. A later follow-up is a new,
-normal prompted execution. Claude agent executions may omit `events` when no raw stream is exposed.
-Never fabricate one.
+because Claude sent nothing. A later follow-up is a new, normal prompted execution. Claude agent
+executions may omit `events` when no raw stream is exposed. Never fabricate one.
 
 ## Ledger Vocabulary
 
 Only Claude, acting as orchestrator, appends to `ledger.jsonl`. Every nonblank line is one JSON
-object with `recorded_at`. The vocabulary contains exactly seven event types.
+object with `recorded_at`. The vocabulary contains seven event types. The fields below are the
+prompted journal contract, not a complete runtime-enforced schema.
 
 ### `run_started`
 
@@ -64,7 +67,7 @@ Omit a version when unavailable; do not guess it.
 
 ### `task`
 
-Records may repeat for the same task. The latest record is authoritative. Status is `pending`,
+Records may repeat for the same task. The latest record is current within the journal. Status is `pending`,
 `active`, `complete`, `blocked`, or `failed`. Active tasks declare their allowed/owned file paths or
 globs in `files` before parallel execution; parallel tasks must have disjoint ownership or use
 isolated worktrees. This planned boundary is distinct from `execution_result.files_changed`, which
@@ -94,8 +97,10 @@ Observe-only IDE attachment has no prompt because Claude provided no execution i
 
 ### `execution_result`
 
-Terminalizes one execution as `complete`, `blocked`, or `failed`. It records the actual handoff,
-files changed, summary, and caveats. A complete execution result does not complete the task.
+Records Claude's terminal understanding of one execution as `complete`, `blocked`, or `failed`. It
+links the exact handoff and summarizes reported or observed files, results, and caveats. It is not
+mechanical process telemetry or authoritative file attribution; a complete execution result does
+not complete the task.
 
 ```jsonl
 {"type":"execution_result","agent":"codex-impl-01","execution":"execution-01","task":"task-01","status":"complete","session_id":"thread-123","handoff":"agents/codex-impl-01/execution-01/handoff.md","summary":"Implemented validation and tests.","files_changed":["src/api.py","tests/test_api.py"],"caveats":[],"recorded_at":"2026-07-10T12:20:00Z"}
@@ -193,17 +198,17 @@ alternative, rationale, and residual risk. Use `user_action_required` when progr
 needs authority or information Claude does not have. Unresolved required user action normally
 produces `run_closed.judgment: blocked`.
 
-## Structural Validation
+## Descriptive Validation
 
-`validate` checks structure, not truth or acceptance:
+`validate` is a small omission check, not truth or acceptance validation. It checks:
 
-- JSONL syntax and the seven event names;
-- initial `run_started` and at most one final `run_closed`;
-- unique IDs and valid task/execution references;
-- referenced prompt, event, handoff, and evidence paths;
+- JSON objects and the seven event names;
+- one initial `run_started` and at most one final `run_closed`;
+- execution/result identities, pairing, order, and matching task IDs when recorded;
+- declared prompt, event, handoff, and evidence files;
 - terminal execution results and latest task states before closure;
-- completed execution handoffs;
-- a descriptive list of non-passing verifications.
+- nonempty completed-execution handoffs;
+- recognized verification results and a descriptive list of every non-passing verification.
 
 Its output is ordinary JSON, not a ledger event:
 
@@ -216,6 +221,7 @@ Its output is ordinary JSON, not a ledger event:
 }
 ```
 
-Validation does not match reruns, clear failures, infer consensus, or decide acceptance. Claude
-copies the complete result into `run_closed.validation`, then authors `report.md` from the closed
-ledger.
+Validation does not enforce every documented field, confine paths, resolve decision bases, match
+reruns, clear failures, infer consensus, verify process provenance, or decide acceptance. Claude
+copies the complete result into `run_closed.validation`, then authors `report.md` from the complete
+run context.

@@ -1,5 +1,5 @@
 ---
-description: Author the final report after structural validation and the final run_closed judgment.
+description: Author the final report after the descriptive close check and final run_closed judgment.
 ---
 
 # Report

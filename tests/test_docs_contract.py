@@ -52,6 +52,27 @@ def jsonl_blocks(text: str) -> list[list[tuple[int, str]]]:
 
 
 class DocumentationContractTests(unittest.TestCase):
+    def test_ledger_is_a_claude_authored_journal_not_global_evidence(self) -> None:
+        contract = "\n".join(
+            (ROOT / path).read_text(encoding="utf-8").casefold()
+            for path in (
+                "README.md",
+                "skills/orchestrate/SKILL.md",
+                "skills/report/SKILL.md",
+            )
+        )
+
+        self.assertIn("append-only orchestration journal", contract)
+        self.assertIn("not independent evidence", contract)
+        self.assertNotIn("primary run record", contract)
+        self.assertNotIn("source of truth", contract)
+
+    def test_validation_is_documented_as_an_omission_check_not_a_schema(self) -> None:
+        contract = (ROOT / "docs" / "consensus-and-reviews.md").read_text(encoding="utf-8")
+
+        self.assertIn("small omission check", contract)
+        self.assertIn("does not enforce every documented field", contract)
+
     def test_execution_vocabulary_has_no_retired_custom_terms(self) -> None:
         retired_terms = (
             "dis" + "patch",

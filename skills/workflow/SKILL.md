@@ -23,8 +23,9 @@ Follow this sequence:
    active IDE session uses `mode: "observe"` and may omit `prompt` because Claude sent none.
 5. Append `execution` before launch, then capture the raw event stream and exact handoff. Resume a
    contextually relevant session rather than creating a duplicate agent.
-6. Monitor each execution until completion, failure, blocking, or staleness. Append its terminal
-   `execution_result`; agent completion does not complete the task.
+6. Monitor each execution until completion, failure, blocking, or staleness. Append Claude's
+   terminal `execution_result`; this is durable workflow memory, not mechanical proof, and it does
+   not complete the task.
 7. Read the handoff as claims. Inspect the actual diff and independently check material behavior.
    Record each criterion evaluation as `verification`, with optional files under `evidence/` only
    when the observation is lengthy, binary, disputed, or important to audit.
@@ -32,7 +33,8 @@ Follow this sequence:
    `decision`: `consensus`, `claude_decision`, or `user_action_required`.
 9. Repeat execution, review, and verification as needed. Append a terminal `task` record only after
    Claude has evaluated its acceptance criteria.
-10. Re-read the full ledger and run structural validation:
+10. Re-read the full ledger, inspect the final repository state and diff, then run the descriptive
+    close check:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" validate \
@@ -40,12 +42,13 @@ Follow this sequence:
    ```
 
 11. Resolve structural issues, inspect all non-passing checks, and append one final `run_closed`
-    record with `judgment: passed|blocked`, the validation result, unresolved risks, and follow-ups.
+    record with `judgment: passed|blocked`, the exact validation result, unresolved risks, and
+    follow-ups. Validation detects omissions; Claude decides whether the work is acceptable.
 12. Only after `run_closed`, use `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` to have Claude replace
     `report.md` with the final report.
 
 The canonical close sequence is `validate → run_closed → report.md`. Validation never decides
-acceptance, and the report never repairs or rewrites ledger history.
+acceptance, and the final report never repairs or rewrites ledger history.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for the complete operating contract and
 its focused references for monitoring, review, decisions, and compute isolation.

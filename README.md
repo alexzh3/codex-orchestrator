@@ -15,7 +15,7 @@ between the two tools. It helps Claude:
 - coordinate sequential or parallel agents without overlapping file ownership;
 - preserve exact prompts, raw event streams, and compact agent handoffs;
 - independently verify material claims and record consequential decisions;
-- author a final report and Mermaid orchestration graph from the closed run ledger.
+- author a final report and Mermaid orchestration graph from the complete run context.
 
 Claude remains the planner, orchestrator, and final reviewer. Codex works as a scoped implementer or
 peer reviewer in its native harness.
@@ -104,8 +104,11 @@ the same agent; starting a fresh session creates another agent.
 - `handoff.md` is the exact final agent response.
 - `evidence/` stores only material observations that are too large, binary, disputed, or important
   to keep inline.
-- `ledger.jsonl` is the concise append-only run record and is written only by Claude.
+- `ledger.jsonl` is Claude's concise append-only workflow journal and navigation index.
 - `report.md` is Claude's final synthesis, not evidence.
+
+The ledger is canonical for Claude's recorded chronology, task state, and decisions. It is not
+independent evidence that a process completed, a claim is true, or code was delivered.
 
 For IDE sessions, the ledger references the absolute external rollout path rather than copying it.
 Attaching only to observe an already-active IDE session uses `mode: "observe"` and may omit
@@ -136,9 +139,10 @@ The ledger deliberately has seven event types:
 6. `decision`
 7. `run_closed`
 
-Claude appends `execution` before launch. A matching terminal `execution_result` marks that execution
-complete, blocked, or failed. Agent completion does not complete the task; Claude first checks the
-actual result and acceptance criteria. The latest `task` record carries its current status.
+Claude appends `execution` before launch, then records a matching terminal `execution_result` as
+complete, blocked, or failed after inspecting the outcome. This is workflow memory rather than
+mechanical telemetry. Agent completion does not complete the task; Claude first checks the actual
+result and acceptance criteria. The latest `task` record carries its current status.
 
 The close sequence is:
 
@@ -146,9 +150,11 @@ The close sequence is:
 validate → run_closed → report.md
 ```
 
-Validation checks structural facts such as parseable ledger lines, valid references, existing files,
-and terminal execution/task state. Claude makes the semantic `run_closed.judgment` of `passed` or
-`blocked`. See [`docs/consensus-and-reviews.md`](docs/consensus-and-reviews.md) for event fields and a
+Validation is a small descriptive close check for readable records, lifecycle pairing, declared
+files, terminal task state, and visible non-passing checks. It is deliberately not a complete event
+schema and does not judge implementation truth. Claude makes the semantic `run_closed.judgment` of
+`passed` or `blocked`. See
+[`docs/consensus-and-reviews.md`](docs/consensus-and-reviews.md) for recommended event fields and a
 worked fix/rerun example.
 
 ## Claims, Evidence, And Verification
@@ -161,6 +167,11 @@ actual diffs, command results, screenshots, metrics, or grounded review observat
 the compact handoff first, inspects the repository, and independently checks material claims. Raw
 event streams are fallback material for monitoring, disputes, or debugging—not the normal source
 of test evidence.
+
+Use authority by claim type: prompts record assigned scope; handoffs record agent claims; event
+streams record harness activity; verification and evidence record Claude's checks; the ledger
+records workflow chronology and decisions; and the final repository state and diff determine what
+was actually delivered. Surface conflicts rather than silently preferring one source.
 
 Failed checks remain in history. A fix and passing rerun get new records, and a `decision` explains
 the outcome without pretending the earlier failure did not happen. Decision outcomes are
@@ -180,19 +191,21 @@ verification → decision → validate → run_closed → report
 
 ## Monitoring And Parallel Work
 
-The bundled parser classifies Codex event streams and reads incremental tails. The monitor discovers
-active runs from a `run_started` record without a later `run_closed`, watches executions without
-terminal execution results, and emits compact completion, failure, or stale notifications. It never
-writes the ledger.
+The bundled parser classifies Codex event streams and reads incremental tails. The monitor uses
+Claude-recorded `run_started`, `run_closed`, and execution-result markers to discover likely active
+runs and in-flight executions, then reads their event streams for compact completion, failure, or
+stale notifications. It never writes the ledger; ambiguous lifecycle state requires direct
+inspection.
 
 Before parallel execution, tasks declare allowed/owned file paths or globs in `files`. An execution
-result's `files_changed` records what actually changed. Work may run concurrently only when task
-paths and shared resources are disjoint; otherwise Claude serializes the work or uses native Git
-worktrees. See the monitoring and compute references under `skills/orchestrate/references/`.
+result's `files_changed` is Claude's compact attribution note; inspect the repository diff for the
+actual delivered paths. Work may run concurrently only when task paths and shared resources are
+disjoint; otherwise Claude serializes the work or uses native Git worktrees. See the monitoring and
+compute references under `skills/orchestrate/references/`.
 
 ## Final Report
 
-After `validate` and `run_closed`, Claude replaces `report.md` using exactly:
+After `validate` and `run_closed`, Claude creates the final `report.md` once using exactly:
 
 1. Summary
 2. Changes
@@ -232,8 +245,9 @@ and concise ledger records remain available without repeatedly loading entire se
 ## Limitations
 
 - Review and fix loops are often sequential, so orchestration may take longer than a solo agent.
-- A structured ledger improves recovery and traceability but cannot prove that a semantic judgment
-  is true; Claude must still inspect the work and choose appropriate checks.
+- The Claude-authored ledger improves recovery and traceability but cannot prove lifecycle facts,
+  implementation claims, or semantic judgments; Claude must inspect the relevant sources and run
+  appropriate checks.
 - Raw event streams can be large. Normal review relies on compact handoffs and parser summaries.
 - Parallel work requires genuinely disjoint files and resources or separate worktrees.
 

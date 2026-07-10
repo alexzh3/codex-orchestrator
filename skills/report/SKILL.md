@@ -1,6 +1,6 @@
 ---
 name: codex-orchestrator-report
-description: Author the final report from a completed and structurally validated orchestration run.
+description: Author the final report from a completed orchestration run after its descriptive close check.
 ---
 
 # Report
@@ -19,7 +19,7 @@ validate → run_closed → report.md
 
 Confirm that:
 
-- structural validation ran before closure and its complete result is recorded in
+- descriptive validation ran before closure and its complete result is recorded in
   `run_closed.validation`;
 - every execution has a terminal execution result and every task is terminal;
 - `run_closed` is the final ledger record and contains `judgment: passed|blocked`;
@@ -28,16 +28,26 @@ Confirm that:
 If these conditions are not true, stop and return to orchestration. Never edit the ledger merely to
 make the report look complete.
 
-Read the complete `ledger.jsonl` first. Then inspect relevant handoffs, evidence, the final
-repository diff, and other run context needed to substantiate the report. Raw `events.jsonl` or
-external IDE rollouts are fallback sources for disputes, ambiguity, or debugging; do not mine them
-for facts already captured in handoffs or verification. Treat the ledger as the primary source and
-do not invent or silently repair missing facts.
+Read the complete `ledger.jsonl` first as the compact workflow history and navigation index. Then
+substantiate each material claim from the source appropriate to that claim:
+
+- actual delivery: final repository state and diff;
+- Claude's checks: verification observations and referenced evidence;
+- assigned scope: exact prompts;
+- agent claims: exact handoffs;
+- lifecycle or ambiguous session behavior: ledger records and, when needed, raw event streams;
+- decisions and final judgment: decision and `run_closed` records.
+
+Raw `events.jsonl` or external IDE rollouts are fallback sources for disputes, ambiguity, or
+debugging; do not mine them for facts already clear from the appropriate compact source. The ledger
+is Claude-authored working memory, not independent evidence. Surface conflicts instead of silently
+choosing a preferred account, and never invent or repair missing facts.
 
 ## Required Report Structure
 
-Replace `report.md` with a complete Claude-authored report using exactly these five top-level
-sections in this order:
+Create the final `report.md` once, after closure, as a complete Claude-authored report using exactly
+these five top-level sections in this order. Only replace an existing final report when explicitly
+asked to correct or regenerate it.
 
 ```markdown
 # Report
@@ -62,14 +72,16 @@ Mention unresolved work plainly and keep this section concise.
 
 ### Changes
 
-Describe material delivered changes and their owning tasks or agents. Cite important repository
-files and evidence when useful. Distinguish complete, blocked, failed, and intentionally unchanged
-work. Do not reproduce the ledger line by line.
+Describe material delivered changes from the final repository state and diff, then connect them to
+their tasks or agents. Cite important repository files and evidence when useful. Distinguish
+complete, blocked, failed, and intentionally unchanged work. Do not reproduce the ledger line by
+line or treat `execution_result.files_changed` as mechanical attribution.
 
 ### Orchestration Graph
 
-Create a readable Mermaid `flowchart TD`. Use `ledger.jsonl` as the primary source, supplemented by
-handoffs, evidence, repository changes, and raw events only when necessary. Do not invent facts.
+Create a readable Mermaid `flowchart TD`. Use `ledger.jsonl` to reconstruct workflow chronology and
+causal links, then ground results in handoffs, verification evidence, repository changes, and raw
+events only when necessary. Do not invent facts.
 
 Use this top-to-bottom structure:
 
@@ -110,8 +122,9 @@ Use these subsections in this order:
 ```
 
 Under `Gate Result`, report `run_closed.judgment`, its summary, and the recorded validation issues
-and warnings. This is a human-facing heading, not a separate ledger event. Do not recompute or
-soften Claude's recorded judgment.
+and warnings. Validation is an omission check, not evidence of correctness or the source of the
+judgment. This is a human-facing heading, not a separate ledger event. Do not recompute or soften
+Claude's recorded judgment.
 
 Under `Risks / Follow-ups`, list unresolved checks, blocked or failed work, user actions, accepted
 risks, and concrete next steps. Write `None recorded.` when nothing remains.

@@ -53,25 +53,29 @@ streams establish session activity, but neither proves implementation correctnes
 
 ## Ledger
 
-`ledger.jsonl` is append-only and is the primary run record. Only Claude, acting as orchestrator,
-writes it. Each line is one compact JSON object with `recorded_at`. Use exactly these event types:
+`ledger.jsonl` is a concise append-only orchestration journal and index written by Claude. It is
+canonical for Claude's recorded chronology, task state, and decisions, but it is not evidence that
+an agent claim or implementation result is true. Each line is one compact JSON object with
+`recorded_at`. Use exactly these event types:
 
 - `run_started`: first record; run id, repository, plugin ref, and available Claude/Codex versions.
 - `task`: goal, acceptance criteria, allowed/owned file paths or globs in `files`, and latest task
   status.
 - `execution`: written before launch with `agent`, `execution`, `task`, provider, role, mode, event
   source, paths, and the model, effort, and `session_id` when known.
-- `execution_result`: terminal result for one execution: `complete`, `blocked`, or `failed`.
+- `execution_result`: Claude's recorded terminal outcome for one execution: `complete`, `blocked`,
+  or `failed`.
 - `verification`: Claude's evaluation of a criterion using an explicit check and observation.
 - `decision`: a consequential resolution with outcome, basis, and risk.
 - `run_closed`: the final record, including `judgment: passed|blocked`, validation result, risks, and
   follow-ups.
 
-A task record may be repeated; its latest record is authoritative. An execution is in flight until
-a matching terminal execution result exists. A complete execution result does not complete its
-task: keep the task active until Claude has inspected the work, verified material claims, and
-recorded any needed decision. See `docs/consensus-and-reviews.md` for the full field vocabulary and
-worked example.
+A task record may be repeated; its latest record is current within the journal. An execution is in
+flight until Claude records a matching terminal execution result. These records support recovery
+and monitoring but do not mechanically establish process completion or correctness. A complete
+execution result does not complete its task: keep the task active until Claude has inspected the
+work, verified material claims, and recorded any needed decision. See
+`docs/consensus-and-reviews.md` for the recommended fields and worked example.
 
 ## Standard Loop
 
@@ -88,7 +92,8 @@ worked example.
 6. Monitor the event stream with the bundled parser or monitor. Do not edit files concurrently with
    an agent that owns them.
 7. Save the exact final response as `handoff.md`, inspect it and the repository, then append a
-   terminal `execution_result` with actual files changed and caveats.
+   terminal `execution_result` with Claude's concise outcome, observed or reported files, and
+   caveats. The final repository state determines what was actually delivered.
 8. Independently verify material claims. Record checks as `verification`; create evidence files only
    when inline observations are insufficient.
 9. Record consequential agreements, disagreements, overrides, or user dependencies as `decision`.
@@ -101,8 +106,10 @@ The close order is fixed:
 validate → run_closed → report.md
 ```
 
-Validation is descriptive. Claude makes the `run_closed.judgment`; do not treat structural
-validation as semantic acceptance.
+Validation is a small descriptive omission check: it checks readable records, lifecycle pairing,
+declared files, terminal task state, and visible non-passing checks. It is not a complete event
+schema and does not validate decision rationale or implementation truth. Claude makes the
+`run_closed.judgment`; do not treat descriptive validation as semantic acceptance.
 
 ## Reference Map
 

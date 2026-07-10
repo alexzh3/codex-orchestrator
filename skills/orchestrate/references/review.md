@@ -38,7 +38,8 @@ Claude explains the relationship in a later `decision` and in `run_closed`.
 ## Review Loop
 
 1. Read the handoff and inspect the actual changed files and diff.
-2. Compare `execution_result.files_changed` with the task's allowed/owned paths or globs in `files`.
+2. Compare the `execution_result.files_changed` note and the actual diff with the task's
+   allowed/owned paths or globs in `files`.
 3. Independently run checks needed by the acceptance criteria. Never promote
    `Commands Reported` from a handoff directly to a passing verification.
 4. If Claude finds a material issue, send the exact finding and observed evidence back to the same
