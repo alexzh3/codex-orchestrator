@@ -5,9 +5,10 @@ Invoked BY PATH (``${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py``) from the
 orchestrate skill's monitoring flow, so it must stay a file here. The real logic
 lives in ``codex_orchestrator.parse``.
 """
+
 from __future__ import annotations
 
-from codex_orchestrator.parse import *
+from codex_orchestrator.parse import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

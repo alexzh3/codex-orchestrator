@@ -8,7 +8,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"
 PARSE_MODULE = ROOT / "scripts" / "codex_orchestrator" / "parse.py"
@@ -40,6 +39,7 @@ class ParseCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["status"], "complete")
+        self.assertEqual(payload["details"]["last_agent_message"], "Implemented the scoped change.")
         self.assertEqual(payload["compatibility"]["parse_confidence"], "high")
         self.assertEqual(payload["compatibility"]["unknown_event_types"], [])
 
