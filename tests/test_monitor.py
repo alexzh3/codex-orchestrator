@@ -9,6 +9,8 @@ import time
 import unittest
 from pathlib import Path
 
+from scripts.codex_orchestrator.parse import read_jsonl_delta
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"
 WRAPPER = ROOT / "bin" / "codex-orch-monitor"
@@ -228,6 +230,58 @@ class MonitorTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertEqual(json.loads(result.stdout)["type"], "codex_session_failed")
+
+    def test_latest_exec_signal_emits_one_notification_with_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            write_jsonl(
+                path,
+                [
+                    {
+                        "type": "turn.failed",
+                        "thread_id": "thread-1",
+                        "turn_id": "turn-1",
+                        "error": {"message": "old failure"},
+                    },
+                    {
+                        "type": "turn.completed",
+                        "thread_id": "thread-1",
+                        "turn_id": "turn-2",
+                        "usage": {"input_tokens": 20, "output_tokens": 5},
+                    },
+                ],
+            )
+            result = run_monitor("--log", str(path), "--source", "exec", "--once")
+
+        notifications = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual(len(notifications), 1)
+        self.assertEqual(notifications[0]["type"], "codex_session_complete")
+        self.assertEqual(notifications[0]["thread_id"], "thread-1")
+        self.assertEqual(notifications[0]["turn_id"], "turn-2")
+        self.assertEqual(notifications[0]["usage"]["output_tokens"], 5)
+
+    def test_incremental_reader_preserves_partial_lines_and_counts_parse_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            first = '{"type":"turn.started"}\n'
+            path.write_text(first + "not json\n[]\n" + '{"type":"turn.completed"', encoding="utf-8")
+
+            records, offset, parse_errors = read_jsonl_delta(path, 0, "exec")
+            self.assertEqual([record.event_type for record in records], [
+                "turn.started",
+                "<invalid-json>",
+                "<non-object>",
+            ])
+            self.assertEqual(parse_errors, 2)
+            self.assertLess(offset, path.stat().st_size)
+
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write("}\n")
+            completed, next_offset, parse_errors = read_jsonl_delta(path, offset, "exec")
+
+        self.assertEqual([record.event_type for record in completed], ["turn.completed"])
+        self.assertEqual(parse_errors, 0)
+        self.assertGreater(next_offset, offset)
 
     def test_stale_stream_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

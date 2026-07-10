@@ -89,22 +89,26 @@ def event_type(event: dict[str, object]) -> str:
     return "<missing>"
 
 
+def decode_event_line(line: str) -> EventRecord | None:
+    stripped = line.strip()
+    if not stripped:
+        return None
+    try:
+        event = json.loads(stripped)
+    except json.JSONDecodeError:
+        return EventRecord({"_parse_error": stripped[:200]}, "<invalid-json>")
+    if not isinstance(event, dict):
+        return EventRecord(
+            {"_parse_error": "top-level JSON value is not an object"}, "<non-object>"
+        )
+    return EventRecord(event, event_type(event))
+
+
 def iter_json_events(lines: Iterable[str]) -> Iterable[EventRecord]:
     for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            event = json.loads(stripped)
-        except json.JSONDecodeError:
-            yield EventRecord({"_parse_error": stripped[:200]}, "<invalid-json>")
-            continue
-        if not isinstance(event, dict):
-            yield EventRecord(
-                {"_parse_error": "top-level JSON value is not an object"}, "<non-object>"
-            )
-            continue
-        yield EventRecord(event, event_type(event))
+        record = decode_event_line(line)
+        if record is not None:
+            yield record
 
 
 def read_lines(
@@ -200,21 +204,25 @@ def source_from_events(records: list[EventRecord]) -> str:
     return "exec"
 
 
+def source_for_path(path: Path | None, declared: object = None) -> str:
+    if declared in {"exec", "ide"}:
+        return str(declared)
+    if path is None or not path.exists():
+        return "exec"
+    sample_lines, _, _ = read_lines(path, "ide")
+    return source_from_events(list(iter_json_events(sample_lines)))
+
+
 def source_and_path(args: argparse.Namespace) -> tuple[str, Path | None, list[str]]:
     warnings: list[str] = []
-    path = Path(args.file).expanduser() if args.file else None
-    source = args.source or "auto"
+    explicit_path = Path(args.file).expanduser() if args.file else None
+    path = explicit_path
     if path is None:
         path = find_rollout(args.thread_id)
         if path is None:
             warnings.append("no event source found; provide --file or check the thread id")
-        elif source == "auto":
-            source = "ide"
-    if source == "auto" and path is not None:
-        sample_lines, _, _ = read_lines(path, "ide")
-        source = source_from_events(list(iter_json_events(sample_lines)))
-    if source == "auto":
-        source = "exec"
+    declared = args.source or ("ide" if explicit_path is None and path is not None else None)
+    source = source_for_path(path, declared)
     return source, path, warnings
 
 
@@ -232,26 +240,41 @@ def event_text(event: dict[str, object]) -> str:
     return json_dumps(event)
 
 
-def classify_exec(records: list[EventRecord]) -> tuple[str, dict[str, object]]:
+def classify_exec(
+    records: list[EventRecord],
+) -> tuple[str, dict[str, object], EventRecord | None]:
     status = "idle"
     usage: object = None
     error: object = None
+    terminal: EventRecord | None = None
     last_agent_text = ""
     thread_started = False
     for record in records:
         if record.event_type == "thread.started":
             thread_started = True
             status = "idle"
+            terminal = None
+            usage = None
+            error = None
         elif record.event_type == "turn.started":
             status = "active"
+            terminal = None
+            usage = None
+            error = None
         elif record.event_type == "turn.completed":
             status = "complete"
+            terminal = record
             usage = record.event.get("usage")
+            error = None
         elif record.event_type == "turn.failed":
             status = "failed"
+            terminal = record
+            usage = None
             error = record.event.get("error")
         elif record.event_type == "error" and not is_reconnect_notice(record):
             status = "failed"
+            terminal = record
+            usage = None
             error = record.event.get("error") or record.event.get("message")
         elif record.event_type == "item.completed":
             item = record.event.get("item")
@@ -268,7 +291,7 @@ def classify_exec(records: list[EventRecord]) -> tuple[str, dict[str, object]]:
         details["thread_started"] = True
     if last_agent_text:
         details["last_agent_message"] = last_agent_text
-    return status, details
+    return status, details, terminal
 
 
 def goal_status_to_session_status(goal_status: str | None) -> str | None:
@@ -288,16 +311,20 @@ def goal_status_to_session_status(goal_status: str | None) -> str | None:
     return "idle"
 
 
-def classify_ide(records: list[EventRecord], path: Path | None) -> tuple[str, dict[str, object]]:
+def classify_ide(
+    records: list[EventRecord], path: Path | None
+) -> tuple[str, dict[str, object], EventRecord | None]:
+    status = "idle"
+    terminal: EventRecord | None = None
     goal_status: str | None = None
     goal_text: str | None = None
     last_agent_text = ""
-    saw_failure = False
 
     for record in records:
         text = event_text(record.event)
         if any(hint in text for hint in FAILURE_HINTS):
-            saw_failure = True
+            status = "failed"
+            terminal = record
         if record.event_type == "thread_goal_updated":
             payload = record.event.get("payload")
             payload_dict = payload if isinstance(payload, dict) else record.event
@@ -305,14 +332,14 @@ def classify_ide(records: list[EventRecord], path: Path | None) -> tuple[str, di
             if isinstance(goal, dict):
                 status_value = goal.get("status")
                 text_value = goal.get("text")
-                goal_status = str(status_value) if status_value is not None else goal_status
+                if status_value is not None:
+                    goal_status = str(status_value)
+                    status = goal_status_to_session_status(goal_status) or "idle"
+                    terminal = record if status in {"complete", "failed"} else None
                 goal_text = str(text_value) if text_value is not None else goal_text
         elif record.event_type == "agent_message":
             last_agent_text = text
 
-    status = goal_status_to_session_status(goal_status) or "idle"
-    if saw_failure:
-        status = "failed"
     if status in {"active", "idle"} and any(
         hint in last_agent_text.lower() for hint in APPROVAL_HINTS
     ):
@@ -330,7 +357,7 @@ def classify_ide(records: list[EventRecord], path: Path | None) -> tuple[str, di
         details["last_agent_message"] = last_agent_text
     if path is not None:
         details["idle_seconds"] = int(time.time() - path.stat().st_mtime)
-    return status, details
+    return status, details, terminal
 
 
 def load_records(path: Path | None, source: str) -> tuple[list[EventRecord], int, int]:
@@ -341,8 +368,10 @@ def load_records(path: Path | None, source: str) -> tuple[list[EventRecord], int
 
 
 def command_find(args: argparse.Namespace) -> int:
-    path = Path(args.file).expanduser() if args.file else find_rollout(args.thread_id)
-    source = args.source or ("ide" if path else "exec")
+    explicit_path = Path(args.file).expanduser() if args.file else None
+    path = explicit_path or find_rollout(args.thread_id)
+    declared = args.source or ("ide" if explicit_path is None and path is not None else None)
+    source = source_for_path(path, declared)
     if args.dump_event_types:
         records, start, end = load_records(path, source)
         counts = Counter(record.event_type for record in records)
@@ -403,9 +432,9 @@ def command_state(args: argparse.Namespace) -> int:
         return 2
 
     if source == "exec":
-        status, details = classify_exec(records)
+        status, details, _ = classify_exec(records)
     else:
-        status, details = classify_ide(records, path)
+        status, details, _ = classify_ide(records, path)
 
     payload = {
         "thread_id": args.thread_id,
@@ -497,7 +526,7 @@ def read_ledger(path: Path) -> tuple[list[dict[str, object]], list[str]]:
                     continue
                 value["_line"] = line_number
                 records.append(value)
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         issues.append(f"could not read ledger: {exc}")
     return records, issues
 
@@ -539,20 +568,27 @@ def is_regular_file(path: Path, *, nonempty: bool = False) -> bool:
         return False
 
 
+def declared_file_exists(run_dir: Path, value: object, *, nonempty: bool = False) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        return is_regular_file(resolve_run_path(run_dir, value), nonempty=nonempty)
+    except (OSError, RuntimeError):
+        return False
+
+
 def check_declared_file(
     run_dir: Path, record: dict[str, object], field: str, issues: list[str]
-) -> Path | None:
+) -> None:
     if field not in record:
         return None
     value = record.get(field)
     if not isinstance(value, str) or not value:
         issues.append(f"{record_line(record)}: {field} must name a file")
-        return None
-    path = resolve_run_path(run_dir, value)
-    if not is_regular_file(path):
+        return
+    if not declared_file_exists(run_dir, value):
         issues.append(f"{record_line(record)}: referenced {field} file does not exist: {value}")
-        return None
-    return path
+        return
 
 
 def validate_run(run_dir: Path) -> dict[str, object]:
@@ -670,9 +706,7 @@ def validate_run(run_dir: Path) -> dict[str, object]:
             if "handoff" in source
         ]
         handoff_ok = bool(handoff_values) and all(
-            isinstance(value, str)
-            and bool(value)
-            and is_regular_file(resolve_run_path(run_dir, value), nonempty=True)
+            declared_file_exists(run_dir, value, nonempty=True)
             for value in handoff_values
         )
         if not handoff_ok:
@@ -699,35 +733,21 @@ def command_validate(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
-def ledger_is_active(run_dir: Path) -> bool:
+def ledger_lifecycle(run_dir: Path) -> str:
     records, issues = read_ledger(run_dir / "ledger.jsonl")
     if issues:
-        return False
-    kinds = [record.get("type") for record in records]
-    return (
-        bool(kinds)
-        and all(kind in LEDGER_EVENT_TYPES for kind in kinds)
-        and kinds[0] == "run_started"
-        and kinds.count("run_started") == 1
-        and "run_closed" not in kinds
-    )
-
-
-def ledger_lifecycle_parses(run_dir: Path) -> bool:
-    records, issues = read_ledger(run_dir / "ledger.jsonl")
-    if issues:
-        return False
+        return "invalid"
     kinds = [record.get("type") for record in records]
     if (
         not kinds
         or not all(kind in LEDGER_EVENT_TYPES for kind in kinds)
         or kinds.count("run_started") != 1
         or kinds[0] != "run_started"
+        or kinds.count("run_closed") > 1
+        or ("run_closed" in kinds and kinds[-1] != "run_closed")
     ):
-        return False
-    return kinds.count("run_closed") <= 1 and (
-        "run_closed" not in kinds or kinds[-1] == "run_closed"
-    )
+        return "invalid"
+    return "closed" if kinds[-1] == "run_closed" else "active"
 
 
 def new_layout_event_paths(run_dir: Path) -> list[Path]:
@@ -740,15 +760,6 @@ def new_layout_event_paths(run_dir: Path) -> list[Path]:
         key=lambda path: (path.stat().st_mtime, str(path)),
         reverse=True,
     )
-
-
-def source_for_path(path: Path, declared: object = None) -> str:
-    if declared in {"exec", "ide"}:
-        return str(declared)
-    if not path.exists():
-        return "exec"
-    sample_lines, _, _ = read_lines(path, "ide")
-    return source_from_events(list(iter_json_events(sample_lines)))
 
 
 def inflight_targets(run_dir: Path) -> tuple[list[MonitorTarget], list[str]]:
@@ -807,17 +818,18 @@ def auto_discover_run_dir(repo: Path) -> tuple[Path | None, list[str]]:
     runs_dir = repo / ".codex-orchestrator" / "runs"
     if not runs_dir.exists():
         return None, []
-    active = [
-        run_dir for run_dir in runs_dir.iterdir() if run_dir.is_dir() and ledger_is_active(run_dir)
+    candidates = [
+        (run_dir, ledger_lifecycle(run_dir))
+        for run_dir in runs_dir.iterdir()
+        if run_dir.is_dir()
     ]
+    active = [run_dir for run_dir, lifecycle in candidates if lifecycle == "active"]
     if active:
         return max(active, key=lambda path: (run_activity_mtime(path), path.name)), []
     fallback = [
         run_dir
-        for run_dir in runs_dir.iterdir()
-        if run_dir.is_dir()
-        and not ledger_lifecycle_parses(run_dir)
-        and new_layout_event_paths(run_dir)
+        for run_dir, lifecycle in candidates
+        if lifecycle == "invalid" and new_layout_event_paths(run_dir)
     ]
     if not fallback:
         return None, []
@@ -860,14 +872,14 @@ def resolve_monitor_targets(args: argparse.Namespace) -> tuple[list[MonitorTarge
 
 def read_jsonl_delta(
     path: Path, offset: int, source: str
-) -> tuple[list[dict[str, object]], int, int]:
+) -> tuple[list[EventRecord], int, int]:
     size = path.stat().st_size
     start = 0 if offset > size else max(0, offset)
     truncated_initial_tail = False
     if source == "ide" and offset == 0 and size > TAIL_LIMIT_BYTES:
         start = size - TAIL_LIMIT_BYTES
         truncated_initial_tail = True
-    events: list[dict[str, object]] = []
+    records: list[EventRecord] = []
     parse_errors = 0
     end = start
     with path.open("r", encoding="utf-8") as handle:
@@ -883,19 +895,13 @@ def read_jsonl_delta(
                 end = line_start
                 break
             end = handle.tell()
-            stripped = line.strip()
-            if not stripped:
+            record = decode_event_line(line)
+            if record is None:
                 continue
-            try:
-                value = json.loads(stripped)
-            except json.JSONDecodeError:
+            records.append(record)
+            if record.event_type in {"<invalid-json>", "<non-object>"}:
                 parse_errors += 1
-                continue
-            if isinstance(value, dict):
-                events.append(value)
-            else:
-                parse_errors += 1
-    return events, end, parse_errors
+    return records, end, parse_errors
 
 
 def thread_id_from(event: dict[str, object], fallback: str) -> str:
@@ -933,57 +939,29 @@ def monitor_payload(
     return payload
 
 
-def exec_terminal_notification(
-    target: MonitorTarget, event: dict[str, object], offset: int
+def terminal_notification(
+    target: MonitorTarget,
+    status: str,
+    details: dict[str, object],
+    terminal: EventRecord | None,
+    offset: int,
 ) -> dict[str, object] | None:
-    kind = event_type(event)
-    if kind == "turn.completed":
-        payload = monitor_payload("codex_session_complete", target, event, offset)
-        if "usage" in event:
-            payload["usage"] = event["usage"]
-        return payload
-    if kind == "turn.failed":
-        payload = monitor_payload("codex_session_failed", target, event, offset)
-        if "error" in event:
-            payload["error"] = event["error"]
-        return payload
-    record = EventRecord(event, kind)
-    if kind == "error" and not is_reconnect_notice(record):
-        payload = monitor_payload("codex_session_failed", target, event, offset)
-        payload["message"] = event_text(event)
-        return payload
-    return None
-
-
-def ide_terminal_notification(
-    target: MonitorTarget, events: list[dict[str, object]], offset: int
-) -> dict[str, object] | None:
-    latest: tuple[int, str, dict[str, object], str | None] | None = None
-    for index, event in enumerate(events):
-        kind = event_type(event)
-        text = event_text(event)
-        if any(hint in text for hint in FAILURE_HINTS):
-            latest = index, "failure", event, text
-        if kind == "thread_goal_updated":
-            payload_value = event.get("payload")
-            payload_dict = payload_value if isinstance(payload_value, dict) else event
-            goal = payload_dict.get("goal") if isinstance(payload_dict, dict) else None
-            status = goal.get("status") if isinstance(goal, dict) else None
-            if isinstance(status, str):
-                latest = index, "goal", event, status.lower()
-
-    if latest is None:
+    if terminal is None or status not in {"complete", "failed"}:
         return None
-    _, kind, event, detail = latest
-    if kind == "failure":
-        payload = monitor_payload("codex_session_failed", target, event, offset)
-        payload["message"] = detail
-        return payload
-    if detail in {"complete", "completed", "done"}:
-        return monitor_payload("codex_session_complete", target, event, offset)
-    if detail in {"failed", "error"}:
-        return monitor_payload("codex_session_failed", target, event, offset)
-    return None
+    notification_type = "codex_session_complete" if status == "complete" else "codex_session_failed"
+    payload = monitor_payload(notification_type, target, terminal.event, offset)
+    if status == "complete" and "usage" in details:
+        payload["usage"] = details["usage"]
+    elif status == "failed" and target.source == "exec":
+        if terminal.event_type == "turn.failed" and "error" in terminal.event:
+            payload["error"] = terminal.event["error"]
+        elif terminal.event_type == "error":
+            payload["message"] = event_text(terminal.event)
+    elif status == "failed" and any(
+        hint in event_text(terminal.event) for hint in FAILURE_HINTS
+    ):
+        payload["message"] = event_text(terminal.event)
+    return payload
 
 
 def emit_monitor(payload: dict[str, object]) -> None:
@@ -996,30 +974,21 @@ def scan_monitor_target(
     path = target.path
     if not path.exists() or not path.is_file():
         return False, False, False
-    events, next_offset, parse_errors = read_jsonl_delta(
+    records, next_offset, parse_errors = read_jsonl_delta(
         path, int(state.get("offset", 0)), target.source
     )
     state["offset"] = next_offset
-    terminal = False
-    failed = False
-    notifications: list[dict[str, object]] = []
     if target.source == "exec":
-        notifications.extend(
-            notification
-            for event in events
-            for notification in [exec_terminal_notification(target, event, next_offset)]
-            if notification is not None
-        )
+        status, details, terminal_event = classify_exec(records)
     else:
-        notification = ide_terminal_notification(target, events, next_offset)
-        if notification is not None:
-            notifications.append(notification)
-    for notification in notifications:
+        status, details, terminal_event = classify_ide(records, path)
+    notification = terminal_notification(target, status, details, terminal_event, next_offset)
+    terminal = notification is not None
+    failed = status == "failed" and terminal
+    if notification is not None:
         if parse_errors:
             notification["parse_errors"] = parse_errors
         emit_monitor(notification)
-        terminal = True
-        failed = notification["type"] == "codex_session_failed"
         state["status"] = "failed" if failed else "complete"
 
     stale = False

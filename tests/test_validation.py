@@ -96,6 +96,24 @@ class ValidationTests(unittest.TestCase):
         self.assertTrue(any("invalid JSON" in issue for issue in malformed["issues"]))
         self.assertTrue(any("unknown ledger event" in issue for issue in malformed["issues"]))
 
+    def test_invalid_utf8_and_unresolvable_paths_are_reported_not_raised(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir, records = self.make_run(root)
+            (run_dir / "ledger.jsonl").write_bytes(b"\xff\xfe")
+            unreadable = validate_run(run_dir)
+
+            loop = root / "loop"
+            loop.symlink_to(loop)
+            records[2]["prompt"] = str(loop)
+            write_ledger(run_dir, records)
+            unresolvable = validate_run(run_dir)
+
+        self.assertFalse(unreadable["ok"])
+        self.assertTrue(any("could not read ledger" in issue for issue in unreadable["issues"]))
+        self.assertFalse(unresolvable["ok"])
+        self.assertTrue(any("prompt file" in issue for issue in unresolvable["issues"]))
+
     def test_start_and_close_markers_have_only_lifecycle_requirements(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir, records = self.make_run(Path(tmp))
@@ -213,11 +231,17 @@ class ValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             run_dir, records = self.make_run(Path(tmp))
             records[4]["result"] = "failed"
+            records[4]["criterion"] = "focused tests"
             records.extend(
                 [
                     {"type": "verification", "id": "check-02", "result": "inconclusive"},
                     {"type": "verification", "id": "check-03", "result": "skipped"},
-                    {"type": "verification", "id": "check-04", "result": "passed"},
+                    {
+                        "type": "verification",
+                        "id": "check-04",
+                        "criterion": "focused tests",
+                        "result": "passed",
+                    },
                 ]
             )
             write_ledger(run_dir, records)
@@ -227,6 +251,31 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(
             [item["id"] for item in payload["non_passing_verifications"]],
             ["check-01", "check-02", "check-03"],
+        )
+
+    def test_core_status_values_are_still_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir, records = self.make_run(Path(tmp))
+
+            records[3].pop("status")
+            write_ledger(run_dir, records)
+            missing_execution_status = validate_run(run_dir)
+
+            records[3]["status"] = "complete"
+            records[4].pop("result")
+            write_ledger(run_dir, records)
+            missing_verification_result = validate_run(run_dir)
+
+        self.assertFalse(missing_execution_status["ok"])
+        self.assertTrue(
+            any("status is not terminal" in issue for issue in missing_execution_status["issues"])
+        )
+        self.assertFalse(missing_verification_result["ok"])
+        self.assertTrue(
+            any(
+                "verification result is not recognized" in issue
+                for issue in missing_verification_result["issues"]
+            )
         )
 
     def test_sparse_decisions_and_optional_metadata_are_not_schema_checked(self) -> None:

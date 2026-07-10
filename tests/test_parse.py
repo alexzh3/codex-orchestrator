@@ -40,6 +40,7 @@ class ParseCliTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(payload["status"], "complete")
         self.assertEqual(payload["details"]["last_agent_message"], "Implemented the scoped change.")
+        self.assertEqual(payload["details"]["usage"]["output_tokens"], 45)
         self.assertEqual(payload["compatibility"]["parse_confidence"], "high")
         self.assertEqual(payload["compatibility"]["unknown_event_types"], [])
 
@@ -83,6 +84,51 @@ class ParseCliTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "failed")
+
+    def test_later_ide_goal_supersedes_an_older_failure_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rollout.jsonl"
+            path.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "type": "agent_message",
+                            "message": "FAILED old verification",
+                        }
+                    }
+                )
+                + "\n"
+                + json.dumps(
+                    {
+                        "payload": {
+                            "type": "thread_goal_updated",
+                            "goal": {"status": "complete", "text": "Fixed and rechecked"},
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = run_cli(
+                "state", "ide-latest", "--source", "ide", "--file", str(path), "--json"
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "complete")
+
+    def test_later_exec_activity_supersedes_an_older_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            path.write_text(
+                '{"type":"turn.completed"}\n{"type":"turn.started"}\n',
+                encoding="utf-8",
+            )
+            result = run_cli(
+                "state", "exec-latest", "--source", "exec", "--file", str(path), "--json"
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "active")
 
     def test_unknown_format_exits_nonzero_and_low_confidence(self) -> None:
         result = run_cli(
@@ -132,6 +178,19 @@ class ParseCliTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(payload["source"], "exec")
         self.assertEqual(payload["event_types"]["turn.completed"], 1)
+
+    def test_find_auto_detects_an_explicit_exec_stream(self) -> None:
+        result = run_cli(
+            "find",
+            "exec-complete-001",
+            "--file",
+            str(FIXTURES / "exec_stream.jsonl"),
+            "--dump-event-types",
+            "--json",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["source"], "exec")
 
     def test_state_without_event_file_still_emits_status_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
