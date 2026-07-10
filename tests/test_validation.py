@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import subprocess
 import sys
@@ -13,91 +14,59 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"
 
 
-def record(kind: str, **values: object) -> dict[str, object]:
-    return {"type": kind, "recorded_at": "2026-07-10T12:00:00Z", **values}
-
-
 def write_ledger(run_dir: Path, records: list[dict[str, object]]) -> None:
     (run_dir / "ledger.jsonl").write_text(
-        "".join(json.dumps(item) + "\n" for item in records), encoding="utf-8"
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
     )
 
 
 class ValidationTests(unittest.TestCase):
-    def make_run(
-        self,
-        root: Path,
-        *,
-        task_status: str = "complete",
-        result_status: str = "complete",
-        verification_result: str = "passed",
-        handoff: bool = True,
-    ) -> tuple[Path, list[dict[str, object]]]:
+    def make_run(self, root: Path) -> tuple[Path, list[dict[str, object]]]:
         run_dir = root / "run"
         execution_dir = run_dir / "agents" / "codex-impl-01" / "execution-01"
         evidence_dir = run_dir / "evidence"
         execution_dir.mkdir(parents=True)
         evidence_dir.mkdir()
         (execution_dir / "prompt.md").write_text("Implement the task.\n", encoding="utf-8")
-        (execution_dir / "events.jsonl").write_text('{"type":"turn.completed"}\n', encoding="utf-8")
-        if handoff:
-            (execution_dir / "handoff.md").write_text("## Status\n\ncomplete\n", encoding="utf-8")
+        (execution_dir / "events.jsonl").write_text(
+            '{"type":"turn.completed"}\n', encoding="utf-8"
+        )
+        (execution_dir / "handoff.md").write_text("## Status\n\ncomplete\n", encoding="utf-8")
         (evidence_dir / "tests.txt").write_text("1 passed\n", encoding="utf-8")
-        records = [
-            record("run_started", run_id="run", repo=str(root), plugin_ref="test-fixture"),
-            record("task", id="task-01", status=task_status),
-            record(
-                "execution",
-                task="task-01",
-                agent="codex-impl-01",
-                execution="execution-01",
-                provider="codex",
-                role="implementation",
-                mode="headless",
-                event_source="exec",
-                prompt="agents/codex-impl-01/execution-01/prompt.md",
-                events="agents/codex-impl-01/execution-01/events.jsonl",
-                handoff="agents/codex-impl-01/execution-01/handoff.md",
-            ),
-            record(
-                "execution_result",
-                task="task-01",
-                agent="codex-impl-01",
-                execution="execution-01",
-                status=result_status,
-                summary="Agent finished.",
-                files_changed=["src/example.py"],
-                caveats=[],
-            ),
-            record(
-                "verification",
-                id="check-01",
-                task="task-01",
-                criterion="Focused tests pass",
-                method="command",
-                result=verification_result,
-                check="python -m unittest",
-                observation="1 passed",
-                evidence=["evidence/tests.txt"],
-            ),
-            record(
-                "decision",
-                id="decision-01",
-                finding="The checked behavior is correct.",
-                outcome="claude_decision",
-                resolution="Accept the verified change.",
-                basis=["check-01"],
-                risk="low",
-            ),
+        records: list[dict[str, object]] = [
+            {"type": "run_started"},
+            {"type": "task", "id": "task-01", "status": "complete"},
+            {
+                "type": "execution",
+                "task": "task-01",
+                "agent": "codex-impl-01",
+                "execution": "execution-01",
+                "prompt": "agents/codex-impl-01/execution-01/prompt.md",
+                "events": "agents/codex-impl-01/execution-01/events.jsonl",
+                "handoff": "agents/codex-impl-01/execution-01/handoff.md",
+            },
+            {
+                "type": "execution_result",
+                "task": "task-01",
+                "agent": "codex-impl-01",
+                "execution": "execution-01",
+                "status": "complete",
+            },
+            {
+                "type": "verification",
+                "id": "check-01",
+                "task": "task-01",
+                "result": "passed",
+                "evidence": ["evidence/tests.txt"],
+            },
         ]
         write_ledger(run_dir, records)
         return run_dir, records
 
-    def test_valid_open_run_is_structurally_ready_to_close(self) -> None:
+    def test_sparse_open_run_is_ready_to_close_and_cli_exits_zero(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir, _ = self.make_run(Path(tmp))
             payload = validate_run(run_dir)
-
             result = subprocess.run(
                 [sys.executable, str(SCRIPT), "validate", str(run_dir), "--json"],
                 check=False,
@@ -107,286 +76,176 @@ class ValidationTests(unittest.TestCase):
             )
 
         self.assertTrue(payload["ok"], payload["issues"])
-        self.assertEqual(payload["non_passing_verifications"], [])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(json.loads(result.stdout)["ok"])
 
-    def test_nonpassing_verification_is_descriptive_not_a_structural_failure(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            run_dir, _ = self.make_run(Path(tmp), verification_result="failed")
-            payload = validate_run(run_dir)
-
-        self.assertTrue(payload["ok"], payload["issues"])
-        self.assertEqual(payload["non_passing_verifications"][0]["id"], "check-01")
-        self.assertEqual(payload["non_passing_verifications"][0]["result"], "failed")
-
-    def test_malformed_and_unknown_ledger_records_are_issues(self) -> None:
+    def test_unreadable_records_and_unknown_types_are_issues(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp) / "run"
             run_dir.mkdir()
+            missing = validate_run(run_dir)
             (run_dir / "ledger.jsonl").write_text(
-                '{"type":"run_started","run_id":"run","recorded_at":"now"}\n'
-                "not json\n"
-                '{"type":"mystery","recorded_at":"now"}\n',
-                encoding="utf-8",
+                '[]\nnot json\n{"type":"mystery"}\n', encoding="utf-8"
             )
-            payload = validate_run(run_dir)
+            malformed = validate_run(run_dir)
 
-        self.assertFalse(payload["ok"])
-        self.assertTrue(any("invalid JSON" in issue for issue in payload["issues"]))
-        self.assertTrue(any("unknown ledger event" in issue for issue in payload["issues"]))
+        self.assertFalse(missing["ok"])
+        self.assertTrue(any("missing ledger" in issue for issue in missing["issues"]))
+        self.assertFalse(malformed["ok"])
+        self.assertTrue(any("must be an object" in issue for issue in malformed["issues"]))
+        self.assertTrue(any("invalid JSON" in issue for issue in malformed["issues"]))
+        self.assertTrue(any("unknown ledger event" in issue for issue in malformed["issues"]))
 
-    def test_missing_referenced_paths_and_evidence_are_issues(self) -> None:
+    def test_start_and_close_markers_have_only_lifecycle_requirements(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir, records = self.make_run(Path(tmp))
-            (run_dir / "agents" / "codex-impl-01" / "execution-01" / "prompt.md").unlink()
-            (run_dir / "evidence" / "tests.txt").unlink()
-            payload = validate_run(run_dir)
+            close = {"type": "run_closed", "judgment": "passed"}
 
-        self.assertFalse(payload["ok"])
-        self.assertTrue(any("prompt path does not exist" in issue for issue in payload["issues"]))
-        self.assertTrue(any("evidence path does not exist" in issue for issue in payload["issues"]))
+            write_ledger(run_dir, [*records, close])
+            self.assertTrue(validate_run(run_dir)["ok"])
 
-    def test_inflight_execution_and_nonterminal_task_are_issues(self) -> None:
+            cases = {
+                "missing start": records[1:],
+                "start not first": [records[1], records[0], *records[2:]],
+                "duplicate start": [records[0], records[0], *records[1:]],
+                "duplicate close": [*records, close, close],
+                "close not final": [*records, close, {"type": "decision"}],
+                "invalid judgment": [*records, {"type": "run_closed", "judgment": "maybe"}],
+            }
+            for name, case_records in cases.items():
+                with self.subTest(name=name):
+                    write_ledger(run_dir, case_records)
+                    self.assertFalse(validate_run(run_dir)["ok"])
+
+    def test_latest_task_status_must_be_terminal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            run_dir, records = self.make_run(Path(tmp), task_status="active")
-            records = [record for record in records if record["type"] != "execution_result"]
-            write_ledger(run_dir, records)
-            payload = validate_run(run_dir)
+            run_dir, records = self.make_run(Path(tmp))
+            earlier_active = {"type": "task", "id": "task-01", "status": "active"}
+            write_ledger(run_dir, [records[0], earlier_active, *records[1:]])
+            self.assertTrue(validate_run(run_dir)["ok"])
 
-        self.assertFalse(payload["ok"])
-        self.assertTrue(any("task task-01 is not terminal" in issue for issue in payload["issues"]))
-        self.assertTrue(
-            any("has no terminal execution_result" in issue for issue in payload["issues"])
-        )
+            for status in ("active", "pending", "unknown"):
+                with self.subTest(status=status):
+                    write_ledger(
+                        run_dir,
+                        [*records, {"type": "task", "id": "task-01", "status": status}],
+                    )
+                    payload = validate_run(run_dir)
+                    self.assertFalse(payload["ok"])
+                    self.assertTrue(any("not terminal" in issue for issue in payload["issues"]))
 
-    def test_missing_handoff_severity_depends_on_result_status(self) -> None:
+    def test_execution_and_result_pairing_detects_omissions_and_mismatches(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            complete_run, _ = self.make_run(Path(tmp) / "complete", handoff=False)
-            complete = validate_run(complete_run)
-            blocked_run, _ = self.make_run(
-                Path(tmp) / "blocked",
-                task_status="blocked",
-                result_status="blocked",
-                handoff=False,
-            )
-            blocked = validate_run(blocked_run)
+            run_dir, records = self.make_run(Path(tmp))
+            cases: dict[str, tuple[list[dict[str, object]], str]] = {}
 
-        self.assertFalse(complete["ok"])
-        self.assertTrue(any("nonempty regular file" in issue for issue in complete["issues"]))
-        self.assertTrue(blocked["ok"], blocked["issues"])
-        self.assertTrue(any("nonempty regular file" in warning for warning in blocked["warnings"]))
+            missing_result = copy.deepcopy(records)
+            del missing_result[3]
+            cases["missing result"] = missing_result, "no terminal execution_result"
 
-    def test_complete_handoff_rejects_empty_file_and_directory(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            empty_run, _ = self.make_run(Path(tmp) / "empty")
-            empty_handoff = empty_run / "agents" / "codex-impl-01" / "execution-01" / "handoff.md"
-            empty_handoff.write_text("", encoding="utf-8")
-            empty = validate_run(empty_run)
+            orphan_result = copy.deepcopy(records)
+            del orphan_result[2]
+            cases["orphan result"] = orphan_result, "unknown execution"
 
-            directory_run, _ = self.make_run(Path(tmp) / "directory")
-            directory_handoff = (
-                directory_run / "agents" / "codex-impl-01" / "execution-01" / "handoff.md"
-            )
-            directory_handoff.unlink()
-            directory_handoff.mkdir()
-            directory = validate_run(directory_run)
+            duplicate_execution = copy.deepcopy(records)
+            duplicate_execution.insert(3, copy.deepcopy(duplicate_execution[2]))
+            cases["duplicate execution"] = duplicate_execution, "duplicate execution"
 
-            blocked_run, _ = self.make_run(
-                Path(tmp) / "blocked-empty",
-                task_status="blocked",
-                result_status="blocked",
-            )
-            blocked_handoff = (
-                blocked_run / "agents" / "codex-impl-01" / "execution-01" / "handoff.md"
-            )
-            blocked_handoff.write_text("", encoding="utf-8")
-            blocked = validate_run(blocked_run)
+            duplicate_result = copy.deepcopy(records)
+            duplicate_result.insert(4, copy.deepcopy(duplicate_result[3]))
+            cases["duplicate result"] = duplicate_result, "duplicate execution_result"
 
-        self.assertFalse(empty["ok"])
-        self.assertFalse(directory["ok"])
-        self.assertTrue(blocked["ok"], blocked["issues"])
-        self.assertTrue(any("nonempty regular file" in warning for warning in blocked["warnings"]))
+            mismatched_task = copy.deepcopy(records)
+            mismatched_task[3]["task"] = "task-02"
+            cases["task mismatch"] = mismatched_task, "does not match"
 
-    def test_decision_basis_accepts_prior_ids_and_existing_evidence_handoff_and_repo_paths(
-        self,
-    ) -> None:
+            result_first = copy.deepcopy(records)
+            result_first[2], result_first[3] = result_first[3], result_first[2]
+            cases["result first"] = result_first, "must be recorded before"
+
+            for name, (case_records, expected) in cases.items():
+                with self.subTest(name=name):
+                    write_ledger(run_dir, case_records)
+                    payload = validate_run(run_dir)
+                    self.assertFalse(payload["ok"])
+                    self.assertTrue(
+                        any(expected in issue for issue in payload["issues"]), payload["issues"]
+                    )
+
+    def test_declared_files_and_handoff_severity_are_checked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             run_dir, records = self.make_run(root)
-            repo_file = root / "src" / "example.py"
-            repo_file.parent.mkdir()
-            repo_file.write_text("VALUE = 1\n", encoding="utf-8")
-            decision = next(item for item in records if item["type"] == "decision")
-            decision["basis"] = [
-                "check-01",
-                "agents/codex-impl-01/execution-01/handoff.md",
-                "evidence/tests.txt",
-                "src/example.py",
-            ]
-            write_ledger(run_dir, records)
-            valid = validate_run(run_dir)
+            execution_dir = run_dir / "agents" / "codex-impl-01" / "execution-01"
 
-            decision["basis"].append("evidence/missing.txt")
-            write_ledger(run_dir, records)
-            missing = validate_run(run_dir)
+            (execution_dir / "prompt.md").unlink()
+            missing_prompt = validate_run(run_dir)
+            self.assertFalse(missing_prompt["ok"])
+            self.assertTrue(any("prompt file" in issue for issue in missing_prompt["issues"]))
+            (execution_dir / "prompt.md").write_text("restored\n", encoding="utf-8")
 
-        self.assertTrue(valid["ok"], valid["issues"])
-        self.assertFalse(missing["ok"])
-        self.assertTrue(any("missing id or path" in issue for issue in missing["issues"]))
-
-    def test_minimal_documented_event_fields_and_enums_are_enforced(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            run_dir, records = self.make_run(Path(tmp))
-            start = next(item for item in records if item["type"] == "run_started")
-            for field in ("repo", "plugin_ref"):
-                start.pop(field)
-            execution = next(item for item in records if item["type"] == "execution")
-            for field in ("provider", "role", "mode"):
-                execution.pop(field)
-            execution["event_source"] = "unknown"
-            result = next(item for item in records if item["type"] == "execution_result")
-            for field in ("summary", "files_changed", "caveats"):
-                result.pop(field)
-            verification = next(item for item in records if item["type"] == "verification")
-            for field in ("criterion", "method", "check", "observation"):
-                verification.pop(field)
-            verification["result"] = "maybe"
-            decision = next(item for item in records if item["type"] == "decision")
-            for field in ("finding", "resolution", "basis", "risk"):
-                decision.pop(field)
-            decision["outcome"] = "voted"
-            records.append(record("run_closed", judgment="passed"))
-            write_ledger(run_dir, records)
-            payload = validate_run(run_dir)
-
-        self.assertFalse(payload["ok"])
-        for field in (
-            "repo",
-            "plugin_ref",
-            "provider",
-            "role",
-            "mode",
-            "summary",
-            "files_changed",
-            "caveats",
-            "criterion",
-            "method",
-            "check",
-            "observation",
-            "finding",
-            "resolution",
-            "basis",
-            "risk",
-            "validation",
-            "risks",
-            "follow_ups",
-        ):
-            self.assertTrue(any(f"field {field}" in issue for issue in payload["issues"]), field)
-        self.assertTrue(any("result is not recognized" in issue for issue in payload["issues"]))
-        self.assertTrue(any("outcome is not recognized" in issue for issue in payload["issues"]))
-        self.assertTrue(
-            any("event_source is not recognized" in issue for issue in payload["issues"])
-        )
-
-    def test_lifecycle_records_and_decision_references_must_be_ordered(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            run_dir, records = self.make_run(root / "task-order")
-            start, task, execution, result, verification, decision = records
-            write_ledger(run_dir, [start, execution, result, task, verification, decision])
-            task_order = validate_run(run_dir)
-
-            run_dir, records = self.make_run(root / "execution-order")
-            start, task, execution, result, verification, decision = records
-            write_ledger(run_dir, [start, task, result, execution, verification, decision])
-            execution_order = validate_run(run_dir)
-
-            run_dir, records = self.make_run(root / "basis-order")
-            start, task, execution, result, verification, decision = records
-            write_ledger(run_dir, [start, task, execution, result, decision, verification])
-            basis_order = validate_run(run_dir)
-
-        self.assertTrue(any("before execution" in issue for issue in task_order["issues"]))
-        self.assertTrue(
-            any("before execution_result" in issue for issue in execution_order["issues"])
-        )
-        self.assertTrue(any("appear earlier" in issue for issue in basis_order["issues"]))
-
-    def test_run_paths_are_confined_but_ide_observation_events_may_be_external(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            run_dir, records = self.make_run(root / "confined")
-            execution = next(item for item in records if item["type"] == "execution")
-            original = run_dir / "agents" / "codex-impl-01" / "execution-01"
-            external = root / "external"
-            external.mkdir()
-            external_prompt = external / "prompt.md"
-            external_prompt.write_text("outside\n", encoding="utf-8")
-            execution["prompt"] = "../outside-prompt.md"
-            (run_dir.parent / "outside-prompt.md").write_text("outside\n", encoding="utf-8")
-            execution["events"] = str(original / "events.jsonl")
-            execution["handoff"] = str(original / "handoff.md")
-            verification = next(item for item in records if item["type"] == "verification")
-            verification["evidence"] = [str(run_dir / "evidence" / "tests.txt")]
-            write_ledger(run_dir, records)
-            confined = validate_run(run_dir)
-
-            observe_run, observe_records = self.make_run(root / "observe")
-            observe_execution = next(
-                item for item in observe_records if item["type"] == "execution"
+            (run_dir / "evidence" / "tests.txt").unlink()
+            missing_evidence = validate_run(run_dir)
+            self.assertFalse(missing_evidence["ok"])
+            self.assertTrue(
+                any("evidence file" in issue for issue in missing_evidence["issues"])
             )
-            rollout = root / "external-rollout.jsonl"
-            rollout.write_text('{"payload":{"type":"agent_message"}}\n', encoding="utf-8")
-            observe_execution.update(mode="observe", event_source="ide", events=str(rollout))
-            observe_execution.pop("prompt")
-            write_ledger(observe_run, observe_records)
-            observe = validate_run(observe_run)
+            (run_dir / "evidence" / "tests.txt").write_text("restored\n", encoding="utf-8")
 
-        self.assertFalse(confined["ok"])
-        self.assertTrue(any("prompt path escapes" in issue for issue in confined["issues"]))
-        self.assertTrue(
-            any("events path must be relative" in issue for issue in confined["issues"])
-        )
-        self.assertTrue(
-            any("handoff path must be relative" in issue for issue in confined["issues"])
-        )
-        self.assertTrue(
-            any("evidence path must be relative" in issue for issue in confined["issues"])
-        )
-        self.assertTrue(observe["ok"], observe["issues"])
+            external_events = root / "external-rollout.jsonl"
+            external_events.write_text('{"type":"turn.completed"}\n', encoding="utf-8")
+            records[2]["events"] = str(external_events)
+            write_ledger(run_dir, records)
+            self.assertTrue(validate_run(run_dir)["ok"])
 
-    def test_orphan_result_and_invalid_closure_order_are_issues(self) -> None:
+            (execution_dir / "handoff.md").write_text("", encoding="utf-8")
+            complete = validate_run(run_dir)
+            self.assertFalse(complete["ok"])
+            self.assertTrue(any("handoff is missing or empty" in x for x in complete["issues"]))
+
+            records[3]["status"] = "failed"
+            write_ledger(run_dir, records)
+            failed = validate_run(run_dir)
+            self.assertTrue(failed["ok"], failed["issues"])
+            self.assertTrue(any("handoff is missing or empty" in x for x in failed["warnings"]))
+
+    def test_nonpassing_verifications_remain_visible_without_failing_structure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir, records = self.make_run(Path(tmp))
+            records[4]["result"] = "failed"
             records.extend(
                 [
-                    record(
-                        "run_closed",
-                        judgment="passed",
-                        summary="Ready.",
-                        validation={},
-                        risks=[],
-                        follow_ups=[],
-                    ),
-                    record(
-                        "execution_result",
-                        task="task-01",
-                        agent="codex-review-01",
-                        execution="execution-99",
-                        status="failed",
-                        summary="Failed.",
-                        files_changed=[],
-                        caveats=["No handoff."],
-                    ),
+                    {"type": "verification", "id": "check-02", "result": "inconclusive"},
+                    {"type": "verification", "id": "check-03", "result": "skipped"},
+                    {"type": "verification", "id": "check-04", "result": "passed"},
                 ]
             )
             write_ledger(run_dir, records)
             payload = validate_run(run_dir)
 
-        self.assertFalse(payload["ok"])
-        self.assertTrue(any("run_closed must be the final" in issue for issue in payload["issues"]))
-        self.assertTrue(any("unknown execution" in issue for issue in payload["issues"]))
+        self.assertTrue(payload["ok"], payload["issues"])
+        self.assertEqual(
+            [item["id"] for item in payload["non_passing_verifications"]],
+            ["check-01", "check-02", "check-03"],
+        )
+
+    def test_sparse_decisions_and_optional_metadata_are_not_schema_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir, records = self.make_run(Path(tmp))
+            records.extend(
+                [
+                    {
+                        "type": "decision",
+                        "basis": ["missing-id", "missing-file"],
+                        "extra": {"future": True},
+                    },
+                    {"type": "run_closed", "judgment": "blocked"},
+                ]
+            )
+            write_ledger(run_dir, records)
+            payload = validate_run(run_dir)
+
+        self.assertTrue(payload["ok"], payload["issues"])
 
 
 if __name__ == "__main__":

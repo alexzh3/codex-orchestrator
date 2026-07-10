@@ -23,12 +23,9 @@ LEDGER_EVENT_TYPES = {
     "run_closed",
 }
 
-TASK_STATUSES = {"pending", "active", "complete", "blocked", "failed"}
 TERMINAL_TASK_STATUSES = {"complete", "blocked", "failed"}
 TERMINAL_EXECUTION_STATUSES = {"complete", "blocked", "failed"}
 VERIFICATION_RESULTS = {"passed", "failed", "inconclusive", "skipped"}
-DECISION_OUTCOMES = {"consensus", "claude_decision", "user_action_required"}
-EXECUTION_EVENT_SOURCES = {"exec", "ide", "claude"}
 
 EXEC_EVENT_TYPES = {
     "thread.started",
@@ -510,45 +507,6 @@ def record_line(record: dict[str, object]) -> str:
     return f"line {line}" if isinstance(line, int) else "ledger"
 
 
-def string_field(
-    record: dict[str, object], field: str, issues: list[str], *, required: bool = True
-) -> str | None:
-    value = record.get(field)
-    if isinstance(value, str) and value:
-        return value
-    if required or value is not None:
-        issues.append(
-            f"{record_line(record)}: {record.get('type')} field {field} must be a non-empty string"
-        )
-    return None
-
-
-def string_list_field(
-    record: dict[str, object], field: str, issues: list[str], *, required: bool = True
-) -> list[str] | None:
-    value = record.get(field)
-    if value is None and not required:
-        return None
-    if isinstance(value, list) and all(isinstance(item, str) for item in value):
-        return value
-    issues.append(
-        f"{record_line(record)}: {record.get('type')} field {field} must be a string list"
-    )
-    return None
-
-
-def object_field(
-    record: dict[str, object], field: str, issues: list[str], *, required: bool = True
-) -> dict[str, object] | None:
-    value = record.get(field)
-    if value is None and not required:
-        return None
-    if isinstance(value, dict):
-        return value
-    issues.append(f"{record_line(record)}: {record.get('type')} field {field} must be an object")
-    return None
-
-
 def execution_key(record: dict[str, object]) -> tuple[str, str] | None:
     agent = record.get("agent")
     execution = record.get("execution")
@@ -566,94 +524,6 @@ def resolve_run_path(run_dir: Path, value: str) -> Path:
     return path.resolve() if path.is_absolute() else (run_dir / path).resolve()
 
 
-def path_is_within(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return False
-    return True
-
-
-def path_field(
-    run_dir: Path,
-    record: dict[str, object],
-    field: str,
-    issues: list[str],
-    *,
-    required: bool,
-    check_exists: bool = True,
-    allow_external_absolute: bool = False,
-) -> Path | None:
-    value = record.get(field)
-    if value is None and not required:
-        return None
-    if not isinstance(value, str) or not value:
-        issues.append(
-            f"{record_line(record)}: {record.get('type')} field {field} must be a non-empty path"
-        )
-        return None
-    raw_path = Path(value).expanduser()
-    path = resolve_run_path(run_dir, value)
-    if raw_path.is_absolute():
-        if not allow_external_absolute:
-            issues.append(
-                f"{record_line(record)}: {field} path must be relative "
-                f"to the run directory: {value}"
-            )
-    elif not path_is_within(path, run_dir):
-        issues.append(f"{record_line(record)}: {field} path escapes the run directory: {value}")
-    if check_exists and not path.exists():
-        issues.append(f"{record_line(record)}: referenced {field} path does not exist: {value}")
-    return path
-
-
-def nonempty_regular_file(path: Path) -> bool:
-    try:
-        return path.is_file() and path.stat().st_size > 0
-    except OSError:
-        return False
-
-
-def repository_root(run_dir: Path, start: dict[str, object] | None) -> Path | None:
-    if start is None:
-        return None
-    value = start.get("repo")
-    if not isinstance(value, str) or not value:
-        return None
-    path = Path(value).expanduser()
-    if path.is_absolute():
-        return path.resolve()
-    if run_dir.parent.name == "runs" and run_dir.parent.parent.name == ".codex-orchestrator":
-        return (run_dir.parent.parent.parent / path).resolve()
-    return path.resolve()
-
-
-def run_basis_path(run_dir: Path, value: str) -> Path | None:
-    raw = Path(value)
-    if raw.is_absolute():
-        return None
-    parts = raw.parts
-    is_evidence = bool(parts) and parts[0] == "evidence"
-    is_handoff = (
-        len(parts) >= 4
-        and parts[0] == "agents"
-        and parts[-1] == "handoff.md"
-        and parts[-2].startswith("execution-")
-    )
-    if not (is_evidence or is_handoff):
-        return None
-    path = resolve_run_path(run_dir, value)
-    return path if path_is_within(path, run_dir) and path.is_file() else None
-
-
-def repository_basis_path(repository: Path | None, value: str) -> Path | None:
-    if repository is None:
-        return None
-    raw = Path(value).expanduser()
-    path = raw.resolve() if raw.is_absolute() else (repository / raw).resolve()
-    return path if path_is_within(path, repository) and path.exists() else None
-
-
 def compact_verification(record: dict[str, object]) -> dict[str, object]:
     return {
         key: record[key]
@@ -662,222 +532,152 @@ def compact_verification(record: dict[str, object]) -> dict[str, object]:
     }
 
 
+def is_regular_file(path: Path, *, nonempty: bool = False) -> bool:
+    try:
+        return path.is_file() and (not nonempty or path.stat().st_size > 0)
+    except OSError:
+        return False
+
+
+def check_declared_file(
+    run_dir: Path, record: dict[str, object], field: str, issues: list[str]
+) -> Path | None:
+    if field not in record:
+        return None
+    value = record.get(field)
+    if not isinstance(value, str) or not value:
+        issues.append(f"{record_line(record)}: {field} must name a file")
+        return None
+    path = resolve_run_path(run_dir, value)
+    if not is_regular_file(path):
+        issues.append(f"{record_line(record)}: referenced {field} file does not exist: {value}")
+        return None
+    return path
+
+
 def validate_run(run_dir: Path) -> dict[str, object]:
     run_dir = run_dir.expanduser().resolve()
     records, issues = read_ledger(run_dir / "ledger.jsonl")
     warnings: list[str] = []
     non_passing: list[dict[str, object]] = []
 
-    known_records = [record for record in records if record.get("type") in LEDGER_EVENT_TYPES]
+    known_records: list[dict[str, object]] = []
     for record in records:
         kind = record.get("type")
         if not isinstance(kind, str) or kind not in LEDGER_EVENT_TYPES:
             issues.append(f"{record_line(record)}: unknown ledger event type: {kind!r}")
-        recorded_at = record.get("recorded_at")
-        if not isinstance(recorded_at, str) or not recorded_at:
-            issues.append(f"{record_line(record)}: record must have a non-empty recorded_at")
+        else:
+            known_records.append(record)
 
     starts = [record for record in known_records if record.get("type") == "run_started"]
     closures = [record for record in known_records if record.get("type") == "run_closed"]
     if len(starts) != 1:
         issues.append(f"ledger must contain exactly one run_started record; found {len(starts)}")
-    elif known_records and known_records[0] is not starts[0]:
+    elif records and records[0] is not starts[0]:
         issues.append("run_started must be the first ledger record")
     if len(closures) > 1:
         issues.append(f"ledger may contain at most one run_closed record; found {len(closures)}")
-    if closures and known_records and known_records[-1] is not closures[-1]:
+    if closures and records and records[-1] is not closures[-1]:
         issues.append("run_closed must be the final ledger record")
-    if starts:
-        string_field(starts[0], "run_id", issues)
-        string_field(starts[0], "repo", issues)
-        string_field(starts[0], "plugin_ref", issues)
     for closure in closures:
-        judgment = string_field(closure, "judgment", issues)
-        if judgment is not None and judgment not in {"passed", "blocked"}:
+        if closure.get("judgment") not in {"passed", "blocked"}:
             issues.append(f"{record_line(closure)}: run_closed judgment must be passed or blocked")
-        string_field(closure, "summary", issues)
-        object_field(closure, "validation", issues)
-        string_list_field(closure, "risks", issues)
-        string_list_field(closure, "follow_ups", issues)
 
     tasks: dict[str, dict[str, object]] = {}
-    task_first_lines: dict[str, int] = {}
     executions: dict[tuple[str, str], dict[str, object]] = {}
     execution_results: dict[tuple[str, str], dict[str, object]] = {}
-    verification_ids: set[str] = set()
-    verification_lines: dict[str, int] = {}
-    decision_ids: set[str] = set()
-    decision_lines: dict[str, int] = {}
 
     for record in known_records:
         kind = record.get("type")
         if kind == "task":
-            task_id = string_field(record, "id", issues)
-            status = string_field(record, "status", issues)
-            if status is not None and status not in TASK_STATUSES:
-                issues.append(f"{record_line(record)}: task status is not recognized: {status}")
-            if task_id is not None:
+            task_id = record.get("id")
+            if isinstance(task_id, str) and task_id:
                 tasks[task_id] = record
-                line = record.get("_line")
-                if isinstance(line, int):
-                    task_first_lines.setdefault(task_id, line)
+            else:
+                issues.append(f"{record_line(record)}: task must have a non-empty id")
         elif kind == "execution":
-            string_field(record, "task", issues)
-            string_field(record, "agent", issues)
-            string_field(record, "execution", issues)
-            string_field(record, "provider", issues)
-            string_field(record, "role", issues)
-            string_field(record, "mode", issues)
-            source = string_field(record, "event_source", issues)
-            if source is not None and source not in EXECUTION_EVENT_SOURCES:
-                issues.append(
-                    f"{record_line(record)}: execution event_source is not recognized: {source}"
-                )
             key = execution_key(record)
-            if key is not None:
-                if key in executions:
-                    issues.append(
-                        f"{record_line(record)}: duplicate execution {display_execution(key)}"
-                    )
-                else:
-                    executions[key] = record
+            if key is None:
+                issues.append(f"{record_line(record)}: execution must identify agent and execution")
+            elif key in executions:
+                issues.append(
+                    f"{record_line(record)}: duplicate execution {display_execution(key)}"
+                )
+            else:
+                executions[key] = record
+            check_declared_file(run_dir, record, "prompt", issues)
+            check_declared_file(run_dir, record, "events", issues)
         elif kind == "execution_result":
-            string_field(record, "task", issues)
-            string_field(record, "agent", issues)
-            string_field(record, "execution", issues)
-            status = string_field(record, "status", issues)
-            string_field(record, "summary", issues)
-            string_list_field(record, "files_changed", issues)
-            string_list_field(record, "caveats", issues)
-            if status is not None and status not in TERMINAL_EXECUTION_STATUSES:
+            status = record.get("status")
+            if status not in TERMINAL_EXECUTION_STATUSES:
                 issues.append(
                     f"{record_line(record)}: execution_result status is not terminal: {status}"
                 )
             key = execution_key(record)
-            if key is not None:
-                if key in execution_results:
-                    issues.append(
-                        f"{record_line(record)}: duplicate execution_result for "
-                        f"{display_execution(key)}"
-                    )
-                else:
-                    execution_results[key] = record
+            if key is None:
+                issues.append(
+                    f"{record_line(record)}: execution_result must identify agent and execution"
+                )
+            elif key in execution_results:
+                issues.append(
+                    f"{record_line(record)}: duplicate execution_result for "
+                    f"{display_execution(key)}"
+                )
+            else:
+                execution_results[key] = record
         elif kind == "verification":
-            verification_id = string_field(record, "id", issues)
-            string_field(record, "task", issues)
-            string_field(record, "criterion", issues)
-            string_field(record, "method", issues)
-            string_field(record, "check", issues)
-            string_field(record, "observation", issues)
-            result = string_field(record, "result", issues)
-            if verification_id is not None:
-                if verification_id in verification_ids:
-                    issues.append(
-                        f"{record_line(record)}: duplicate verification id {verification_id}"
-                    )
-                verification_ids.add(verification_id)
-                line = record.get("_line")
-                if isinstance(line, int):
-                    verification_lines.setdefault(verification_id, line)
-            if result is not None and result not in VERIFICATION_RESULTS:
+            result = record.get("result")
+            if result not in VERIFICATION_RESULTS:
                 issues.append(
                     f"{record_line(record)}: verification result is not recognized: {result}"
                 )
             elif result != "passed":
                 non_passing.append(compact_verification(record))
-        elif kind == "decision":
-            decision_id = string_field(record, "id", issues)
-            string_field(record, "task", issues, required=False)
-            string_field(record, "finding", issues)
-            outcome = string_field(record, "outcome", issues)
-            if outcome is not None and outcome not in DECISION_OUTCOMES:
-                issues.append(
-                    f"{record_line(record)}: decision outcome is not recognized: {outcome}"
-                )
-            string_field(record, "resolution", issues)
-            string_list_field(record, "basis", issues)
-            string_field(record, "risk", issues)
-            if decision_id is not None:
-                if decision_id in decision_ids:
-                    issues.append(f"{record_line(record)}: duplicate decision id {decision_id}")
-                decision_ids.add(decision_id)
-                line = record.get("_line")
-                if isinstance(line, int):
-                    decision_lines.setdefault(decision_id, line)
+            evidence = record.get("evidence", [])
+            if not isinstance(evidence, list) or not all(
+                isinstance(item, str) and item for item in evidence
+            ):
+                issues.append(f"{record_line(record)}: evidence must be a list of file paths")
+            else:
+                for value in evidence:
+                    check_declared_file(run_dir, {**record, "evidence": value}, "evidence", issues)
 
-    task_ids = set(tasks)
     for task_id, task in tasks.items():
         status = task.get("status")
         if status not in TERMINAL_TASK_STATUSES:
             issues.append(f"task {task_id} is not terminal; latest status is {status!r}")
 
     for key, execution in executions.items():
-        task_id = execution.get("task")
-        if isinstance(task_id, str) and task_id not in task_ids:
-            issues.append(f"{record_line(execution)}: execution references unknown task {task_id}")
-        execution_line = execution.get("_line")
-        task_line = task_first_lines.get(task_id) if isinstance(task_id, str) else None
-        if (
-            isinstance(execution_line, int)
-            and isinstance(task_line, int)
-            and task_line >= execution_line
-        ):
-            issues.append(
-                f"{record_line(execution)}: task {task_id} must be recorded before execution"
-            )
-        observes_ide = execution.get("mode") == "observe" and execution.get("event_source") == "ide"
-        path_field(run_dir, execution, "prompt", issues, required=not observes_ide)
-        provider = execution.get("provider")
-        path_field(
-            run_dir,
-            execution,
-            "events",
-            issues,
-            required=provider != "claude",
-            allow_external_absolute=execution.get("event_source") == "ide",
-        )
-        handoff_path = path_field(
-            run_dir, execution, "handoff", issues, required=True, check_exists=False
-        )
         result = execution_results.get(key)
         if result is None:
             issues.append(f"execution {display_execution(key)} has no terminal execution_result")
             continue
+        task_id = execution.get("task")
         result_task = result.get("task")
-        if result_task != task_id:
+        if isinstance(task_id, str) and isinstance(result_task, str) and result_task != task_id:
             issues.append(
                 f"{record_line(result)}: execution_result task {result_task!r} "
                 f"does not match execution task {task_id!r}"
             )
-        status = result.get("status")
-        result_line = result.get("_line")
-        if (
-            isinstance(execution_line, int)
-            and isinstance(result_line, int)
-            and execution_line >= result_line
-        ):
+        if int(execution.get("_line", 0)) >= int(result.get("_line", 0)):
             issues.append(
                 f"{record_line(result)}: execution {display_execution(key)} "
                 "must be recorded before execution_result"
             )
-        if "handoff" in result:
-            path_field(
-                run_dir,
-                result,
-                "handoff",
-                issues,
-                required=False,
-                check_exists=False,
-            )
-        if handoff_path is not None and not nonempty_regular_file(handoff_path):
-            message = (
-                f"execution {display_execution(key)} handoff must be a nonempty regular file: "
-                f"{execution.get('handoff')}"
-            )
-            if status == "complete":
-                issues.append(message)
-            else:
-                warnings.append(message)
+        handoff_values = [
+            source.get("handoff")
+            for source in (execution, result)
+            if "handoff" in source
+        ]
+        handoff_ok = bool(handoff_values) and all(
+            isinstance(value, str)
+            and bool(value)
+            and is_regular_file(resolve_run_path(run_dir, value), nonempty=True)
+            for value in handoff_values
+        )
+        if not handoff_ok:
+            message = f"execution {display_execution(key)} handoff is missing or empty"
+            (issues if result.get("status") == "complete" else warnings).append(message)
 
     for key, result in execution_results.items():
         if key not in executions:
@@ -885,77 +685,6 @@ def validate_run(run_dir: Path) -> dict[str, object]:
                 f"{record_line(result)}: execution_result references unknown execution "
                 f"{display_execution(key)}"
             )
-        task_id = result.get("task")
-        if isinstance(task_id, str) and task_id not in task_ids:
-            issues.append(
-                f"{record_line(result)}: execution_result references unknown task {task_id}"
-            )
-
-    reference_lines = {**task_first_lines, **verification_lines, **decision_lines}
-    for key, execution in executions.items():
-        line = execution.get("_line")
-        if isinstance(line, int):
-            reference_lines[display_execution(key)] = line
-    repo_root = repository_root(run_dir, starts[0] if starts else None)
-    for record in known_records:
-        kind = record.get("type")
-        if kind == "verification":
-            task_id = record.get("task")
-            if isinstance(task_id, str) and task_id not in task_ids:
-                issues.append(
-                    f"{record_line(record)}: verification references unknown task {task_id}"
-                )
-            evidence = record.get("evidence", [])
-            if not isinstance(evidence, list) or not all(
-                isinstance(item, str) and item for item in evidence
-            ):
-                issues.append(
-                    f"{record_line(record)}: verification evidence must be a list of paths"
-                )
-            else:
-                for value in evidence:
-                    raw_path = Path(value).expanduser()
-                    path = resolve_run_path(run_dir, value)
-                    if raw_path.is_absolute():
-                        issues.append(
-                            f"{record_line(record)}: evidence path must be relative "
-                            f"to the run directory: {value}"
-                        )
-                    elif not path_is_within(path, run_dir):
-                        issues.append(
-                            f"{record_line(record)}: evidence path escapes "
-                            f"the run directory: {value}"
-                        )
-                    if not path.exists():
-                        issues.append(
-                            f"{record_line(record)}: referenced evidence path "
-                            f"does not exist: {value}"
-                        )
-        elif kind == "decision":
-            task_id = record.get("task")
-            if isinstance(task_id, str) and task_id not in task_ids:
-                issues.append(f"{record_line(record)}: decision references unknown task {task_id}")
-            basis = record.get("basis")
-            if isinstance(basis, list) and all(isinstance(item, str) and item for item in basis):
-                decision_line = record.get("_line")
-                for value in basis:
-                    reference_line = reference_lines.get(value)
-                    if reference_line is not None:
-                        if isinstance(decision_line, int) and reference_line >= decision_line:
-                            issues.append(
-                                f"{record_line(record)}: decision basis reference {value} "
-                                "must appear earlier in the ledger"
-                            )
-                        continue
-                    if run_basis_path(run_dir, value) is not None:
-                        continue
-                    if repository_basis_path(repo_root, value) is not None:
-                        continue
-                    issues.append(
-                        f"{record_line(record)}: decision basis references "
-                        f"missing id or path {value}"
-                    )
-
     return {
         "ok": not issues,
         "issues": issues,
