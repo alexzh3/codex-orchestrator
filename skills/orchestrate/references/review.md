@@ -1,56 +1,71 @@
-# Review Loop
+# Claims, Evidence, And Review
 
-Treat code, diffs, tests, logs, manifests, and generated artifacts as source of truth. Treat agent
-narration as intent until verified. Watch for failure spirals: weakened assertions, deleted inputs,
-shrunk ranges, or special-cased validation failures.
+Read an agent handoff first. It is the agent's compact claim package: status, summary, files
+changed, claims or findings, commands it reports running, and caveats. It is not proof that those
+claims are true.
 
-For deterministic changes, inspect diffs and run relevant tests, typecheck, lint, build, or manifest
-assertions. For nondeterministic rollout/training changes, require seeded determinism where possible,
-metric thresholds, and regression bands; do not accept one stochastic pass.
+Evidence is an inspectable observation used to support or contradict a verification or decision.
+Prefer evidence in this order:
+
+1. Direct observations: repository diff, command exit/result, screenshot, measured output.
+2. Mechanically derived observations whose source remains available.
+3. Manual or model review observations tied to exact files or behavior.
+4. Agent claims, which identify what to inspect but do not establish correctness.
+
+Prompts establish assigned scope. Event streams establish what a session emitted and are useful for
+monitoring or debugging. Neither is independent evidence that the implementation works.
+
+## Verification
+
+Claude records a `verification` only after evaluating a concrete task criterion. Include:
+
+- a unique `id`, such as `check-01`;
+- the `task` and criterion;
+- the method, such as `command`, `diff_review`, `visual`, or `manual`;
+- the exact command or inspection under `check`;
+- `result`: `passed`, `failed`, `inconclusive`, or `skipped`;
+- a concise factual `observation`;
+- optional `evidence` paths when the underlying material should be retained.
+
+Small observations belong inline. Save full output under `evidence/` when it is lengthy, binary,
+disputed, failure-diagnostic, or important to audit. Do not create extracted agent-response files:
+the exact handoff already records the agent's claims.
+
+If a command fails, preserve the failure, fix the cause, rerun the relevant command, and record a
+new verification. Do not rewrite the failed record or claim that a passing rerun erases history.
+Claude explains the relationship in a later `decision` and in `run_closed`.
+
+## Review Loop
+
+1. Read the handoff and inspect the actual changed files and diff.
+2. Compare `execution_result.files_changed` with the task's allowed/owned paths or globs in `files`.
+3. Independently run checks needed by the acceptance criteria. Never promote
+   `Commands Reported` from a handoff directly to a passing verification.
+4. If Claude finds a material issue, send the exact finding and observed evidence back to the same
+   relevant agent in a new execution.
+5. Record the resulting agreement, Claude judgment, or need for user input as a `decision`.
+6. Repeat only for unresolved material issues, then record the terminal task status.
+
+Watch for failure spirals: weakened assertions, deleted inputs, narrowed ranges, or special-cased
+validation failures. For nondeterministic work, prefer seeds, thresholds, and regression bands over
+accepting one lucky pass.
 
 ## Independent Codex Review
 
-Run `codex exec review --uncommitted` or the relevant `--commit <sha>` / `--base <branch>` form as
-the standard Codex final review before acceptance whenever a diff exists.
+Use Codex review when a second model materially reduces risk. Save the review prompt first, append
+its execution, then capture both the event stream and handoff:
 
 ```bash
-"$CODEX" exec review --uncommitted
-"$CODEX" exec review --base <branch>
-"$CODEX" exec review --commit <sha>
+"$CODEX" exec review --json \
+  --output-last-message "$EXECUTION_DIR/handoff.md" \
+  --uncommitted - \
+  < "$EXECUTION_DIR/prompt.md" \
+  > "$EXECUTION_DIR/events.jsonl"
 ```
 
-A `claude_decision` outcome must still record evidence, rationale, risk level, and verification.
+Use the same command with `--base <branch>` instead of `--uncommitted` to review changes against a
+branch, or `--commit <sha>` to review one commit.
 
-Save every Codex review or consensus prompt under `prompts/` before running it, and capture its JSONL
-output under `logs/` with the same filename stem. Reference both paths from the review or consensus
-ledger record.
-
-## Consensus-Gated Review Loop
-
-Use this loop after Codex yields or completes:
-
-1. Codex implements the scoped change.
-2. Claude reviews the actual diff, tests, logs, manifests, and artifacts.
-3. If Claude finds a suspected issue, share the exact finding, evidence, and proposed resolution
-   with Codex before implementing or accepting a fix.
-4. Record the outcome: `consensus`, `claude_decision`, or `user_action_required`; whether Claude and
-   Codex agree, disagree, or partially agree; root cause when known; chosen fix or no-fix rationale;
-   risk level; whether user input is required; and the verification required.
-5. Implement accepted fixes, then run Claude's final review and a Codex final review.
-6. Accept when both final reviews pass or when Claude records `claude_decision` after the evidence
-   review. Use `user_action_required` only when Claude needs user input before continuing or
-   accepting.
-
-When Claude needs Codex consensus on a finding, use a targeted prompt rather than another broad
-rereview:
-
-```bash
-"$CODEX" exec resume <thread-id> "<specific finding, evidence, and proposed fix>"
-```
-
-Do not chain broad rereviews. If a final review still finds incorrect behavior after consensus
-fixes, run one scoped rereview/fix loop for the unresolved issue and record why the extra pass was
-needed. Escalate to the user instead of continuing open-ended review rounds.
-
-Record suspected issue, root cause when known, outcome, and verification as `consensus` evidence in
-both `ledger.jsonl` and the `## Consensus` section of `report.md`.
+Represent a monitored review as a named review agent and execution, with its exact prompt/event
+source/handoff. Treat review findings as claims until Claude checks them against the repository.
+Codex agreement is useful corroboration, not a substitute for relevant executable checks.

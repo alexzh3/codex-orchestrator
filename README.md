@@ -1,42 +1,36 @@
 # Claude–Codex Orchestrator Plugin
 
-A Claude Code plugin that lets Claude run OpenAI Codex coding sessions for you. Claude breaks the
-work into tasks, starts or resumes Codex agents, watches them in the CLI or IDE, reviews the diffs,
-and records why each result was accepted or rejected.
+A prompt-first Claude Code plugin for coordinating OpenAI Codex sessions. Claude scopes the work,
+starts or resumes Codex agents, monitors their native event streams, checks their claims against the
+repository, records concise decisions, and authors the final report.
 
----
+## What It Does
 
-## What this plugin does
+Use this plugin when you want Claude Code to supervise Codex rather than manually relaying context
+between the two tools. It helps Claude:
 
-Use this plugin when you want Claude Code to manage Codex sessions instead of supervising them by
-hand.
+- assign scoped implementation or review work to reusable Codex agents;
+- attach to IDE sessions from `codex://threads/<thread-uuid>`;
+- monitor headless JSONL and external IDE rollout streams without loading full logs;
+- coordinate sequential or parallel agents without overlapping file ownership;
+- preserve exact prompts, raw event streams, and compact agent handoffs;
+- independently verify material claims and record consequential decisions;
+- author a final report and Mermaid orchestration graph from the closed run ledger.
 
-It helps Claude:
-
-* start new Codex sessions or resume existing ones with the right context,
-* attach to live Codex IDE sessions from `codex://threads/<thread-uuid>` using Codex deeplinks,
-* monitor compact JSONL/rollout streams and classify session status,
-* coordinate sequential or parallel Codex work without file or compute conflicts,
-* check shared compute before expensive local runs, such as GPU-heavy tests or research rollouts,
-* record verification evidence and Claude/Codex consensus in a final report.
-
-Basically, Claude acts as the long-context orchestrator and reviewer, while Codex handles scoped implementation,
-backend work, refactors, test repair, and second-pass review as reusable monitored agents by default.
-
----
+Claude remains the planner, orchestrator, and final reviewer. Codex works as a scoped implementer or
+peer reviewer in its native harness.
 
 ## Requirements
 
-* [Claude Code](https://code.claude.com/docs/en/overview) installed in your IDE or terminal.
-* [OpenAI Codex](https://developers.openai.com/codex/cli/reference) installed in your IDE, or available through the Codex CLI.
-* Git initialized in the target repository when using worktree isolation or branch-based review.
-* At least one verification path: tests, typecheck, lint, build, benchmark, screenshot, or custom script.
-
----
+- [Claude Code](https://code.claude.com/docs/en/overview) in an IDE or terminal.
+- [OpenAI Codex](https://developers.openai.com/codex/cli/reference) in an IDE or through the CLI.
+- Git when branch or worktree isolation is needed.
+- A meaningful verification path such as tests, typecheck, lint, build, benchmark, screenshot, or
+  manual inspection.
 
 ## Installation
 
-From inside Claude Code:
+From Claude Code:
 
 ```text
 /plugin marketplace add alexzh3/codex-orchestrator
@@ -44,280 +38,213 @@ From inside Claude Code:
 /reload-plugins
 ```
 
----
+## Usage
 
-## Basic usage
-
-Use `orchestrate` for prompt-directed Codex coordination:
+Use `orchestrate` for a focused assignment, monitor, review, decision, handoff, or compute-gating
+phase:
 
 ```text
 /codex-orchestrator:orchestrate
 
-Break this task into scoped Codex agent prompts.
-
-Use this prompt as the scope. Reuse any matching existing Codex agent whose context is relevant. If that session is almost full but still relevant, compact the useful state and continue in the same session. Start a new headless Codex agent with `codex exec --json` only when the task is contextually unrelated, isolation requires it, or I explicitly ask for a fresh session.
-
-Save each Codex prompt under `prompts/` and capture each Codex JSONL stream under `logs/` with the same filename stem. Monitor each JSONL stream with parser state/tail offsets. Do not edit overlapping files while Codex owns them. Review the diffs and record verification after Codex yields or completes.
+Give Codex a scoped implementation task, reuse a relevant session if one exists, monitor it, then
+independently check its material claims before accepting the result.
 ```
 
-Use `workflow` only when you want the full end-to-end workflow: ledger setup, planning, Codex plan
-review when needed, dispatch, monitoring, review, verification, consensus, and final report.
+Use `workflow` for one complete durable run:
 
 ```text
 /codex-orchestrator:workflow
 ```
 
-Start a Codex task in VS Code or Cursor.
-
-Copy the Codex session URL:
-
-```text
-codex://threads/<thread-uuid>
-```
-
-For IDE sidebar visibility, start the session in VS Code or Cursor first. Headless Codex sessions
-started with `codex exec` use source kind `exec`; they are CLI-resumable but do not appear in the
-IDE sidebar.
-
-Then ask Claude:
+To monitor an existing IDE session, start it in VS Code or Cursor, copy its URL, and ask Claude:
 
 ```text
 /codex-orchestrator:orchestrate
 
-Monitor this Codex session:
+Monitor and review this session:
 codex://threads/<thread-uuid>
-
-Review what Codex is doing, detect when it finishes or blocks, verify the diff against the repository, and share any suspected mistakes back with Codex before accepting the result.
 ```
 
----
+Headless sessions started with `codex exec` are CLI-resumable but do not appear in the IDE sidebar.
 
-## Skills and slash commands
+### Commands
 
-Available slash commands:
-
-| Command | What it does |
+| Command | Purpose |
 | --- | --- |
-| `/codex-orchestrator:orchestrate` | Invoke the orchestration command for prompt-directed Codex coordination, such as scoped dispatch, monitoring, review, handoff, consensus, or compute gating. |
-| `/codex-orchestrator:workflow` | Run the full end-to-end workflow: ledger, planning, Codex plan review when needed, dispatch, monitoring, review, verification, consensus, and report. |
-| `/codex-orchestrator:report` | Have Claude author the final `report.md` after gate and validation from the completed run ledger and artifacts. |
+| `/codex-orchestrator:orchestrate` | Run a focused orchestration phase. |
+| `/codex-orchestrator:workflow` | Run planning through execution, verification, closure, and report. |
+| `/codex-orchestrator:report` | Author `report.md` from an already closed run. |
 
-The orchestration playbooks live in the skills:
-[`skills/orchestrate/SKILL.md`](./skills/orchestrate/SKILL.md),
-[`skills/workflow/SKILL.md`](./skills/workflow/SKILL.md), and
-[`skills/report/SKILL.md`](./skills/report/SKILL.md). The `commands/*.md` files are thin slash-command
-triggers that load those skills.
+The operating instructions live in [`skills/orchestrate/SKILL.md`](skills/orchestrate/SKILL.md),
+[`skills/workflow/SKILL.md`](skills/workflow/SKILL.md), and
+[`skills/report/SKILL.md`](skills/report/SKILL.md). Slash-command files only load these skills.
 
----
+## Runtime Contract
 
-## Evidence-based consensus
-
-The plugin does not accept `"Codex says tests pass"` as evidence. Test output is evidence. Diffs are evidence. Logs are evidence. Artifacts are evidence. A model's narration is only a claim until checked.
-
-Example lifecycle:
-
-1. Claude records a failed verification:
-
-   ```json
-   {
-     "type": "verification",
-     "id": "V1",
-     "kind": "test",
-     "result": "failed",
-     "command": "python3 -m unittest discover -s tests -v",
-     "task_id": "T001",
-     "acceptance_test": true,
-     "artifacts": ["logs/unit-tests-before.txt"]
-   }
-   ```
-
-2. Codex patches the code.
-
-3. Claude reruns the same command and records a passing verification:
-
-   ```json
-   {
-     "type": "verification",
-     "id": "V2",
-     "kind": "test",
-     "result": "passed",
-     "command": "python3 -m unittest discover -s tests -v",
-     "task_id": "T001",
-     "acceptance_test": true,
-     "artifacts": ["logs/unit-tests-after.txt"]
-   }
-   ```
-
-4. Claude records a consensus / resolution record:
-
-   ```json
-   {
-     "type": "consensus",
-     "outcome": "consensus",
-     "finding": "Unit tests failed before the fix.",
-     "resolution": "The same command passed after the patch.",
-     "resolution_basis": "rerun_passed",
-     "clears": ["verification:V1"],
-     "evidence_refs": ["verification:V2"]
-   }
-   ```
-
-5. `gate` reads the ledger and allows the run only if no unresolved blockers remain.
-
-A failed runnable check clears only by a matching passing rerun or an explicit allowed override. Acceptance tests are stricter: a failed executable acceptance test clears only by a real passing rerun. Human-readable discussion is not enough.
-
-See `docs/consensus-and-reviews.md` for the full details.
-
----
-
-## Orchestration graph
-
-The report skill asks Claude to author a compact Mermaid orchestration graph from the completed run
-state and ledger. This keeps the diagram focused on the tasks, Codex sessions, evidence, decisions,
-and gate transitions that matter for that particular run instead of forcing every run through a
-fixed renderer grammar. Claude writes the graph as part of the complete post-gate report; no Python
-report renderer rewrites it. See [`skills/report/SKILL.md`](./skills/report/SKILL.md) for the instructions.
-
----
-
-## Workflow Architecture
-
-When using the `workflow` command, it will follow this architecture:
+Runs live under `.codex-orchestrator/runs/<run-id>/` and are normally ignored by Git:
 
 ```text
-User goal
-   │
-   ▼
-Claude Code
-Planner / Orchestrator / Reviewer
-   │
-   ├── creates or validates plan
-   ├── asks Codex to review new Claude-created plans during full workflow runs
-   ├── scopes Codex agent tasks
-   ├── reuses, launches, or resumes Codex agents
-   ├── monitors Codex JSONL / IDE event streams
-   ├── verifies code, tests, diffs, logs, and artifacts
-   ├── detects idle / blocked / complete states
-   └── records consensus decisions
-   │
-   ▼
-OpenAI Codex
-Agent / Implementer / Peer Reviewer
-   │
-   ├── runs as reusable monitored Codex agents by default
-   ├── can also run inside VS Code / Cursor
-   ├── edits files in its native harness
-   ├── performs scoped implementation work
-   ├── can be resumed from the CLI with `codex exec resume`
-   ├── can review Claude-created plans
-   └── can review uncommitted diffs
-   │
-   ▼
-Repository
-Code / tests / manifests / logs / git history
+ledger.jsonl
+agents/
+  codex-impl-01/
+    execution-01/
+      prompt.md
+      events.jsonl
+      handoff.md
+evidence/                 # optional
+report.md                 # written by Claude after run closure
 ```
 
----
+An agent directory is a persistent execution context. Each prompt/execution/handoff cycle gets the
+next numbered execution directly beneath it. Resuming a native session creates another execution for
+the same agent; starting a fresh session creates another agent.
 
-## Runtime Files
+- `prompt.md` is the exact immutable input sent for the execution.
+- `events.jsonl` is raw Codex output for monitoring and debugging.
+- `handoff.md` is the exact final agent response.
+- `evidence/` stores only material observations that are too large, binary, disputed, or important
+  to keep inline.
+- `ledger.jsonl` is the concise append-only run record and is written only by Claude.
+- `report.md` is Claude's final synthesis, not evidence.
 
-Runtime files live under `.codex-orchestrator/runs/<run-id>/` and are ignored by git:
-`state.json` is compact mutable state, `ledger.jsonl` is append-only evidence, and `report.md` is
-the human-readable handoff. Codex prompts, JSONL streams, and generated artifacts are grouped under
-`prompts/`, `logs/`, and `artifacts/` using matching filename stems where possible. Runtime records
-are described by `schemas/codex-orchestrator.schema.json`.
+For IDE sessions, the ledger references the absolute external rollout path rather than copying it.
+Attaching only to observe an already-active IDE session uses `mode: "observe"` and may omit
+`prompt`, because Claude sent none; any later follow-up gets a normal prompted execution. Claude
+agents may have no raw event stream when their harness does not expose one.
 
----
+### Headless Capture
 
-## Benchmarks
+Headless Codex writes the raw event stream and exact handoff directly:
 
-The current public benchmark is an OpenThoughts-TBLite / Terminal-Bench-style comparison on the 10 hardest tasks by published success rate. Each cell is one run per task/configuration, so the result is directional rather than statistical.
+```bash
+EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/agents/codex-impl-01/execution-01"
+codex exec --json --output-last-message "$EXECUTION_DIR/handoff.md" \
+  - \
+  < "$EXECUTION_DIR/prompt.md" \
+  > "$EXECUTION_DIR/events.jsonl"
+```
 
-Summary (figures for `codex-orchestrator` v0.4.1):
+### Ledger Vocabulary
 
-| Regime               | Solo Claude (Opus 4.8, max reasoning) | Solo Codex (gpt-5.5, xhigh) | `codex-orchestrator` |
-| -------------------- | ------------------------------------: | --------------------------: | -------------------: |
-| Timed harness        |                                  8/10 |                        8/10 |                 6/10 |
-| Timeout lifted       |                                  8/10 |                        8/10 |                 9/10 |
-| Total tokens (as-run)|                                14.49M |                       5.44M |               31.77M |
+The ledger deliberately has seven event types:
 
-The orchestrator is Claude Opus 4.8 at max reasoning effort; the implementer is Codex gpt-5.5 at
-reasoning effort xhigh. See `docs/benchmarks.md` for the curated result, per-task breakdowns, and the Claude/Codex token split.
+1. `run_started`
+2. `task`
+3. `execution`
+4. `execution_result`
+5. `verification`
+6. `decision`
+7. `run_closed`
 
----
+Claude appends `execution` before launch. A matching terminal `execution_result` marks that execution
+complete, blocked, or failed. Agent completion does not complete the task; Claude first checks the
+actual result and acceptance criteria. The latest `task` record carries its current status.
 
-## Why this approach?
+The close sequence is:
 
-### 1. Heterogeneous LLM ensembles reduce single-model failure modes
+```text
+validate → run_closed → report.md
+```
 
-This plugin is built around a **heterogeneous ensemble**, not just multiple sessions from the same model. Claude and Codex come from different model families, different training pipelines, different product harnesses, and often different failure modes.
+Validation checks structural facts such as parseable ledger lines, valid references, existing files,
+and terminal execution/task state. Claude makes the semantic `run_closed.judgment` of `passed` or
+`blocked`. See [`docs/consensus-and-reviews.md`](docs/consensus-and-reviews.md) for event fields and a
+worked fix/rerun example.
 
-That diversity is useful because a second model only adds value when it can catch errors the first model is likely to miss. Research on LLM ensembles supports this direction: [LLM-Blender](https://arxiv.org/abs/2306.02561) shows that combining outputs from different LLMs can outperform individual models, [Mixture-of-Agents](https://arxiv.org/abs/2406.04692) explores layered collaboration across multiple LLMs, and [FrugalGPT](https://arxiv.org/abs/2305.05176) shows that routing across models can improve the cost/performance trade-off.
+## Claims, Evidence, And Verification
 
-For software engineering specifically, [*Wisdom and Delusion of LLM Ensembles for Code Generation and Repair*](https://arxiv.org/abs/2510.21513) evaluates ten LLMs from five model families and finds that cross-model complementarity can expose solutions missed by the best single model. It also warns that blind consensus can become a "popularity trap," where multiple models converge on the same plausible but wrong answer.
+A handoff tells Claude what an agent claims it changed, checked, or could not finish. It is evidence
+of the agent's statement, not evidence that the statement is correct.
 
-That is why this plugin uses **evidence-based consensus** instead of majority vote:
+Evidence is an inspectable observation supporting or contradicting a verification or decision:
+actual diffs, command results, screenshots, metrics, or grounded review observations. Claude reads
+the compact handoff first, inspects the repository, and independently checks material claims. Raw
+event streams are fallback material for monitoring, disputes, or debugging—not the normal source
+of test evidence.
 
-* Claude proposes or validates the plan and remains the final orchestrator and reviewer.
-* Codex provides independent peer review where useful, including risky plans and implementation diffs.
-* If Claude and Codex disagree, the disagreement is recorded and worked from artifacts until there is
-  `consensus`, `claude_decision`, or `user_action_required`.
-* Codex executes a scoped implementation.
-* Claude verifies the diff, tests, logs, and artifacts.
-* When Claude finds a suspected issue, Codex can also review Claude's objection.
-* Disagreements are resolved using evidence, not vibes.
-* Consensus records can include a machine-checkable resolution basis (`rerun_passed`,
-  `accepted_risk`, `user_override`, etc.) so failed executable checks require real rerun evidence or
-  an explicit override; see [`docs/consensus-and-reviews.md`](docs/consensus-and-reviews.md).
-* The final report records each disagreement or mistake, its root cause when known, the agreed resolution, and the verification evidence.
+Failed checks remain in history. A fix and passing rerun get new records, and a `decision` explains
+the outcome without pretending the earlier failure did not happen. Decision outcomes are
+`consensus`, `claude_decision`, or `user_action_required`.
 
-### 2. Claude is a strong default long-context orchestrator compared to GPT
+This keeps the division of responsibility simple:
 
-Claude is also a strong fit for long-context coordination. Anthropic's [1M context release](https://claude.com/blog/1m-context-ga) reports strong long-context benchmark results for Claude Opus 4.6, making Claude a sensible default for maintaining broader task state while Codex handles narrower execution loops.
+```text
+agent handoff claims
+        |
+        v
+Claude inspection + independent evidence
+        |
+        v
+verification → decision → validate → run_closed → report
+```
 
-At the same time, this plugin does not rely on long context alone. Reports like [Context Rot](https://www.trychroma.com/research/context-rot) show that model reliability can degrade as context grows. The workflow therefore keeps important operational state external, auditable, and evidence-based: repository diffs, tests, logs, manifests, and explicit consensus records.
+## Monitoring And Parallel Work
 
-### 3. Native harnesses matter
+The bundled parser classifies Codex event streams and reads incremental tails. The monitor discovers
+active runs from a `run_started` record without a later `run_closed`, watches executions without
+terminal execution results, and emits compact completion, failure, or stale notifications. It never
+writes the ledger.
 
-Agent quality is not only model quality. It also depends on the harness: IDE context, shell access, file editing, approvals, session history, logs, sandboxing, and model-specific prompting.
+Before parallel execution, tasks declare allowed/owned file paths or globs in `files`. An execution
+result's `files_changed` records what actually changed. Work may run concurrently only when task
+paths and shared resources are disjoint; otherwise Claude serializes the work or uses native Git
+worktrees. See the monitoring and compute references under `skills/orchestrate/references/`.
 
-This shows up empirically. On the [Terminal-Bench 2.1 leaderboard](https://www.tbench.ai/leaderboard/terminal-bench/2.1) the same model scores differently depending on the harness driving it, and the **Codex CLI harness (with gpt-5.5) is the top-scoring agent harness** — narrowly ahead of Claude Code with Fable 5. As a solo terminal executor, Codex CLI is currently the strongest harness, which is a direct reason to route scoped implementation to Codex in its own harness.
+## Final Report
 
----
+After `validate` and `run_closed`, Claude replaces `report.md` using exactly:
+
+1. Summary
+2. Changes
+3. Orchestration Graph
+4. Consensus
+5. Final Results
+
+Final Results contains Gate Result and Risks / Follow-ups. The Mermaid graph presents the causal
+overview of agents, important verification and decisions, deliverables, fix loops, and final state.
+Claude authors the complete report and graph directly from the closed run.
+
+## Historical Benchmarks
+
+The retained v0.4.1 benchmark compared ten difficult OpenThoughts-TBLite / Terminal-Bench-style
+tasks. The timed harness result was 8/10 for solo Claude, 8/10 for solo Codex, and 6/10 for the
+orchestrator; lifting the timeout raised the orchestrator to 9/10. Each cell was one run, so the
+result is directional rather than statistical.
+
+These results describe the older protocol implementation and are not generated by the current
+runtime. See [`docs/benchmarks.md`](docs/benchmarks.md) and the external
+[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repository for the
+archived data and methodology.
+
+## Why Heterogeneous Review?
+
+Claude and Codex come from different model families and harnesses, so they can expose different
+failure modes. Work on heterogeneous ensembles—including
+[LLM-Blender](https://arxiv.org/abs/2306.02561),
+[Mixture-of-Agents](https://arxiv.org/abs/2406.04692), and
+[FrugalGPT](https://arxiv.org/abs/2305.05176)—supports combining distinct models, while also warning
+against blind majority agreement. This plugin therefore asks Claude to resolve disagreements from
+inspectable evidence rather than model votes.
+
+Durable context also mitigates long-context degradation: exact prompts, handoffs, repository state,
+and concise ledger records remain available without repeatedly loading entire session transcripts.
 
 ## Limitations
 
-- **Most review loops are sequential.** The workflow is built on recorded evidence
-  and consensus — Claude scopes and reviews, Codex implements, and each step depends on the other's
-  output — so the two models cannot work the same task at the same time. You wait for one to finish
-  before the other continues, which makes the **total wall-clock time to complete a task longer** than
-  a single solo agent, especially with Claude set to maximum reasoning effort. The
-  [benchmarks](#benchmarks) reflect this: the orchestrated runs are slower than the solo baselines.
-- **The trade-off is oversight and token efficiency.** Keeping state in the ledger, reports, and
-  artifacts — instead of manually re-feeding context back and forth between two models — means the
-  orchestrated approach uses **fewer tokens on average than driving the two models by hand**. You
-  spend some extra wall-clock time to get supervised, auditable work at a lower token cost.
+- Review and fix loops are often sequential, so orchestration may take longer than a solo agent.
+- A structured ledger improves recovery and traceability but cannot prove that a semantic judgment
+  is true; Claude must still inspect the work and choose appropriate checks.
+- Raw event streams can be large. Normal review relies on compact handoffs and parser summaries.
+- Parallel work requires genuinely disjoint files and resources or separate worktrees.
 
----
+## Security And Privacy
 
-## Security model
+This plugin supports bounded autonomy, not unrestricted execution. Use `workspace-write` for normal
+Codex work and require explicit authorization for network access, out-of-workspace writes, Docker
+socket access, deployments, credentials, or expensive compute. Broad access belongs in a trusted,
+externally hardened container or VM.
 
-This plugin is designed for **bounded autonomy**, not unrestricted agent execution; the author is not
-responsible for any damage caused. Normal Codex agent tasks should run in `workspace-write`, while
-Claude gates elevated operations such as network access, out-of-workspace writes, Docker socket
-access, deployments, credentials, or GPU-heavy rollouts.
-
-Do not give Codex `danger-full-access` just to avoid approval friction. If broad access is required,
-use a trusted, externally hardened container or VM. Keep secrets out of the workspace where possible,
-verify all agent claims against artifacts, and record consensus when Claude and Codex disagree about
-a bug, fix, or implementation direction.
-
----
-
-## Privacy
-
-This plugin does not collect, store, sell, or transmit user data on its own. It provides Claude Code with instructions for coordinating local OpenAI Codex sessions.
-
-When you use the plugin, Claude Code and Codex may inspect local repository files, Codex rollout logs, command output, diffs, tests, generated artifacts, and other context you ask them to review. Treat those inputs as data shared with the Claude Code and Codex environments you run.
-
-Do not expose secrets, credentials, private keys, `.env` files, or sensitive production data to Claude Code or Codex unless you have intentionally configured your environment and permissions for that use.
+The plugin itself does not collect or transmit user data. Claude Code and Codex may inspect files,
+prompts, event streams, diffs, command output, and evidence you make available to their respective
+environments. Keep secrets, credentials, private keys, `.env` files, and sensitive production data
+out of scope unless you intentionally configured access.

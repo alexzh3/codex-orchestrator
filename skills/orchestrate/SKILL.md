@@ -5,117 +5,110 @@ description: Orchestrate, monitor, review, and coordinate Codex agents and IDE s
 
 # Claude-Codex Orchestration
 
-Claude is the planner, monitor, reviewer, consensus broker, and compute gate. Codex is the scoped
-implementation agent or peer reviewer running in its native IDE or CLI harness.
+Claude is the planner, orchestrator, monitor, and final reviewer. Codex is a scoped implementer or
+peer reviewer running in its native CLI or IDE harness. Prefer Codex as the first mover for bounded
+implementation, repair, refactor, test-writing, and independent review work.
 
-Default to a Codex-first orchestration pattern for new work: once a usable scope exists, Codex is
-the first mover for implementation, repair, refactor, and test-writing. Claude scopes prompts,
-reuses matching Codex agents when possible, launches `codex exec --json` only when a new agent is
-needed, captures each JSONL stream under the run directory, and monitors the streams with
-`${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py state` and `tail`.
+Use this skill for a focused orchestration phase. Use
+`${CLAUDE_PLUGIN_ROOT}/skills/workflow/SKILL.md` for a complete run and
+`${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` only after the run has closed.
 
-## When To Use This Skill
+## Run Contract
 
-Use this skill for focused orchestration phases: dispatch, monitoring, review, consensus, handoff,
-or compute gating. Use `${CLAUDE_PLUGIN_ROOT}/skills/workflow/SKILL.md` only for the full end-to-end
-run, and `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` only to author the final `report.md` after
-gate and validation from recorded evidence.
-
-This skill is prompt-directed: use the user prompt and recorded run state as scope, and do not create
-a full execution plan for focused monitoring, review, consensus, handoff, or compute-gating phases.
-Monitoring, review, consensus, handoff, compute gating, and ledger initialization are orchestration
-phases, not separate commands.
-
-If the user explicitly asks only to open a ledger, run the internal init helper and stop:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" init --repo <repo> --run-id <run-id>
-```
-
-## Durable Ledger
-
-Use a durable run ledger for orchestration state:
+Keep durable run material under:
 
 ```text
 .codex-orchestrator/runs/<run-id>/
-  state.json
   ledger.jsonl
-  report.md
-  prompts/
-  logs/
-  artifacts/
+  agents/
+    codex-impl-01/
+      execution-01/
+        prompt.md
+        events.jsonl
+        handoff.md
+  evidence/                 # optional; create only when needed
+  report.md                 # authored by Claude after run_closed
 ```
 
-Keep durable facts in these files, not only in model context. Runtime records follow
-`schemas/codex-orchestrator.schema.json`. After gate and doctor complete, Claude authors all of
-`report.md` from the final diff, ledger, prompts, logs, artifacts, verification, consensus, and
-latest `gate_result`. No Python report renderer fills or rewrites report sections.
+Agent names use `<provider>-<primary-role>-<sequence>`, for example `codex-impl-01`,
+`codex-review-01`, or `claude-review-01`. A persistent agent may have several numbered executions.
+Resume a relevant native session under the same agent directory; create a new agent only for
+unrelated work, required isolation, an unusable session, or an explicit request for a fresh one.
 
-Useful helpers:
+Each prompted execution directory contains:
 
-- `init`: create the run ledger skeleton when a caller explicitly asks only to open a ledger.
-- `ensure-run`: create or reuse a run and record the plugin ref before task work starts.
-- `status`: inspect compact run state and recent ledger evidence.
-- `append-event`: record typed protocol facts such as `task_created`, `dispatch_started`,
-  `dispatch_completed`, `task_checkpoint`, `review`, `consensus`, or notes.
-- `claim-files`: bind a task to its allowed file set before dispatch.
-- `check-conflicts`: detect overlapping task claims before agents edit.
-- `render-prompt`: render a task prompt from `task_created.goal`, `context`, `constraints`, and file
-  claims.
-- `add-verification`: record verification evidence, preferably task-scoped with `task_id`,
-  `covers_tasks`, and `scope`.
-- `gate`: compute acceptance from verification, final review, file-claim conflicts, and unclaimed
-  changes.
-- `doctor`: run post-gate consistency checks for the run ledger and artifacts.
-- `worktree`: create or inspect isolated worktrees for concurrent scoped agents.
-- `benchmark`: run deterministic or configured benchmark suites for the recorded plugin ref.
+- `prompt.md`: the exact immutable input sent for that execution.
+- `events.jsonl`: the raw Codex event stream used for monitoring and debugging.
+- `handoff.md`: the exact final agent response, captured directly when possible.
 
-Use `append-event` only as an advanced escape hatch for custom material facts that do not yet have a
-typed command. Known ledger event types are schema-validated; custom event types are recorded as
-generic ledger events.
+An observe-only IDE attachment omits `prompt.md` because Claude sent no prompt. IDE executions may
+reference an absolute external rollout path instead of copying an event stream. Claude agents may
+omit `events` when their harness exposes no raw stream. Never synthesize a log.
 
-Protocol tasks should carry a real `goal`; optional `context` and `constraints` arrays are rendered
-into the Codex prompt by `render-prompt`. Verification can be task-scoped, and the gate matches it to
-the requiring task. A passing final-review requirement is satisfied only by a passing `diff` or
-`manual` review, or by a review explicitly marked `final`.
+An agent handoff is a claim package. It establishes what the agent reported, not that the report is
+correct. Evidence is an inspectable observation that supports or contradicts a verification or
+decision. Put lengthy command output, screenshots, metrics, and other material observations under
+`evidence/`; keep small observations inline in the ledger. Prompts establish scope, and event
+streams establish session activity, but neither proves implementation correctness.
 
-Use matching stems for prompts and logs, for example `prompts/final-review.md` and
-`logs/final-review.jsonl`. Do this for plan reviews, implementation prompts, diff reviews, consensus
-prompts, rereviews, and handoffs, and reference both paths from the relevant ledger record.
+## Ledger
+
+`ledger.jsonl` is append-only and is the primary run record. Only Claude, acting as orchestrator,
+writes it. Each line is one compact JSON object with `recorded_at`. Use exactly these event types:
+
+- `run_started`: first record; run id, repository, plugin ref, and available Claude/Codex versions.
+- `task`: goal, acceptance criteria, allowed/owned file paths or globs in `files`, and latest task
+  status.
+- `execution`: written before launch with `agent`, `execution`, `task`, provider, role, mode, event
+  source, paths, and the model, effort, and `session_id` when known.
+- `execution_result`: terminal result for one execution: `complete`, `blocked`, or `failed`.
+- `verification`: Claude's evaluation of a criterion using an explicit check and observation.
+- `decision`: a consequential resolution with outcome, basis, and risk.
+- `run_closed`: the final record, including `judgment: passed|blocked`, validation result, risks, and
+  follow-ups.
+
+A task record may be repeated; its latest record is authoritative. An execution is in flight until
+a matching terminal execution result exists. A complete execution result does not complete its
+task: keep the task active until Claude has inspected the work, verified material claims, and
+recorded any needed decision. See `docs/consensus-and-reviews.md` for the full field vocabulary and
+worked example.
 
 ## Standard Loop
 
-1. Create or reuse a run id and initialize the ledger if missing.
-2. Inspect `state.json` and recent ledger events for existing named Codex agents.
-3. For focused phases, use the prompt and recorded run state as scope. If dispatching work and no
-   usable scope exists, create only the minimal dispatch plan: task boundary, agent reuse,
-   file ownership/isolation, and verification gate.
-4. For `/codex-orchestrator:workflow`, have Codex review any new Claude-created plan before
-   execution. In focused orchestration, request plan review only when the user asks or risk warrants
-   a second opinion.
-5. Dispatch or resume Codex for implementation, repair, refactor, or test-writing. Use one reusable
-   agent by default, and several only when work can be isolated by worktree, files, or compute.
-6. Resume the same relevant Codex session when possible. Start a new session only for unrelated
-   work, required isolation, low parser confidence after bounded inspection, or explicit user
-   request.
-7. Monitor active Codex sessions. Launch monitoring on demand for this phase: arm the native Monitor with the bundled
-   `${CLAUDE_PLUGIN_ROOT}/bin/codex-orch-monitor` scoped to the active run, or use the parser recipes
-   in `references/monitoring.md`. Do not edit overlapping implementation files while a Codex agent
-   owns them; wait until Codex yields, completes, or a serialized handoff is recorded.
-8. After Codex yields or completes, review artifacts and run the consensus-gated review loop.
-9. Record verification evidence, consensus decisions, and final run state durably.
-10. Run `gate`, finish ledger and artifact validation with `doctor`, and only then use the report
-    skill to have Claude author the complete final `report.md` for handoff or approval.
+1. Create the run directory and append `run_started` before task work.
+2. Append active `task` records with concrete goals, acceptance criteria, and allowed/owned file
+   paths or globs in `files`.
+3. Before parallel work, verify that task-owned file lists are disjoint. Serialize overlapping work
+   or use native Git worktrees.
+4. Choose a relevant existing agent or create a named agent. Save the exact prompt under its next
+   `execution-NN` directory. When only attaching to an already-active IDE session, use
+   `mode: "observe"`; no prompt path is required because Claude sent no prompt.
+5. Append `execution` before assigning work to the agent. This makes in-flight work recoverable after
+   context loss.
+6. Monitor the event stream with the bundled parser or monitor. Do not edit files concurrently with
+   an agent that owns them.
+7. Save the exact final response as `handoff.md`, inspect it and the repository, then append a
+   terminal `execution_result` with actual files changed and caveats.
+8. Independently verify material claims. Record checks as `verification`; create evidence files only
+   when inline observations are insufficient.
+9. Record consequential agreements, disagreements, overrides, or user dependencies as `decision`.
+10. Append a terminal `task` record after its acceptance criteria have been evaluated.
+11. When no work remains, run `validate`, append `run_closed`, then invoke the report skill.
+
+The close order is fixed:
+
+```text
+validate → run_closed → report.md
+```
+
+Validation is descriptive. Claude makes the `run_closed.judgment`; do not treat structural
+validation as semantic acceptance.
 
 ## Reference Map
 
-Read the focused references only when that phase is needed:
+Read only the references needed for the current phase:
 
-- `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/references/monitoring.md`: Codex CLI invocation,
-  headless and IDE session monitoring, parser commands, and native Monitor recipes.
-- `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/references/review.md`: diff/test/artifact review,
-  independent Codex review, and the review loop.
-- `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/references/consensus.md`: disagreement outcomes,
-  required evidence, and ledger/report recording.
-- `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/references/compute.md`: agent identity and reuse,
-  multi-session worktrees, handoff, and compute gating.
+- `references/monitoring.md`: execution capture, CLI and IDE monitoring, parser commands, handoffs.
+- `references/review.md`: claims, independent evidence, verification, and review loops.
+- `references/consensus.md`: decision outcomes and disagreement handling.
+- `references/compute.md`: agent reuse, parallel ownership, worktrees, and compute gating.

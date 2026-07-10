@@ -1,49 +1,40 @@
-# Agent Identity, Handoff, And Compute
+# Agent Identity, Parallel Work, And Compute
 
-## Agent Identity And Reuse
+## Identity And Reuse
 
-Treat each Codex session as a named agent with durable identity: role, thread id, worktree, branch,
-event source, and current status. Session reuse is simple: continue in the same Codex session when
-its context is relevant to the task; if it is almost full but still relevant, compact/summarize the
-relevant state and continue there; create a new Codex session only for contextually unrelated work,
-required isolation, or an explicit user request. Do not start a duplicate agent just because another
-prompt is needed.
+Treat each named agent as a persistent execution context with a provider, primary role, native
+`session_id`, repository/worktree, and execution history. Continue in the same native session when
+its context remains relevant. If its context is nearly full, summarize the goal, files touched,
+decisions, check state, unresolved issues, and next request before resuming it.
 
-When compacting a relevant Codex session before continuing, preserve: goal, files touched, key
-decisions, current diff/test status, unresolved issues, and the next scoped prompt.
+Create a fresh agent only for contextually unrelated work, required isolation, an unusable session
+after bounded inspection, or an explicit user request. A new rollout file or new execution does not
+by itself create a new agent.
 
-Before launching Codex:
+## Parallel Work
 
-1. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" status --run-id <run-id>` or inspect
-   `state.json`.
-2. Classify each candidate session with `${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py state`.
-3. If a matching session is active, keep monitoring it.
-4. If a matching session is idle or complete, resume it with the next scoped prompt.
-5. If no matching session exists, create a new named agent and record why.
+Every active task declares its allowed/owned file paths or globs in `files`. This is the planned
+boundary; an execution result's `files_changed` records what actually changed. Before parallel
+execution, compare the task `files` lists:
 
-Start a new Codex session only when the work is contextually unrelated to existing agents, parser
-confidence is too low to trust the session after bounded inspection, isolation requires a separate
-worktree, or the user explicitly requests a fresh agent. An almost-full but relevant session is a
-compaction/resume case, not a new-session reason. Record the reason as a ledger event.
+- Disjoint lists may run concurrently in the same repository when tools will not mutate shared
+  generated files.
+- Overlapping paths or shared contracts require sequential handoff or separate worktrees.
+- Shared build outputs, databases, ports, GPUs, and evidence paths also count as conflicts.
 
-For IDE rollout sessions, keep using the same `codex://threads/<thread-uuid>` for follow-up work.
-After a resume, re-find the newest rollout file for that thread id because Codex may append a new
-file for the same session. A new rollout file is not by itself a new agent.
-
-## Multi-Session And Compute
-
-Use separate worktrees for parallel sessions unless the user explicitly chooses same-worktree
-coordination:
+Use native Git for isolation; the plugin has no worktree protocol command:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" worktree --name codex-a
+git worktree add ../<repo>-codex-impl-01 -b codex-impl-01
+git worktree list
 ```
 
-Use sequential handoff when agents touch the same files/contracts or share scarce compute/artifact
-paths. Before handoff: finish review, verify the next plan, gate compute, send a scoped prompt, and
-re-arm monitoring.
+Do not merge or remove a worktree until its execution has stopped, its handoff is saved, and Claude
+has inspected the diff.
 
-Compute checks:
+## Compute Gating
+
+Check scarce resources before expensive local tests or research workloads:
 
 ```bash
 nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv,noheader
@@ -54,4 +45,6 @@ free -g
 df -h /
 ```
 
-`docker ps` showing `Up` is not proof of activity; check VRAM, utilization, compute apps, and disk.
+`docker ps` showing `Up` is not proof of active compute. Check utilization, processes, memory, disk,
+ports, and task-specific outputs. Record a material compute decision in the ledger when it changes
+execution timing, isolation, or acceptance.

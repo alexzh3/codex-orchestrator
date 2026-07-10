@@ -5,48 +5,47 @@ description: Run the full Codex orchestration workflow end to end.
 
 # Workflow
 
-Use this skill when Claude should run the full Codex orchestration workflow end to end: ledger
-setup, planning, dispatch, monitoring, review, verification, consensus, and report.
+Use this skill for one complete run: initialize durable context, plan, assign, monitor, review,
+verify, decide, close, and report. For a focused phase, use
+`${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` instead.
 
-Use when the user wants one coordinated run that initializes durable state, reuses or resumes
-matching Codex agents, dispatches new agents only when needed, monitors their JSONL streams or an
-existing IDE thread, reviews the result, records evidence, resolves disagreements, and writes the
-final report.
+Follow this sequence:
 
-Do not use this skill for a single focused phase such as monitoring, review, consensus, handoff, or
-compute gating. Use `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for those. For explicit
-ledger-only setup, run the internal CLI init helper and stop.
+1. Create `.codex-orchestrator/runs/<run-id>/`, `ledger.jsonl`, and `agents/`. Append `run_started`
+   with the repository, plugin ref, and available Claude/Codex versions.
+2. Create active `task` records with the goal, acceptance criteria, and allowed/owned file paths or
+   globs in `files`. Ask Codex to review a newly created plan when a second opinion materially
+   reduces risk.
+3. Check task file ownership before parallel execution. Use sequential work or native Git worktrees
+   whenever owned paths overlap.
+4. Name each persistent agent `<provider>-<role>-<sequence>`. For prompted work, save the exact
+   prompt under `agents/<agent>/execution-NN/prompt.md`. An observe-only attachment to an already
+   active IDE session uses `mode: "observe"` and may omit `prompt` because Claude sent none.
+5. Append `execution` before launch, then capture the raw event stream and exact handoff. Resume a
+   contextually relevant session rather than creating a duplicate agent.
+6. Monitor each execution until completion, failure, blocking, or staleness. Append its terminal
+   `execution_result`; agent completion does not complete the task.
+7. Read the handoff as claims. Inspect the actual diff and independently check material behavior.
+   Record each criterion evaluation as `verification`, with optional files under `evidence/` only
+   when the observation is lengthy, binary, disputed, or important to audit.
+8. If Claude and a Codex agent disagree, use a targeted follow-up and record the outcome as a
+   `decision`: `consensus`, `claude_decision`, or `user_action_required`.
+9. Repeat execution, review, and verification as needed. Append a terminal `task` record only after
+   Claude has evaluated its acceptance criteria.
+10. Re-read the full ledger and run structural validation:
 
-Default typed protocol workflow:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" validate \
+     .codex-orchestrator/runs/<run-id> --json
+   ```
 
-1. Run `ensure-run` to create or reuse the durable run and record the plugin ref.
-2. Append a `task_created` event for each task with a real `goal` plus useful `context` and
-   `constraints` string arrays.
-3. Run `claim-files` so each task has an explicit `files_allowed` or `file_claimed` allowlist.
-4. Run `check-conflicts` before dispatch; resolve overlapping claims before agents edit.
-5. Run `render-prompt` so the Codex prompt includes the task goal, context, constraints, and file
-   claims.
-6. Dispatch Codex for implementation, repair, refactor, or test-writing, reusing a matching session
-   when role and context fit.
-7. Append `dispatch_started` when the session begins and `dispatch_completed` when it yields,
-   completes, or fails.
-8. Append `task_checkpoint` with `files_changed` after inspecting the diff and artifacts.
-9. Run `add-verification` with `task_id`; it auto-records a verification id and command hash when
-   `--command` is present. Use `covers_tasks` and `scope` (`task` or `global`) when evidence covers
-   multiple tasks or the whole run. Use `--acceptance-test` for acceptance checks and
-   `--finding-id` for repro runs tied to structured review findings.
-10. Append a `review` event for the acceptance review. The final-review check accepts only a passing
-    `diff` or `manual` review, or a review explicitly marked `final`.
-11. Resolve failed checks and blocking findings with basis-bearing `consensus` records. Plain
-    agreement clears only command-less convention items; failed executable or acceptance checks need
-    linked rerun evidence or an explicit valid override.
-12. Run `gate`; it must block missing task-scoped verification, file-claim conflicts, and unclaimed
-    changes outside a task allowlist.
-13. Run `doctor` to catch ledger, prompt, log, and artifact inconsistencies. Resolve fixable issues
-    and rerun gate when the ledger changes.
-14. When no further run work is planned, use `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` to have
-    Claude author the complete final report from the ledger, latest `gate_result`, validation output,
-    logs, artifacts, and repository diff.
+11. Resolve structural issues, inspect all non-passing checks, and append one final `run_closed`
+    record with `judgment: passed|blocked`, the validation result, unresolved risks, and follow-ups.
+12. Only after `run_closed`, use `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` to have Claude replace
+    `report.md` with the final report.
 
-Follow `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for the full operating contract and
-concrete procedures.
+The canonical close sequence is `validate → run_closed → report.md`. Validation never decides
+acceptance, and the report never repairs or rewrites ledger history.
+
+Follow `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for the complete operating contract and
+its focused references for monitoring, review, decisions, and compute isolation.

@@ -1,5 +1,5 @@
 ---
-description: Orchestrates, monitors, reviews, and coordinates Codex agents and IDE sessions from Claude Code. Use when the user wants Claude to dispatch scoped Codex workers, watch live Codex sessions, review results, or coordinate sequential or parallel Codex work without file or compute conflicts.
+description: Orchestrate, monitor, review, and coordinate scoped Codex agents or IDE sessions while recording concise durable handoffs, verification, and decisions.
 ---
 
 # Orchestrate

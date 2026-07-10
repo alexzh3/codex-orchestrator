@@ -1,5 +1,5 @@
 ---
-description: Run the full Codex orchestration workflow end to end, including ledger, planning, dispatch, monitoring, review, verification, consensus, and report.
+description: Run the prompt-first Claude-Codex workflow end to end, from ledger initialization and execution through verification, closure, and the final report.
 ---
 
 # Workflow
