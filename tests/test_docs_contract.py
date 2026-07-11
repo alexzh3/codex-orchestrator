@@ -66,15 +66,17 @@ class DocumentationContractTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         self.assertIn("## Full Workflow", readme)
-        self.assertIn("```text\nClaude initializes the run and plans", readme)
+        self.assertIn("```text\nClaude plans", readme)
         self.assertNotIn("```mermaid", readme)
         for step in (
             "Codex reviews the plan when useful",
             "Claude assigns scoped work",
-            "independently verifies",
-            "fix required",
-            "run_closed",
-            "creates final report.md",
+            "Codex implements or reviews",
+            "Claude verifies the result",
+            "issues found",
+            "repeat verification",
+            "final judgment",
+            "final report",
         ):
             self.assertIn(step, readme)
 

@@ -82,41 +82,28 @@ The operating instructions live in [`skills/orchestrate/SKILL.md`](skills/orches
 ## Full Workflow
 
 ```text
-Claude initializes the run and plans
-(goal, acceptance criteria, file ownership)
-        |
-        v
+Claude plans
+    |
+    v
 Codex reviews the plan when useful
-(Claude resolves findings and revises the plan)
-        |
-        v
+    |
+    v
 Claude assigns scoped work
-        |
-        v
-Codex agents implement or review
-        |
-        v
-Capture the exact handoff and event stream
-        |
-        v
-Claude inspects the final diff and independently verifies
-        |
-        +-- fix required --> Targeted follow-up in the relevant session
-        |                    |
-        |                    +--> repeat from Codex execution
-        |
-        +-- accepted or blocked
-        v
-Record decisions and unresolved risks
-        |
-        v
-Descriptive run validation
-        |
-        v
-Claude records the run_closed judgment
-        |
-        v
-Claude creates final report.md and the orchestration graph
+    |
+    v
+Codex implements or reviews
+    |
+    v
+Claude verifies the result
+    |
+    +-- issues found --> Codex fixes --> repeat verification
+    |
+    +-- accepted or blocked
+    v
+Claude makes the final judgment
+    |
+    v
+Claude writes the final report
 ```
 
 ## Runtime Contract
