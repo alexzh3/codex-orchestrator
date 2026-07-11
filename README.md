@@ -1,5 +1,7 @@
 # Claude–Codex Orchestrator Plugin
 
+![Claude–Codex Orchestrator overview](docs/assets/codex-orchestrator-overview.png)
+
 A Claude Code plugin for coordinating OpenAI Codex agents. Claude plans and verifies the work;
 Codex handles scoped implementation and review through its CLI.
 
