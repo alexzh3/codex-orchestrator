@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.codex_orchestrator.parse import validate_run
+from scripts.codex_orchestrator.journal import validate_run
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"

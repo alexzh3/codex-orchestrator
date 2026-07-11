@@ -9,7 +9,7 @@ import time
 import unittest
 from pathlib import Path
 
-from scripts.codex_orchestrator.parse import read_stream
+from scripts.codex_orchestrator.events import read_stream
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"
