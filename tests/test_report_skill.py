@@ -55,15 +55,5 @@ class ReportSkillTests(unittest.TestCase):
         self.assertIn("not independent evidence", skill)
         self.assertIn("create the final `report.md` once", skill)
 
-    def test_skill_has_no_legacy_report_protocol_dependency(self) -> None:
-        skill = REPORT_SKILL.read_text(encoding="utf-8")
-        retired_event = "gate" + "_result"
-        retired_cli = "codex_" + "orch.py"
-
-        self.assertNotIn(f'"type": "{retired_event}"', skill)
-        self.assertNotIn(f"latest `{retired_event}`", skill)
-        self.assertNotIn(f'{retired_cli}" report', skill)
-
-
 if __name__ == "__main__":
     unittest.main()

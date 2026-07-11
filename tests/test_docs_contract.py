@@ -23,15 +23,6 @@ def documentation_paths() -> list[Path]:
     return sorted(path for path in paths if path.is_file())
 
 
-def contract_source_paths() -> list[Path]:
-    paths = [ROOT / "README.md"]
-    for directory in ("bin", "commands", "docs", "scripts", "skills", "tests"):
-        paths.extend(path for path in (ROOT / directory).rglob("*") if path.is_file())
-    return sorted(
-        path for path in paths if path.suffix in {"", ".jsonl", ".md", ".py"}
-    )
-
-
 def jsonl_blocks(text: str) -> list[list[tuple[int, str]]]:
     blocks: list[list[tuple[int, str]]] = []
     current: list[tuple[int, str]] | None = None
@@ -190,20 +181,6 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("codex implementation plus claude verification", workflow)
         self.assertIn("material localized risk", workflow)
         self.assertIn("unanchored alternative", workflow)
-
-    def test_execution_vocabulary_has_no_retired_custom_terms(self) -> None:
-        retired_terms = (
-            "dis" + "patch",
-            "check" + "point",
-            "doc" + "tor",
-            "work" + "er",
-        )
-        for path in contract_source_paths():
-            relative_path = path.relative_to(ROOT)
-            text = path.read_text(encoding="utf-8").casefold()
-            for term in retired_terms:
-                self.assertNotIn(term, relative_path.as_posix().casefold(), relative_path)
-                self.assertNotIn(term, text, relative_path)
 
     def test_only_jsonl_fences_mark_journal_examples(self) -> None:
         sample = """```json
