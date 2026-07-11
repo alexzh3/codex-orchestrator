@@ -9,9 +9,9 @@ Before parallel execution, compare the active tasks' declared `files` and shared
 - Overlapping paths or shared contracts require sequential handoff or separate worktrees.
 - Shared build outputs, databases, ports, GPUs, and evidence paths also count as conflicts.
 
-An independent `--uncommitted` review reserves its task's `files` and shared resources until its
-handoff or terminal blocked/failed outcome is recorded. Disjoint work may continue; otherwise use a
-separate worktree or committed snapshot.
+Review a committed SHA when possible. For an uncommitted target, reserve only its task's `files` and
+shared resources until the review ends. Disjoint work may continue; otherwise use a separate
+worktree or committed snapshot.
 
 Use native Git worktrees for isolation:
 
@@ -25,16 +25,6 @@ has inspected the diff.
 
 ## Compute Gating
 
-Check scarce resources before expensive local tests or research workloads:
-
-```bash
-nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv,noheader
-nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader
-pgrep -af 'isaac|kit|python.sh|pytest' | grep -v codex
-docker ps --format '{{.Names}} {{.Status}}'
-free -g
-df -h /
-```
-
-Check utilization, processes, memory, disk, ports, and task outputs. Record a decision when resource
-state changes execution timing, isolation, or acceptance.
+Before expensive local tests or research workloads, inspect only the processes, compute, memory,
+disk, ports, or services that the task actually depends on. Record a decision when resource state
+changes execution timing, isolation, or acceptance.

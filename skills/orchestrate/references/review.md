@@ -31,16 +31,18 @@ For the first independent review:
 
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-review-01/execution-01"
-codex exec -C <worktree> -s workspace-write review --json \
+codex exec -C <worktree> -s workspace-write -c approval_policy=never --json \
   --output-last-message "$EXECUTION_DIR/handoff.md" \
-  --commit <sha> - \
+  - \
   < "$EXECUTION_DIR/prompt.md" \
   > "$EXECUTION_DIR/events.jsonl"
 ```
 
-Prefer `--commit <sha>`. Use `--base <branch>` only for a stable head. For `--uncommitted`, record
-the base HEAD SHA and follow [`compute.md`](compute.md) for scoped reservations; otherwise use a
-worktree or committed snapshot.
+Write the exact commit SHA into `prompt.md` and instruct Codex to review that snapshot. Use plain
+`codex exec`: the Codex CLI does not accept a stdin review prompt together with the `review`
+subcommand's revision selectors. Prefer a worktree at the reviewed commit; reviewing a fixed SHA
+does not require pausing unrelated work. Tell Codex not to edit and confirm the review worktree is
+clean afterward; `workspace-write` lets repository checks create their normal temporary outputs.
 
 Verify review findings against the repository. Reuse the session for a targeted recheck; start a
 fresh reviewer only for a distinct unresolved question.

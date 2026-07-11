@@ -8,8 +8,8 @@ structural omissions.
 ## Record Authority
 
 - **Prompt:** the exact immutable input sent for one execution. It records assigned scope.
-- **Event stream:** raw Codex JSONL, or an external IDE rollout. It records what the harness emitted
-  and supports lifecycle checks, monitoring, or debugging.
+- **Event stream:** raw Codex JSONL. It records what the harness emitted and supports lifecycle
+  checks, monitoring, or debugging.
 - **Handoff:** the exact final agent response. It is a compact package of agent claims.
 - **Evidence:** an inspectable observation that supports or contradicts a verification or decision.
 - **Verification:** Claude's evaluation of a task criterion using an explicit check and observation.
@@ -27,9 +27,11 @@ material that another reviewer may need to inspect later. Do not copy handoffs i
 
 ## Journal Entries
 
-Only Claude, acting as orchestrator, appends to `journal.jsonl`. Every nonblank line is one JSON
-object with `recorded_at`. The journal contains seven entry types. The fields below are the prompted
-run protocol, not a complete runtime-enforced schema.
+One Claude orchestrator owns and appends to `journal.jsonl`. Every nonblank line is one JSON object
+with `recorded_at`. Do not let two orchestration loops write the same run. Duplicate IDs invalidate
+the run structure: retain the journal, stop appending, and start a successor run that references the
+prior run instead of rewriting history. The journal contains seven entry types. The fields below
+are the prompted run protocol, not a complete runtime-enforced schema.
 
 ### `run_started`
 
@@ -56,19 +58,12 @@ is Claude's compact attribution note; the repository diff determines what actual
 ### `execution`
 
 Append this before launch so in-flight work survives context loss. The `agent` + `execution` pair is
-its identity. Record the provider, role, and mode. Use `event_source: "exec"` for a headless Codex
-stream, `"ide"` for an external rollout, and `"claude"` for a Claude agent. `events` may be omitted
-for a Claude agent. Record `model`, `effort`, and `session_id` when known; an execution result may
-supply the session id later.
+its identity. Record the provider, role, and mode. Use `event_source: "exec"` for a Codex CLI stream
+and `"claude"` for a Claude agent. `events` may be omitted for a Claude agent. Record `model`,
+`effort`, and `session_id` when known; an execution result may supply the session id later.
 
 ```jsonl
 {"type":"execution","agent":"codex-impl-01","execution":"execution-01","task":"task-01","provider":"codex","role":"implementation","mode":"headless","event_source":"exec","model":"gpt-5","effort":"high","prompt":"codex-impl-01/execution-01/prompt.md","events":"codex-impl-01/execution-01/events.jsonl","handoff":"codex-impl-01/execution-01/handoff.md","recorded_at":"2026-07-10T12:02:00Z"}
-```
-
-Observe-only IDE attachment has no prompt because Claude provided no execution input:
-
-```jsonl
-{"type":"execution","agent":"codex-observe-01","execution":"execution-01","task":"task-01","provider":"codex","role":"monitoring","mode":"observe","event_source":"ide","session_id":"thread-123","events":"/home/user/.codex/sessions/2026/07/10/rollout-thread-123.jsonl","handoff":"codex-observe-01/execution-01/handoff.md","recorded_at":"2026-07-10T12:02:00Z"}
 ```
 
 ### `execution_result`
@@ -140,9 +135,9 @@ Every agent prompt asks for a concise final response with these headings:
 ## Caveats / Blockers
 ```
 
-Headless Codex writes this exact response with `--output-last-message`. IDE and Claude agents save
-the exact returned message locally. Do not rewrite a handoff into a cleaner summary; add Claude's
-observations to the execution result or verification instead.
+Codex writes this exact response with `--output-last-message`. Claude agents save the exact returned
+message locally. Do not rewrite a handoff into a cleaner summary; add Claude's observations to the
+execution result or verification instead.
 
 ## Failed Checks And Reruns
 

@@ -43,6 +43,9 @@ def jsonl_blocks(text: str) -> list[list[tuple[int, str]]]:
 
 
 class DocumentationContractTests(unittest.TestCase):
+    def test_skills_are_not_duplicated_by_command_stubs(self) -> None:
+        self.assertEqual(list((ROOT / "commands").glob("*.md")), [])
+
     def test_workflow_skill_owns_the_exact_close_sequence(self) -> None:
         phrase = "validate → run_closed → report.md"
         owners = [
@@ -99,8 +102,11 @@ class DocumentationContractTests(unittest.TestCase):
             .casefold()
             .split()
         )
-        workflow = " ".join(
-            (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8").casefold().split()
+        orchestrate = " ".join(
+            (ROOT / "skills/orchestrate/SKILL.md")
+            .read_text(encoding="utf-8")
+            .casefold()
+            .split()
         )
 
         self.assertIn("read the handoff as claims", review)
@@ -114,10 +120,10 @@ class DocumentationContractTests(unittest.TestCase):
             "claude's tentative conclusion",
         ):
             self.assertIn(excluded, review)
-        self.assertIn("initial independent review", workflow)
-        self.assertIn("starts a fresh agent and native session", workflow)
+        self.assertIn("independent review in a fresh agent", orchestrate)
+        self.assertIn("native session", orchestrate)
 
-    def test_review_target_is_stable_or_has_a_scoped_reservation(self) -> None:
+    def test_review_uses_plain_exec_with_an_exact_sha_prompt(self) -> None:
         review = " ".join(
             (ROOT / "skills/orchestrate/references/review.md")
             .read_text(encoding="utf-8")
@@ -131,10 +137,11 @@ class DocumentationContractTests(unittest.TestCase):
             .split()
         )
 
-        self.assertIn("--commit <sha>", review)
-        self.assertIn("record the base head sha", review)
-        self.assertIn("reserves its task's `files` and shared resources", compute)
-        self.assertIn("terminal blocked/failed outcome", compute)
+        self.assertIn("exact commit sha", review)
+        self.assertIn("plain `codex exec`", review)
+        self.assertNotIn(" review --json", review)
+        self.assertNotIn("--commit", review)
+        self.assertIn("reserve only its task's `files` and shared resources", compute)
         self.assertIn("disjoint work may continue", compute)
         self.assertIn("separate worktree or committed snapshot", compute)
 
@@ -163,10 +170,40 @@ class DocumentationContractTests(unittest.TestCase):
         )
 
         self.assertIn("distinct unresolved question", review)
-        self.assertIn("routine bounded work", workflow)
-        self.assertIn("codex implementation plus claude verification", workflow)
-        self.assertIn("material localized risk", workflow)
-        self.assertIn("unanchored alternative", workflow)
+        orchestrate = " ".join(
+            (ROOT / "skills/orchestrate/SKILL.md").read_text(encoding="utf-8").casefold().split()
+        )
+        self.assertIn("fresh agent and native session", orchestrate)
+        self.assertIn("consequential design choice", orchestrate)
+        self.assertIn("only the goal, constraints, and acceptance criteria", orchestrate)
+        self.assertIn("compare both against evidence", orchestrate)
+        self.assertIn("distinct unresolved question", orchestrate)
+        self.assertIn("do not repeat identical reviews", orchestrate)
+        self.assertNotIn("unanchored alternative", workflow)
+
+    def test_only_orchestrate_owns_the_run_protocol(self) -> None:
+        orchestrate = (ROOT / "skills/orchestrate/SKILL.md").read_text(encoding="utf-8")
+        workflow = (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("This skill owns the run protocol", orchestrate)
+        self.assertIn("Follow the protocol in", workflow)
+        self.assertNotIn("Append `execution` before launch", workflow)
+
+    def test_docs_exclude_removed_ide_and_observe_workflows(self) -> None:
+        operational_docs = "\n".join(
+            (ROOT / path).read_text(encoding="utf-8").casefold()
+            for path in (
+                "README.md",
+                "docs/orchestration-contract.md",
+                "skills/orchestrate/SKILL.md",
+                "skills/workflow/SKILL.md",
+                "skills/orchestrate/references/monitoring.md",
+            )
+        )
+
+        self.assertNotIn("event_source: \"ide\"", operational_docs)
+        self.assertNotIn("mode: \"observe\"", operational_docs)
+        self.assertNotIn("codex://threads/", operational_docs)
 
     def test_documented_codex_commands_need_no_undefined_override(self) -> None:
         review = (ROOT / "skills/orchestrate/references/review.md").read_text(

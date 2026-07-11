@@ -1,16 +1,16 @@
 ---
 name: codex-orchestrator-orchestrate
-description: Orchestrate, monitor, review, and coordinate Codex agents and IDE sessions from Claude Code.
+description: Orchestrate, monitor, review, and coordinate Codex agents from Claude Code.
 ---
 
 # Claude-Codex Orchestration
 
-Claude plans, coordinates, and verifies. Codex handles scoped implementation and review in its
-native CLI or IDE harness. Prefer Codex as the first mover for bounded coding tasks.
+Claude plans, coordinates, and verifies. Codex handles scoped implementation and review through
+its native CLI. Prefer Codex as the first mover for bounded coding tasks.
 
-Use this skill for a focused orchestration phase. Use
-`${CLAUDE_PLUGIN_ROOT}/skills/workflow/SKILL.md` for a complete run and
-`${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` only after closure.
+This skill owns the run protocol. Use it for focused orchestration and consult its references only
+for the current phase. The workflow skill applies this protocol to a complete run and adds closure
+and reporting.
 
 ## Durable Run
 
@@ -41,8 +41,10 @@ when material output must be retained.
 2. Append active `task` entries with goals, acceptance criteria, and allowed/owned `files`.
 3. Compare task files and shared resources before parallel work; serialize overlap or use a
    worktree.
-4. Reuse a relevant agent or create a named one. Use a fresh agent and native session for an
-   initial independent review or unanchored alternative.
+4. Reuse a relevant agent or create a named one. Start an independent review in a fresh agent and
+   native session. For a consequential design choice, ask a fresh Codex agent to propose an
+   approach from only the goal, constraints, and acceptance criteria before showing it Claude's
+   candidate, then compare both against evidence.
 5. Save the exact prompt and append `execution` before launch.
 6. Monitor with the bundled session tools without editing files owned by the active agent.
 7. Save the exact handoff, inspect it and the repository, then append terminal
@@ -50,8 +52,11 @@ when material output must be retained.
 8. Evaluate acceptance criteria and record material checks as `verification`.
 9. Record only consequential resolutions or user dependencies as `decision`.
 10. Append a terminal `task` entry after its acceptance criteria are evaluated.
-11. When no work remains, use the workflow skill to validate and close the run, then invoke the
-    report skill.
+11. When no work remains, validate and close the run as directed by the workflow skill, then invoke
+    the report skill.
+
+Routine bounded work needs Codex implementation plus Claude verification. Add a fresh reviewer only
+for material risk or a distinct unresolved question; do not repeat identical reviews.
 
 Validation detects structural omissions; Claude decides acceptance.
 
@@ -59,7 +64,7 @@ Validation detects structural omissions; Claude decides acceptance.
 
 Read only what the current phase needs:
 
-- `references/monitoring.md`: execution capture, CLI and IDE monitoring, and handoffs.
+- `references/monitoring.md`: execution capture, CLI monitoring, and handoffs.
 - `references/review.md`: verification and independent review.
 - `references/consensus.md`: consensus and decision outcomes.
 - `references/compute.md`: parallel ownership, worktrees, and compute gating.

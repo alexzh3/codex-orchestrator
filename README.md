@@ -1,7 +1,7 @@
 # Claude–Codex Orchestrator Plugin
 
-A Claude Code plugin for coordinating OpenAI Codex sessions. Claude plans and verifies the work;
-Codex handles scoped implementation and review in its native CLI or IDE.
+A Claude Code plugin for coordinating OpenAI Codex agents. Claude plans and verifies the work;
+Codex handles scoped implementation and review through its CLI.
 
 ## What It Does
 
@@ -9,7 +9,7 @@ Use this plugin when you want Claude Code to supervise Codex rather than manuall
 between the two tools. It helps Claude:
 
 - assign or resume scoped Codex agents;
-- monitor CLI and IDE sessions;
+- monitor active Codex agents;
 - preserve exact prompts, event streams, and handoffs;
 - independently verify results and record consequential decisions.
 
@@ -35,14 +35,14 @@ Durable prompts, handoffs, repository state, and journal entries preserve the co
 ### 3. Native Harnesses Matter
 
 Agent performance depends on more than the underlying model.
-IDE context, shell and file access, session history, approvals, sandboxing, event streams, and harness-specific prompting all affect the result.
+Shell and file access, session history, approvals, sandboxing, event streams, and harness-specific prompting all affect the result.
 The [Terminal-Bench 2.1 leaderboard](https://www.tbench.ai/leaderboard/terminal-bench/2.1) reflects this by evaluating agent-and-model pairs rather than models in isolation.
-The plugin therefore lets Codex work through its native CLI or IDE while Claude remains in Claude Code as planner, orchestrator, and reviewer.
+The plugin therefore lets Codex work through its native CLI while Claude remains in Claude Code as planner, orchestrator, and reviewer.
 
 ## Requirements
 
 - [Claude Code](https://code.claude.com/docs/en/overview) in an IDE or terminal.
-- [OpenAI Codex](https://developers.openai.com/codex/cli/reference) in an IDE or through the CLI.
+- [OpenAI Codex CLI](https://developers.openai.com/codex/cli/reference).
 - Python 3.10 or newer for the bundled session tools.
 - Git when branch or worktree isolation is needed.
 - A meaningful verification path such as tests, typecheck, lint, build, benchmark, screenshot, or
@@ -78,18 +78,9 @@ Have another Codex agent review the result when useful.
 Verify it and produce the final report.
 ```
 
-To monitor an existing IDE session, start it in VS Code or Cursor, copy its URL, and ask Claude:
-
-```text
-/codex-orchestrator:orchestrate
-
-Monitor and review this session:
-codex://threads/<thread-uuid>
-```
-
 The operating instructions live in [`skills/orchestrate/SKILL.md`](skills/orchestrate/SKILL.md),
 [`skills/workflow/SKILL.md`](skills/workflow/SKILL.md), and
-[`skills/report/SKILL.md`](skills/report/SKILL.md). Slash-command files only load these skills.
+[`skills/report/SKILL.md`](skills/report/SKILL.md).
 
 ## Workflow
 
@@ -132,14 +123,15 @@ together so that each execution can be inspected later.
 and `report.md` contains Claude's final summary. The detailed journal format, trust boundaries, and
 closure flow are documented in [`docs/orchestration-contract.md`](docs/orchestration-contract.md).
 
-## Benchmarks
+## Historical v0.4.1 Benchmarks
 
-With its time limit lifted, the orchestrator passed 9 of the 10 benchmark tasks. The timed solo
-Claude Code and solo Codex baselines passed 8/10 each:
+These results measure the schema-driven v0.4.1 plugin, not the current prompt-first v0.5 release.
+With its time limit lifted, v0.4.1 passed 9 of the 10 benchmark tasks. The timed solo Claude Code
+and solo Codex baselines passed 8/10 each:
 
 | Configuration | Regime | Passed |
 | --- | --- | ---: |
-| Orchestrator | No timeout | **9/10** |
+| Plugin v0.4.1 | No timeout | **9/10** |
 | Solo Claude Code | Timed | 8/10 |
 | Solo Codex | Timed | 8/10 |
 

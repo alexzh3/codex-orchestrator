@@ -1,4 +1,4 @@
-# Monitoring And Codex Sessions
+# Monitoring Codex Agents
 
 Use the bundled tools for compact status snapshots. They parse event streams locally; do not copy
 raw logs into Claude's context unless a focused inspection is needed for an ambiguous or failed
@@ -61,28 +61,13 @@ codex exec -C <worktree> -s workspace-write -c approval_policy=never \
 Use the original worktree with `-C`, the same `session_id`, and an absolute `EXECUTION_DIR` when the
 shell runs elsewhere. A fresh native session requires a new named agent.
 
-## IDE Sessions
-
-For observe-only attachment to `codex://threads/<thread-uuid>`, record `mode: "observe"`,
-`event_source: "ide"`, `session_id`, the absolute rollout path in `events`, and a local `handoff`.
-Omit `prompt`, do not copy the rollout, and save the exact final message as `handoff.md`.
-
-For a follow-up, create the next prompted execution under the same agent and capture its prompt,
-paths, and handoff normally.
-
-Resolve the rollout path on attachment and after resumption:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" find <thread-uuid> --json
-```
-
 ## Session State And Monitor
 
 Use `state` for a compact session snapshot:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" state <session-id> --source exec --file <events-jsonl> --json
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" state <session-id> --source ide --file <rollout-jsonl> --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" state <session-id> \
+  --file <events-jsonl> --json
 ```
 
 After context loss, call `state` again. Do not persist parser positions in the journal.
@@ -96,6 +81,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" monitor \
   --log <events-jsonl> --fail-on-session-failure
 ```
 
-The monitor is read-only and emits completion, failure, blocking, unknown-format, missing-stream,
-or stale notifications. Treat silence and staleness as ambiguous; inspect the handoff and
-repository before appending `execution_result`.
+Always select the target with `--run-id` (plus its repository) or `--log`; do not rely on automatic
+run or stream discovery.
+
+The monitor is read-only and emits completion, failure, unknown-format, missing-stream, or stale
+notifications. Treat silence and staleness as ambiguous; inspect the handoff and repository before
+appending `execution_result`.
