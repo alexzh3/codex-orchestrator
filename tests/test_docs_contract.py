@@ -66,19 +66,19 @@ class DocumentationContractTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         self.assertIn("## Full Workflow", readme)
-        self.assertIn("```text\nClaude plans", readme)
-        self.assertNotIn("```mermaid", readme)
+        self.assertIn("```mermaid\nflowchart TD", readme)
         for step in (
             "Codex reviews the plan when useful",
             "Claude assigns scoped work",
             "Codex implements or reviews",
             "Claude verifies the result",
             "issues found",
-            "repeat verification",
+            "Codex fixes",
             "final judgment",
             "final report",
         ):
             self.assertIn(step, readme)
+        self.assertIn("F --> E", readme)
 
     def test_ledger_is_a_claude_authored_journal_not_global_evidence(self) -> None:
         contract = "\n".join(

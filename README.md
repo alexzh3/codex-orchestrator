@@ -81,29 +81,16 @@ The operating instructions live in [`skills/orchestrate/SKILL.md`](skills/orches
 
 ## Full Workflow
 
-```text
-Claude plans
-    |
-    v
-Codex reviews the plan when useful
-    |
-    v
-Claude assigns scoped work
-    |
-    v
-Codex implements or reviews
-    |
-    v
-Claude verifies the result
-    |
-    +-- issues found --> Codex fixes --> repeat verification
-    |
-    +-- accepted or blocked
-    v
-Claude makes the final judgment
-    |
-    v
-Claude writes the final report
+```mermaid
+flowchart TD
+    A["Claude plans"] --> B["Codex reviews the plan when useful"]
+    B --> C["Claude assigns scoped work"]
+    C --> D["Codex implements or reviews"]
+    D --> E["Claude verifies the result"]
+    E -- "issues found" --> F["Codex fixes"]
+    F --> E
+    E -- "accepted or blocked" --> G["Claude makes the final judgment"]
+    G --> H["Claude writes the final report"]
 ```
 
 ## Runtime Contract
