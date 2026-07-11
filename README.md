@@ -44,7 +44,7 @@ The plugin therefore lets Codex work through its native CLI while Claude remains
 - [Claude Code](https://code.claude.com/docs/en/overview) in an IDE or terminal.
 - [OpenAI Codex CLI](https://developers.openai.com/codex/cli/reference).
 - Python 3.10 or newer for the bundled tools.
-- Git when branch or worktree isolation is needed.
+- A Git repository.
 - A meaningful verification path such as tests, typecheck, lint, build, benchmark, screenshot, or
   manual inspection.
 
@@ -100,7 +100,9 @@ flowchart TD
 
 ## Run Layout
 
-Runs live under `.codex-orchestrator/runs/<run-id>/` and are normally ignored by Git:
+Runs live under `.codex-orchestrator/runs/<run-id>/`. Before creating a run, the workflow adds
+`/.codex-orchestrator/` to the repository's local `.git/info/exclude` and verifies it is ignored;
+it does not modify the tracked `.gitignore`.
 
 ```text
 journal.jsonl

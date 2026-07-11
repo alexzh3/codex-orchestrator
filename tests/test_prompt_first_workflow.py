@@ -110,8 +110,13 @@ class PromptFirstWorkflowTests(unittest.TestCase):
 
     def test_fake_exec_captures_two_named_agent_executions_and_handoffs(self) -> None:
         records = journal_entries(self.run_dir)
+        run_started = records[0]
         executions = [record for record in records if record["type"] == "execution"]
 
+        self.assertTrue(Path(str(run_started["repo"])).is_absolute())
+        self.assertTrue(run_started["goal"])
+        self.assertEqual(len(str(run_started["repo_head"])), 40)
+        self.assertEqual(run_started["repo_status"], [])
         self.assertEqual(len(self.launches), 2)
         self.assertEqual(
             {(record["agent"], record["execution"]) for record in executions},
@@ -121,6 +126,9 @@ class PromptFirstWorkflowTests(unittest.TestCase):
             },
         )
         for execution in executions:
+            self.assertTrue(Path(str(execution["worktree"])).is_absolute())
+            self.assertEqual(len(str(execution["head"])), 40)
+            self.assertTrue(execution["branch"])
             prompt = (self.run_dir / str(execution["prompt"])).read_text(encoding="utf-8")
             self.assertEqual(
                 tuple(line for line in prompt.splitlines() if line.startswith("## ")),

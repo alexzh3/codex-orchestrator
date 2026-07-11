@@ -42,6 +42,15 @@ def jsonl_blocks(text: str) -> list[list[tuple[int, str]]]:
     return blocks
 
 
+def jsonl_records(text: str) -> list[dict[str, object]]:
+    return [
+        json.loads(line)
+        for block in jsonl_blocks(text)
+        for _, line in block
+        if line.strip()
+    ]
+
+
 class DocumentationContractTests(unittest.TestCase):
     def test_skills_are_not_duplicated_by_command_stubs(self) -> None:
         self.assertEqual(list((ROOT / "commands").glob("*.md")), [])
@@ -95,6 +104,51 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("not independent evidence", contract)
         self.assertNotIn("primary run record", contract)
         self.assertNotIn("source of truth", contract)
+
+    def test_workflow_initializes_an_ignored_run_with_a_git_baseline(self) -> None:
+        workflow = (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8")
+        contract = (ROOT / "docs/orchestration-contract.md").read_text(encoding="utf-8")
+
+        for text in (
+            "git rev-parse --show-toplevel",
+            "git rev-parse --git-path info/exclude",
+            "'/.codex-orchestrator/'",
+            "git check-ignore -q .codex-orchestrator/.ignore-check",
+            "git rev-parse HEAD",
+            "git branch --show-current",
+            "git status --short --untracked-files=all",
+        ):
+            self.assertIn(text, workflow)
+        self.assertEqual(workflow.count("grep -qxF '/.codex-orchestrator/'"), 2)
+        self.assertIn("do not edit the tracked `.gitignore`", workflow)
+        self.assertIn("Do not create the run unless both exclude checks succeed", workflow)
+        self.assertLess(
+            workflow.index("git check-ignore -q"),
+            workflow.index("create `.codex-orchestrator/runs/<run-id>/journal.jsonl`"),
+        )
+        records = jsonl_records(contract)
+        run_started = next(record for record in records if record["type"] == "run_started")
+        self.assertTrue(Path(run_started["repo"]).is_absolute())
+        for field in ("goal", "repo_head", "repo_branch", "repo_status"):
+            self.assertIn(field, run_started)
+
+    def test_execution_records_its_worktree_and_ref_before_launch(self) -> None:
+        orchestrate = (ROOT / "skills/orchestrate/SKILL.md").read_text(encoding="utf-8")
+        monitoring = (ROOT / "skills/orchestrate/references/monitoring.md").read_text(
+            encoding="utf-8"
+        )
+        contract = (ROOT / "docs/orchestration-contract.md").read_text(encoding="utf-8")
+
+        self.assertIn("absolute worktree, full HEAD", orchestrate)
+        self.assertIn("absolute `worktree`, full `head`", monitoring)
+        self.assertIn("git -C <worktree> rev-parse --show-toplevel", monitoring)
+        records = jsonl_records(contract)
+        execution = next(record for record in records if record["type"] == "execution")
+        self.assertTrue(Path(execution["worktree"]).is_absolute())
+        for field in ("worktree", "head", "branch"):
+            self.assertIn(field, execution)
+        self.assertIn("Read the absolute `worktree` from the preceding execution", monitoring)
+        self.assertIn("do not check out or reset to it", monitoring)
 
     def test_validation_is_documented_as_an_omission_check_not_a_schema(self) -> None:
         contract = (ROOT / "docs" / "orchestration-contract.md").read_text(encoding="utf-8")

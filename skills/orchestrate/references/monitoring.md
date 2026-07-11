@@ -15,8 +15,17 @@ codex-impl-01/execution-01/
   handoff.md
 ```
 
-Save `prompt.md` and append `execution` before launch. Capture stdout as `events.jsonl` and the last
-message as `handoff.md`:
+Save `prompt.md` and append `execution` with the absolute `worktree`, full `head`, and attached
+`branch` when present before launch. Capture stdout as `events.jsonl` and the last message as
+`handoff.md`. Resolve the recorded Git values from the same path passed to `-C`:
+
+```bash
+git -C <worktree> rev-parse --show-toplevel
+git -C <worktree> rev-parse HEAD
+git -C <worktree> branch --show-current
+```
+
+Then launch Codex:
 
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-impl-01/execution-01"
@@ -58,8 +67,11 @@ codex exec -C <worktree> -s workspace-write -c approval_policy=never \
   > "$EXECUTION_DIR/events.jsonl"
 ```
 
-Use the original worktree with `-C`, the same `session_id`, and an absolute `EXECUTION_DIR` when the
-shell runs elsewhere. A fresh native session requires a new named agent.
+Read the absolute `worktree` from the preceding execution and use it with `-C` and the same
+`session_id`. Inspect its current HEAD and branch and record them in the new execution; the prior
+`head` is a snapshot, so do not check out or reset to it merely because the worktree advanced. Use
+an absolute `EXECUTION_DIR` when the shell runs elsewhere. A fresh native session requires a new
+named agent.
 
 ## Agent State And Monitor
 

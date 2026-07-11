@@ -9,11 +9,36 @@ Use this skill for one complete run. This skill owns the lifecycle from planning
 report. Use `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for each focused Codex-agent
 execution, review, or verification cycle.
 
+## Run Initialization
+
+From the target Git worktree, exclude run data locally before creating it:
+
+```bash
+REPO="$(git rev-parse --show-toplevel)"
+cd "$REPO"
+EXCLUDE_FILE="$(git rev-parse --git-path info/exclude)"
+grep -qxF '/.codex-orchestrator/' "$EXCLUDE_FILE" ||
+  printf '\n/.codex-orchestrator/\n' >> "$EXCLUDE_FILE"
+grep -qxF '/.codex-orchestrator/' "$EXCLUDE_FILE"
+git check-ignore -q .codex-orchestrator/.ignore-check
+git rev-parse HEAD
+git branch --show-current
+git status --short --untracked-files=all
+```
+
+Use only this local exclude; do not edit the tracked `.gitignore`. Record the concise original goal,
+`REPO`, full starting HEAD, attached branch when the branch output is nonempty, and exact status
+lines as `goal`, `repo`, `repo_head`, optional `repo_branch`, and `repo_status` in `run_started`.
+Do not create the run unless both exclude checks succeed. Initially dirty paths are pre-existing
+user work; if planned work overlaps them, use an isolated clean worktree or get user direction
+rather than claiming those changes.
+
 ## Full Workflow
 
 1. Inspect the repository and user context to understand the goal and relevant constraints.
-2. Create `.codex-orchestrator/runs/<run-id>/journal.jsonl` and append `run_started` with the
-   repository, plugin ref, and available Claude and Codex versions.
+2. Perform Run Initialization, create `.codex-orchestrator/runs/<run-id>/journal.jsonl`, and append
+   `run_started` with the concise original goal, absolute repository path, captured Git baseline,
+   plugin ref, and available Claude and Codex versions.
 3. Claude turns the goal into a concrete plan with expected deliverables, acceptance criteria,
    risks, and verification paths.
 4. Ask Codex to review Claude's plan when a second opinion materially reduces risk; record that

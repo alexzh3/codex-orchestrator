@@ -45,7 +45,13 @@ class ReportSkillTests(unittest.TestCase):
     def test_skill_uses_claim_specific_sources_and_creates_one_final_report(self) -> None:
         skill = " ".join(REPORT_SKILL.read_text(encoding="utf-8").lower().split())
 
-        self.assertIn("actual delivery: final repository state and diff", skill)
+        self.assertIn("actual delivery: final repository state relative to", skill)
+        self.assertIn(
+            "compare the final repository state with `run_started.repo_head` and "
+            "`run_started.repo_status`",
+            skill,
+        )
+        self.assertIn("do not attribute initially dirty paths without supporting evidence", skill)
         self.assertIn("agent claims: exact handoffs", skill)
         self.assertIn("not independent evidence", skill)
         self.assertIn("create the final `report.md` once", skill)

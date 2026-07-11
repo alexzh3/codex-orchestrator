@@ -23,7 +23,7 @@ make the report look complete.
 
 Read the complete `journal.jsonl`, then ground each claim in its appropriate source:
 
-- actual delivery: final repository state and diff;
+- actual delivery: final repository state relative to the `run_started` Git baseline;
 - Claude's checks: verification observations and referenced evidence;
 - assigned scope: exact prompts;
 - agent claims: exact handoffs;
@@ -58,13 +58,14 @@ Do not add other `##` sections.
 
 ### Summary
 
-State the original goal, overall result, `run_closed.judgment`, and the main reason for that outcome.
-Mention unresolved work plainly and keep this section concise.
+State the original `run_started.goal`, overall result, `run_closed.judgment`, and the main reason for
+that outcome. Mention unresolved work plainly and keep this section concise.
 
 ### Changes
 
-Describe material delivered changes from the final repository state and diff, then connect them to
-their tasks or agents. Cite important repository files and evidence when useful. Distinguish
+Compare the final repository state with `run_started.repo_head` and `run_started.repo_status`, then
+connect material delivered changes to their tasks or agents. Do not attribute initially dirty paths
+without supporting evidence. Cite important repository files and evidence when useful. Distinguish
 complete, blocked, failed, and intentionally unchanged work. Do not reproduce the journal line by
 line or treat `execution_result.files_changed` as mechanical attribution.
 

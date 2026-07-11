@@ -43,7 +43,8 @@ when material output must be retained.
    worktree.
 4. Reuse a relevant agent or create a named one. For an independent review, start a fresh agent and
    native session.
-5. Save the exact prompt and append `execution` before launch.
+5. Resolve the execution's absolute worktree, full HEAD, and attached branch when present and
+   include them in its record. Save the exact prompt and append `execution` before launch.
 6. Monitor with the bundled tools without editing files owned by the active agent.
 7. Save the exact handoff, inspect it and the repository, then append terminal
    `execution_result`.

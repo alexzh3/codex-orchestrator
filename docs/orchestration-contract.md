@@ -15,7 +15,8 @@ structural omissions.
 - **Verification:** Claude's evaluation of a task criterion using an explicit check and observation.
 - **Decision:** Claude's recorded resolution of a consequential disagreement, risk, or user need.
 - **Journal:** Claude's compact chronology, current task state, decisions, and links to these sources.
-- **Repository:** the final state and diff that determine what code was actually delivered.
+- **Repository:** the final state relative to the recorded starting baseline determines what code
+  was actually delivered.
 
 A handoff can establish that an agent *claimed* a test passed, and an event stream can establish
 that the harness emitted that claim. Neither establishes that the test passed against the accepted
@@ -35,13 +36,19 @@ are the prompted run protocol, not a complete runtime-enforced schema.
 
 ### `run_started`
 
-The first entry. It identifies the run, repository, plugin revision, and available tool versions.
+The first entry. It records the concise original goal, absolute target worktree, starting Git
+baseline, plugin revision, and available tool versions. `repo_head` is the full starting commit;
+include `repo_branch` only when HEAD is attached. `repo_status` is an array containing the exact
+lines from `git status --short --untracked-files=all`, captured after locally excluding the run root
+and before creating it.
 
 ```jsonl
-{"type":"run_started","run_id":"run-20260710-01","repo":"/work/project","plugin_ref":"git:abc1234","claude_version":"2.1.0","codex_version":"0.110.0","recorded_at":"2026-07-10T12:00:00Z"}
+{"type":"run_started","run_id":"run-20260710-01","goal":"Add request validation without changing the public API.","repo":"/work/project","repo_head":"0123456789abcdef0123456789abcdef01234567","repo_branch":"feature/request-validation","repo_status":[],"plugin_ref":"git:abc1234","claude_version":"2.1.0","codex_version":"0.110.0","recorded_at":"2026-07-10T12:00:00Z"}
 ```
 
-Omit a version when unavailable; do not guess it.
+Omit an unavailable version or detached `repo_branch`; do not guess it. Treat initially dirty paths
+as pre-existing user work. If planned work overlaps them, isolate the work or get user direction;
+the status alone cannot attribute later edits within the same file.
 
 ### `task`
 
@@ -58,12 +65,14 @@ is Claude's compact attribution note; the repository diff determines what actual
 ### `execution`
 
 Append this before launch so in-flight work survives context loss. The `agent` + `execution` pair is
-its identity. Record the provider, role, and mode. Use `event_source: "exec"` for a Codex CLI stream
-and `"claude"` for a Claude agent. `events` may be omitted for a Claude agent. Record `model`,
-`effort`, and `session_id` when known; an execution result may supply the session id later.
+its identity. Record the absolute `worktree`, full Git `head`, and attached `branch` when present so
+resume and integration use the same target after context loss. Record the provider, role, and mode.
+Use `event_source: "exec"` for a Codex CLI stream and `"claude"` for a Claude agent. `events` may be
+omitted for a Claude agent. Record `model`, `effort`, and `session_id` when known; an execution
+result may supply the session id later.
 
 ```jsonl
-{"type":"execution","agent":"codex-impl-01","execution":"execution-01","task":"task-01","provider":"codex","role":"implementation","mode":"headless","event_source":"exec","model":"gpt-5","effort":"high","prompt":"codex-impl-01/execution-01/prompt.md","events":"codex-impl-01/execution-01/events.jsonl","handoff":"codex-impl-01/execution-01/handoff.md","recorded_at":"2026-07-10T12:02:00Z"}
+{"type":"execution","agent":"codex-impl-01","execution":"execution-01","task":"task-01","provider":"codex","role":"implementation","mode":"headless","event_source":"exec","model":"gpt-5","effort":"high","worktree":"/work/project-codex-impl-01","head":"0123456789abcdef0123456789abcdef01234567","branch":"codex-impl-01","prompt":"codex-impl-01/execution-01/prompt.md","events":"codex-impl-01/execution-01/events.jsonl","handoff":"codex-impl-01/execution-01/handoff.md","recorded_at":"2026-07-10T12:02:00Z"}
 ```
 
 ### `execution_result`
