@@ -65,9 +65,7 @@ class DocumentationContractTests(unittest.TestCase):
     def test_readme_diagrams_the_full_workflow(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-        self.assertTrue(
-            any(heading in readme for heading in ("## Full Workflow", "## Workflow Diagram"))
-        )
+        self.assertIn("## Workflow\n", readme)
         self.assertIn("```mermaid\nflowchart TD", readme)
         for step in (
             "Codex reviews the plan when useful",
