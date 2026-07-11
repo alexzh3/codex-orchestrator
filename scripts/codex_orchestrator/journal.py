@@ -18,20 +18,32 @@ TERMINAL_EXECUTION_STATUSES = {"complete", "blocked", "failed"}
 VERIFICATION_RESULTS = {"passed", "failed", "inconclusive", "skipped"}
 
 
-def read_journal(path: Path) -> tuple[list[dict[str, object]], list[str]]:
+def read_journal(
+    path: Path, *, allow_partial_final_line: bool = False
+) -> tuple[list[dict[str, object]], list[str]]:
     records: list[dict[str, object]] = []
     issues: list[str] = []
-    if not path.exists():
-        return records, [f"missing journal: {path}"]
     try:
-        with path.open("r", encoding="utf-8") as handle:
-            for line_number, line in enumerate(handle, start=1):
+        if not path.exists():
+            return records, [f"missing journal: {path}"]
+        with path.open("rb") as handle:
+            for line_number, raw_line in enumerate(handle, start=1):
+                terminated = raw_line.endswith(b"\n")
+                try:
+                    line = raw_line.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    if allow_partial_final_line and not terminated:
+                        break
+                    issues.append(f"could not read journal: {exc}")
+                    continue
                 stripped = line.strip()
                 if not stripped:
                     continue
                 try:
                     value = json.loads(stripped)
                 except json.JSONDecodeError as exc:
+                    if allow_partial_final_line and not terminated:
+                        break
                     issues.append(f"line {line_number}: invalid JSON: {exc.msg}")
                     continue
                 if not isinstance(value, dict):
@@ -39,7 +51,7 @@ def read_journal(path: Path) -> tuple[list[dict[str, object]], list[str]]:
                     continue
                 value["_line"] = line_number
                 records.append(value)
-    except (OSError, UnicodeError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         issues.append(f"could not read journal: {exc}")
     return records, issues
 
@@ -72,7 +84,7 @@ def declared_file_exists(run_dir: Path, value: object, *, nonempty: bool = False
     try:
         path = resolve_run_path(run_dir, value)
         return path.is_file() and (not nonempty or path.stat().st_size > 0)
-    except (OSError, RuntimeError):
+    except (OSError, RuntimeError, ValueError):
         return False
 
 
@@ -90,10 +102,18 @@ def check_declared_file(
 
 
 def validate_run(run_dir: Path) -> dict[str, object]:
-    run_dir = run_dir.expanduser().resolve()
-    records, issues = read_journal(run_dir / "journal.jsonl")
     warnings: list[str] = []
     non_passing: list[dict[str, object]] = []
+    try:
+        run_dir = run_dir.expanduser().resolve()
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {
+            "ok": False,
+            "issues": [f"invalid run directory: {exc}"],
+            "warnings": warnings,
+            "non_passing_verifications": non_passing,
+        }
+    records, issues = read_journal(run_dir / "journal.jsonl")
 
     known_records: list[dict[str, object]] = []
     for record in records:

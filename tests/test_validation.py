@@ -114,6 +114,19 @@ class ValidationTests(unittest.TestCase):
         self.assertFalse(unresolvable["ok"])
         self.assertTrue(any("prompt file" in issue for issue in unresolvable["issues"]))
 
+    def test_nul_paths_are_reported_not_raised(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir, records = self.make_run(Path(tmp))
+            records[2]["events"] = "bad\0path"
+            write_journal(run_dir, records)
+            declared_path = validate_run(run_dir)
+            run_path = validate_run(Path("bad\0path"))
+
+        self.assertFalse(declared_path["ok"])
+        self.assertTrue(any("events file" in issue for issue in declared_path["issues"]))
+        self.assertFalse(run_path["ok"])
+        self.assertTrue(any("invalid run directory" in issue for issue in run_path["issues"]))
+
     def test_start_and_close_markers_have_only_lifecycle_requirements(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir, records = self.make_run(Path(tmp))

@@ -51,13 +51,17 @@ class StreamSummary:
             self.known_count += 1
         else:
             self.unknown_event_types.add(kind)
+        if self.status == "idle" and (
+            kind in EXEC_EVENT_TYPES or is_reconnect_notice(record)
+        ):
+            self.status = "starting"
 
         event = record.event
         if kind == "thread.started":
             native_id = event.get("thread_id")
             if isinstance(native_id, str) and native_id:
                 self.thread_id = native_id
-            self.status = "idle"
+            self.status = "starting"
             self.usage = None
             self.error = None
             self.last_agent_message = ""
@@ -144,6 +148,8 @@ def summarize_stream(path: Path) -> StreamSummary:
                 line = raw_line.decode("utf-8")
             except UnicodeDecodeError:
                 if not terminated:
+                    if summary.status == "idle":
+                        summary.status = "starting"
                     break
                 summary.consume(
                     EventRecord({"_parse_error": "invalid UTF-8"}, "<invalid-json>")
@@ -153,6 +159,8 @@ def summarize_stream(path: Path) -> StreamSummary:
             if record is None:
                 continue
             if not terminated and record.event_type == "<invalid-json>":
+                if summary.status == "idle":
+                    summary.status = "starting"
                 break
             summary.consume(record)
     return summary

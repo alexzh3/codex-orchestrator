@@ -223,12 +223,10 @@ class MonitorTests(unittest.TestCase):
                     {"type": "thread.started", "thread_id": "native-thread"},
                     {
                         "type": "turn.failed",
-                        "turn_id": "turn-1",
                         "error": {"message": "old failure"},
                     },
                     {
                         "type": "turn.completed",
-                        "turn_id": "turn-2",
                         "usage": {"input_tokens": 20, "output_tokens": 5},
                     },
                 ],
@@ -239,7 +237,6 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(len(notifications), 1)
         self.assertEqual(notifications[0]["type"], "codex_agent_complete")
         self.assertEqual(notifications[0]["thread_id"], "native-thread")
-        self.assertEqual(notifications[0]["turn_id"], "turn-2")
         self.assertEqual(notifications[0]["usage"]["output_tokens"], 5)
 
     def test_complete_final_event_does_not_require_a_trailing_newline(self) -> None:
@@ -432,6 +429,71 @@ class MonitorTests(unittest.TestCase):
             with self.subTest(stdout=result.stdout):
                 self.assertEqual(result.returncode, 1, result.stderr)
                 self.assertEqual(json.loads(result.stdout)["type"], "monitor_error")
+
+    def test_partial_final_journal_line_is_ignored_only_while_unterminated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = self.make_run(root, "run")
+            execution, _ = self.add_execution(
+                run_dir,
+                events=[
+                    {"type": "thread.started", "thread_id": "partial-journal"},
+                    {"type": "turn.completed"},
+                ],
+            )
+            journal = run_dir / "journal.jsonl"
+            write_jsonl(
+                journal,
+                [journal_entry("run_started", run_id="run"), execution],
+            )
+            with journal.open("a", encoding="utf-8") as handle:
+                handle.write('{"type":"execution_result"')
+            partial = run_id_monitor(root, "run", "--once")
+            strict_validation = subprocess.run(
+                [sys.executable, str(SCRIPT), "validate", str(run_dir)],
+                check=False,
+                text=True,
+                capture_output=True,
+                cwd=ROOT,
+            )
+            with journal.open("a", encoding="utf-8") as handle:
+                handle.write("\n")
+            terminated = run_id_monitor(root, "run", "--once")
+
+        self.assertEqual(partial.returncode, 0, partial.stderr)
+        self.assertEqual(json.loads(partial.stdout)["type"], "codex_agent_complete")
+        self.assertEqual(strict_validation.returncode, 1, strict_validation.stderr)
+        self.assertTrue(
+            any(
+                "invalid JSON" in issue
+                for issue in json.loads(strict_validation.stdout)["issues"]
+            )
+        )
+        self.assertEqual(terminated.returncode, 1, terminated.stderr)
+        self.assertEqual(json.loads(terminated.stdout)["type"], "monitor_error")
+
+    def test_invalid_journal_events_path_is_a_structured_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = self.make_run(root, "run")
+            write_jsonl(
+                run_dir / "journal.jsonl",
+                [
+                    journal_entry("run_started", run_id="run"),
+                    journal_entry(
+                        "execution",
+                        agent="codex-impl-01",
+                        execution="execution-01",
+                        events="bad\0path",
+                    ),
+                ],
+            )
+            result = run_id_monitor(root, "run", "--once")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["type"], "monitor_error")
+        self.assertIn("invalid events path", payload["message"])
 
 
 if __name__ == "__main__":

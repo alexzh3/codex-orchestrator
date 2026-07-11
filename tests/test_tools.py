@@ -55,6 +55,17 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "complete")
 
+    def test_partial_first_event_reports_starting_without_low_confidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "partial.jsonl"
+            path.write_text('{"type":"thread.started"', encoding="utf-8")
+            result = run_cli("state", "partial", "--file", str(path), "--json")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "starting")
+        self.assertEqual(payload["compatibility"]["parse_confidence"], "high")
+
     def test_exec_stream_completed_status(self) -> None:
         result = run_cli(
             "state",
@@ -95,7 +106,7 @@ class ToolTests(unittest.TestCase):
             reconnect = run_cli("state", "reconnect", "--file", str(reconnect_path), "--json")
             failed = run_cli("state", "error", "--file", str(error_path), "--json")
 
-        self.assertEqual(json.loads(reconnect.stdout)["status"], "idle")
+        self.assertEqual(json.loads(reconnect.stdout)["status"], "starting")
         failed_payload = json.loads(failed.stdout)
         self.assertEqual(failed_payload["status"], "failed")
         self.assertEqual(failed_payload["details"]["error"], "authentication failed")
@@ -111,6 +122,20 @@ class ToolTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "active")
+
+    def test_recognized_pre_turn_events_report_starting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "starting.jsonl"
+            path.write_text(
+                '{"type":"thread.started","thread_id":"native"}\n',
+                encoding="utf-8",
+            )
+            result = run_cli("state", "starting", "--file", str(path), "--json")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "starting")
+        self.assertEqual(payload["compatibility"]["parse_confidence"], "high")
 
     def test_unknown_format_exits_nonzero_and_low_confidence(self) -> None:
         result = run_cli(

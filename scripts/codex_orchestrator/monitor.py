@@ -44,7 +44,9 @@ def inflight_targets(
             )
         ]
 
-    records, issues = read_journal(run_dir / "journal.jsonl")
+    records, issues = read_journal(
+        run_dir / "journal.jsonl", allow_partial_final_line=True
+    )
     if issues:
         return [], [
             error_payload(
@@ -91,13 +93,16 @@ def inflight_targets(
                 )
             )
             continue
-        targets.append(
-            MonitorTarget(
-                path=resolve_run_path(run_dir, value),
-                agent=key[0],
-                execution=key[1],
+        try:
+            path = resolve_run_path(run_dir, value)
+        except (OSError, RuntimeError, ValueError) as exc:
+            errors.append(
+                error_payload(
+                    f"execution {key[0]}/{key[1]} has an invalid events path: {exc}"
+                )
             )
-        )
+            continue
+        targets.append(MonitorTarget(path=path, agent=key[0], execution=key[1]))
     return targets, errors
 
 
@@ -153,8 +158,6 @@ def monitor_payload(
         payload["agent"] = target.agent
     if target.execution:
         payload["execution"] = target.execution
-    if event is not None and isinstance(event.get("turn_id"), str):
-        payload["turn_id"] = event["turn_id"]
     return payload
 
 
@@ -188,12 +191,12 @@ def emit_monitor(payload: dict[str, object]) -> None:
 
 def scan_monitor_target(target: MonitorTarget, stale_seconds: int) -> str:
     path = target.path
-    if not path.is_file():
-        emit_monitor(
-            error_payload("event stream does not exist or is not a file", path=path)
-        )
-        return "error"
     try:
+        if not path.is_file():
+            emit_monitor(
+                error_payload("event stream does not exist or is not a file", path=path)
+            )
+            return "error"
         summary = summarize_stream(path)
         compat = compatibility(summary)
         if compat["parse_confidence"] == "low":
@@ -219,7 +222,7 @@ def scan_monitor_target(target: MonitorTarget, stale_seconds: int) -> str:
                 payload["parse_errors"] = summary.parse_errors
             emit_monitor(payload)
             return "stale"
-    except (OSError, RuntimeError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         emit_monitor(error_payload(f"could not read event stream: {exc}", path=path))
         return "error"
     return "active"
