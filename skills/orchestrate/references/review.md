@@ -30,7 +30,7 @@ For the first independent review:
   handoff.
 
 ```bash
-EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/agents/codex-review-01/execution-01"
+EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-review-01/execution-01"
 codex exec -C <worktree> -s workspace-write review --json \
   --output-last-message "$EXECUTION_DIR/handoff.md" \
   --commit <sha> - \

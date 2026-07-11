@@ -19,7 +19,7 @@ Keep run material under:
 ```text
 .codex-orchestrator/runs/<run-id>/
   journal.jsonl
-  agents/<provider>-<role>-<NN>/execution-<NN>/
+  <provider>-<role>-<NN>/execution-<NN>/
     prompt.md
     events.jsonl
     handoff.md

@@ -62,13 +62,13 @@ for a Claude agent. Record `model`, `effort`, and `session_id` when known; an ex
 supply the session id later.
 
 ```jsonl
-{"type":"execution","agent":"codex-impl-01","execution":"execution-01","task":"task-01","provider":"codex","role":"implementation","mode":"headless","event_source":"exec","model":"gpt-5","effort":"high","prompt":"agents/codex-impl-01/execution-01/prompt.md","events":"agents/codex-impl-01/execution-01/events.jsonl","handoff":"agents/codex-impl-01/execution-01/handoff.md","recorded_at":"2026-07-10T12:02:00Z"}
+{"type":"execution","agent":"codex-impl-01","execution":"execution-01","task":"task-01","provider":"codex","role":"implementation","mode":"headless","event_source":"exec","model":"gpt-5","effort":"high","prompt":"codex-impl-01/execution-01/prompt.md","events":"codex-impl-01/execution-01/events.jsonl","handoff":"codex-impl-01/execution-01/handoff.md","recorded_at":"2026-07-10T12:02:00Z"}
 ```
 
 Observe-only IDE attachment has no prompt because Claude provided no execution input:
 
 ```jsonl
-{"type":"execution","agent":"codex-observe-01","execution":"execution-01","task":"task-01","provider":"codex","role":"monitoring","mode":"observe","event_source":"ide","session_id":"thread-123","events":"/home/user/.codex/sessions/2026/07/10/rollout-thread-123.jsonl","handoff":"agents/codex-observe-01/execution-01/handoff.md","recorded_at":"2026-07-10T12:02:00Z"}
+{"type":"execution","agent":"codex-observe-01","execution":"execution-01","task":"task-01","provider":"codex","role":"monitoring","mode":"observe","event_source":"ide","session_id":"thread-123","events":"/home/user/.codex/sessions/2026/07/10/rollout-thread-123.jsonl","handoff":"codex-observe-01/execution-01/handoff.md","recorded_at":"2026-07-10T12:02:00Z"}
 ```
 
 ### `execution_result`
@@ -79,7 +79,7 @@ mechanical process telemetry or authoritative file attribution; a complete execu
 not complete the task.
 
 ```jsonl
-{"type":"execution_result","agent":"codex-impl-01","execution":"execution-01","task":"task-01","status":"complete","session_id":"thread-123","handoff":"agents/codex-impl-01/execution-01/handoff.md","summary":"Implemented validation and tests.","files_changed":["src/api.py","tests/test_api.py"],"caveats":[],"recorded_at":"2026-07-10T12:20:00Z"}
+{"type":"execution_result","agent":"codex-impl-01","execution":"execution-01","task":"task-01","status":"complete","session_id":"thread-123","handoff":"codex-impl-01/execution-01/handoff.md","summary":"Implemented validation and tests.","files_changed":["src/api.py","tests/test_api.py"],"caveats":[],"recorded_at":"2026-07-10T12:20:00Z"}
 ```
 
 An execution is in flight until a matching terminal execution result exists. Completed executions
@@ -106,7 +106,7 @@ Records a consequential resolution. Outcome is `consensus`, `claude_decision`, o
 states residual risk. Decisions explain history but do not delete or rewrite failed checks.
 
 ```jsonl
-{"type":"decision","id":"decision-01","task":"task-01","finding":"The first implementation accepted whitespace-only names.","outcome":"consensus","resolution":"Reject stripped empty names and retain the regression test.","basis":["check-01","agents/codex-impl-01/execution-02/handoff.md"],"risk":"low","recorded_at":"2026-07-10T12:45:00Z"}
+{"type":"decision","id":"decision-01","task":"task-01","finding":"The first implementation accepted whitespace-only names.","outcome":"consensus","resolution":"Reject stripped empty names and retain the regression test.","basis":["check-01","codex-impl-01/execution-02/handoff.md"],"risk":"low","recorded_at":"2026-07-10T12:45:00Z"}
 ```
 
 ### `run_closed`

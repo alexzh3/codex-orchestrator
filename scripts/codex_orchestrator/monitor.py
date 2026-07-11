@@ -33,11 +33,11 @@ class MonitorTarget:
     execution: str | None = None
 
 
-def new_layout_event_paths(run_dir: Path) -> list[Path]:
+def execution_event_paths(run_dir: Path) -> list[Path]:
     return sorted(
         (
             path
-            for path in (run_dir / "agents").glob("*/execution-*/events.jsonl")
+            for path in run_dir.glob("*/execution-*/events.jsonl")
             if path.is_file()
         ),
         key=lambda path: (path.stat().st_mtime, str(path)),
@@ -49,11 +49,11 @@ def inflight_targets(run_dir: Path) -> tuple[list[MonitorTarget], list[str]]:
     records, issues = read_journal(run_dir / "journal.jsonl")
     if issues:
         fallback = [
-            MonitorTarget(path, source_for_path(path)) for path in new_layout_event_paths(run_dir)
+            MonitorTarget(path, source_for_path(path)) for path in execution_event_paths(run_dir)
         ]
         warning = (
             "journal lifecycle could not be read; using low-confidence "
-            "agents/*/execution-*/events.jsonl discovery"
+            "*/execution-*/events.jsonl discovery"
         )
         return fallback, [warning, *issues]
 
@@ -114,13 +114,13 @@ def auto_discover_run_dir(repo: Path) -> tuple[Path | None, list[str]]:
     fallback = [
         run_dir
         for run_dir, lifecycle in candidates
-        if lifecycle == "invalid" and new_layout_event_paths(run_dir)
+        if lifecycle == "invalid" and execution_event_paths(run_dir)
     ]
     if not fallback:
         return None, []
     selected = max(fallback, key=lambda path: (run_activity_mtime(path), path.name))
     return selected, [
-        "no valid active journal found; selected a run by low-confidence new-layout event mtime"
+        "no valid active journal found; selected a run by low-confidence execution event mtime"
     ]
 
 

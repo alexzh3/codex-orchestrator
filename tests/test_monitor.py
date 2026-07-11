@@ -48,7 +48,7 @@ class MonitorTests(unittest.TestCase):
         event_path: Path | None = None,
         source: str = "exec",
     ) -> tuple[dict[str, object], Path]:
-        path = event_path or run_dir / "agents" / agent / execution / "events.jsonl"
+        path = event_path or run_dir / agent / execution / "events.jsonl"
         write_jsonl(path, events or [])
         value = (
             str(path)
@@ -61,9 +61,9 @@ class MonitorTests(unittest.TestCase):
             agent=agent,
             execution=execution,
             provider="codex",
-            prompt=f"agents/{agent}/{execution}/prompt.md",
+            prompt=f"{agent}/{execution}/prompt.md",
             events=value,
-            handoff=f"agents/{agent}/{execution}/handoff.md",
+            handoff=f"{agent}/{execution}/handoff.md",
             event_source=source,
         )
         return record, path
@@ -437,7 +437,7 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(notification["path"], str(path))
         self.assertIn("does not exist", notification["message"])
 
-    def test_invalid_lifecycle_uses_new_layout_mtime_fallback_with_warning(self) -> None:
+    def test_invalid_lifecycle_uses_execution_mtime_fallback_with_warning(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             run_dir = self.make_run(root)

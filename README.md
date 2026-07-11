@@ -114,20 +114,19 @@ Runs live under `.codex-orchestrator/runs/<run-id>/` and are normally ignored by
 
 ```text
 journal.jsonl
-agents/
-  codex-impl-01/
-    execution-01/
-      prompt.md
-      events.jsonl
-      handoff.md
+codex-impl-01/
+  execution-01/
+    prompt.md
+    events.jsonl
+    handoff.md
 evidence/                 # optional
 report.md                 # written by Claude after run closure
 ```
 
-Each agent directory is a persistent execution context. Every prompt, event stream, and handoff
-cycle gets the next numbered execution; resuming a native session creates another execution under
-the same agent. Each execution keeps the exact prompt, raw Codex events, and final handoff together
-so that each execution can be inspected later.
+Each top-level agent directory is a persistent execution context. Every prompt, event stream, and
+handoff cycle gets the next numbered execution; resuming a native session creates another execution
+under the same agent. Each execution keeps the exact prompt, raw Codex events, and final handoff
+together so that each execution can be inspected later.
 
 `journal.jsonl` is the compact index for the run, `evidence/` holds optional supporting evidence,
 and `report.md` contains Claude's final summary. The detailed journal format, trust boundaries, and

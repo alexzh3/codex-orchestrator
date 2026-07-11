@@ -8,7 +8,7 @@ unless a bounded inspection cannot explain an ambiguous or failed session.
 Create the next numbered execution under its named agent:
 
 ```text
-agents/codex-impl-01/execution-01/
+codex-impl-01/execution-01/
   prompt.md
   events.jsonl
   handoff.md
@@ -18,7 +18,7 @@ Save `prompt.md` and append `execution` before launch. Capture stdout as `events
 message as `handoff.md`:
 
 ```bash
-EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/agents/codex-impl-01/execution-01"
+EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-impl-01/execution-01"
 codex exec --json --output-last-message "$EXECUTION_DIR/handoff.md" \
   -s workspace-write -c approval_policy=never -C <worktree> \
   - \

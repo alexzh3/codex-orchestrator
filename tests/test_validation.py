@@ -23,7 +23,7 @@ def write_journal(run_dir: Path, records: list[dict[str, object]]) -> None:
 class ValidationTests(unittest.TestCase):
     def make_run(self, root: Path) -> tuple[Path, list[dict[str, object]]]:
         run_dir = root / "run"
-        execution_dir = run_dir / "agents" / "codex-impl-01" / "execution-01"
+        execution_dir = run_dir / "codex-impl-01" / "execution-01"
         evidence_dir = run_dir / "evidence"
         execution_dir.mkdir(parents=True)
         evidence_dir.mkdir()
@@ -41,9 +41,9 @@ class ValidationTests(unittest.TestCase):
                 "task": "task-01",
                 "agent": "codex-impl-01",
                 "execution": "execution-01",
-                "prompt": "agents/codex-impl-01/execution-01/prompt.md",
-                "events": "agents/codex-impl-01/execution-01/events.jsonl",
-                "handoff": "agents/codex-impl-01/execution-01/handoff.md",
+                "prompt": "codex-impl-01/execution-01/prompt.md",
+                "events": "codex-impl-01/execution-01/events.jsonl",
+                "handoff": "codex-impl-01/execution-01/handoff.md",
             },
             {
                 "type": "execution_result",
@@ -194,7 +194,7 @@ class ValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             run_dir, records = self.make_run(root)
-            execution_dir = run_dir / "agents" / "codex-impl-01" / "execution-01"
+            execution_dir = run_dir / "codex-impl-01" / "execution-01"
 
             (execution_dir / "prompt.md").unlink()
             missing_prompt = validate_run(run_dir)
