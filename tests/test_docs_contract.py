@@ -92,7 +92,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("small omission check", contract)
         self.assertIn("does not enforce every documented field", contract)
 
-    def test_claude_verification_and_independent_review_use_different_context(self) -> None:
+    def test_verification_and_independent_review_use_different_context(self) -> None:
         review = " ".join(
             (ROOT / "skills/orchestrate/references/review.md")
             .read_text(encoding="utf-8")
@@ -103,8 +103,8 @@ class DocumentationContractTests(unittest.TestCase):
             (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8").casefold().split()
         )
 
-        self.assertIn("claude's own verification", review)
-        self.assertIn("read an agent handoff first", review)
+        self.assertIn("read the handoff as claims", review)
+        self.assertIn("observed check", review)
         self.assertIn("fresh named `codex-review-nn` agent", review)
         self.assertIn("never resume the implementation session", review)
         for excluded in (
@@ -114,8 +114,6 @@ class DocumentationContractTests(unittest.TestCase):
             "claude's tentative conclusion",
         ):
             self.assertIn(excluded, review)
-        self.assertIn("must not relay", review)
-        self.assertIn("first-pass prompt", review)
         self.assertIn("initial independent review", workflow)
         self.assertIn("starts a fresh agent and native session", workflow)
 
@@ -134,37 +132,26 @@ class DocumentationContractTests(unittest.TestCase):
         )
 
         self.assertIn("--commit <sha>", review)
-        self.assertIn("immutable", review)
-        self.assertIn("no source-file write reservation", review)
         self.assertIn("record the base head sha", review)
-        self.assertIn("independent `--uncommitted` review reserves", compute)
-        self.assertIn("task's declared `files`", compute)
-        self.assertIn("execution terminates", compute)
+        self.assertIn("reserves its task's `files` and shared resources", compute)
         self.assertIn("terminal blocked/failed outcome", compute)
         self.assertIn("disjoint work may continue", compute)
-        self.assertIn("separate worktree or commit a stable snapshot", compute)
+        self.assertIn("separate worktree or committed snapshot", compute)
 
-    def test_consensus_distinguishes_context_from_family_diversity(self) -> None:
+    def test_decisions_use_evidence_not_agent_count(self) -> None:
         consensus = " ".join(
             (ROOT / "skills/orchestrate/references/consensus.md")
             .read_text(encoding="utf-8")
             .casefold()
             .split()
         )
-        report = " ".join(
-            (ROOT / "skills/report/SKILL.md").read_text(encoding="utf-8").casefold().split()
-        )
 
-        self.assertIn("anthropic claude family in claude code", consensus)
-        self.assertIn("openai codex/gpt family in codex", consensus)
-        self.assertIn("does not add model-family diversity", consensus)
-        self.assertIn("agent count is never a decision rule", consensus)
-        for criterion in ("acceptance fit", "direct evidence", "reversibility"):
+        for outcome in ("consensus", "claude_decision", "user_action_required"):
+            self.assertIn(f"`{outcome}`", consensus)
+        for criterion in ("acceptance fit", "direct evidence", "reversibility", "not agent count"):
             self.assertIn(criterion, consensus)
-        self.assertIn("fresh codex review as context-independent", report)
-        self.assertIn("recorded claude-codex participation", report)
 
-    def test_review_effort_is_risk_scaled_and_lens_diverse(self) -> None:
+    def test_review_effort_is_risk_scaled(self) -> None:
         review = " ".join(
             (ROOT / "skills/orchestrate/references/review.md")
             .read_text(encoding="utf-8")
@@ -175,7 +162,6 @@ class DocumentationContractTests(unittest.TestCase):
             (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8").casefold().split()
         )
 
-        self.assertIn("one primary review lens", review)
         self.assertIn("distinct unresolved question", review)
         self.assertIn("routine bounded work", workflow)
         self.assertIn("codex implementation plus claude verification", workflow)

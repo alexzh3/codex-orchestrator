@@ -113,4 +113,4 @@ Read only the references needed for the current phase:
 - `references/monitoring.md`: execution capture, CLI and IDE monitoring, tool commands, handoffs.
 - `references/review.md`: claims, independent evidence, verification, and review loops.
 - `references/consensus.md`: decision outcomes and disagreement handling.
-- `references/compute.md`: agent reuse, parallel ownership, worktrees, and compute gating.
+- `references/compute.md`: parallel ownership, worktrees, and compute gating.

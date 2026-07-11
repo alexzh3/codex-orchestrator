@@ -5,8 +5,7 @@ unless a bounded inspection cannot explain an ambiguous or failed session.
 
 ## Headless Codex
 
-For each prompt/execution/handoff cycle, create the next numbered execution directly under its named
-agent:
+Create the next numbered execution under its named agent:
 
 ```text
 agents/codex-impl-01/execution-01/
@@ -15,8 +14,8 @@ agents/codex-impl-01/execution-01/
   handoff.md
 ```
 
-Save `prompt.md`, then append the journal `execution` entry before launch. Capture raw stdout as the event
-stream and the native last message as the handoff:
+Save `prompt.md` and append `execution` before launch. Capture stdout as `events.jsonl` and the last
+message as `handoff.md`:
 
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/agents/codex-impl-01/execution-01"
@@ -27,8 +26,7 @@ EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/agents/codex-impl-01/execution-
   > "$EXECUTION_DIR/events.jsonl"
 ```
 
-Never use `--ephemeral`, because session history is needed for resumption and audit. Use broad
-access only with explicit user authorization and an appropriately isolated environment.
+Never use `--ephemeral`. Use broad access only with explicit authorization and isolation.
 
 Require Codex to end every execution with this concise handoff shape:
 
@@ -46,10 +44,9 @@ Require Codex to end every execution with this concise handoff shape:
 ## Caveats / Blockers
 ```
 
-`--output-last-message` is the normal capture path. Extracting the last completed agent message from
-events is a fallback for older or interrupted runs, not a reason to mine logs during normal review.
+Extract the last completed agent message from events only when normal handoff capture failed.
 
-Resume a relevant, idle session as another captured execution under the same named agent:
+Resume a relevant idle session as the next execution under the same agent:
 
 ```bash
 "$CODEX" exec -C <worktree> -s workspace-write -c approval_policy=never \
@@ -60,36 +57,23 @@ Resume a relevant, idle session as another captured execution under the same nam
   > "$EXECUTION_DIR/events.jsonl"
 ```
 
-Target the original worktree with `-C`; if the shell runs elsewhere, make `EXECUTION_DIR` absolute
-so redirections still reach the run directory. The resumed execution records the same native
-`session_id`. Starting a fresh native session creates a new named agent.
+Use the original worktree with `-C`, the same `session_id`, and an absolute `EXECUTION_DIR` when the
+shell runs elsewhere. A fresh native session requires a new named agent.
 
 ## IDE Sessions
 
-A live IDE session is identified by `codex://threads/<thread-uuid>`. When Claude attaches only to
-observe a session that is already active, append an execution with `mode: "observe"`,
-`event_source: "ide"`, the native `session_id`, the absolute rollout path in `events`, and a local
-`handoff` path. Omit `prompt` because Claude sent no prompt; this is the only missing-prompt case
-allowed by the run protocol. Do not copy the rollout into the run directory. Save the exact
-final agent message locally as `handoff.md`.
+For observe-only attachment to `codex://threads/<thread-uuid>`, record `mode: "observe"`,
+`event_source: "ide"`, `session_id`, the absolute rollout path in `events`, and a local `handoff`.
+Omit `prompt`, do not copy the rollout, and save the exact final message as `handoff.md`.
 
-If Claude later sends a follow-up, create the next normal prompted execution under the same agent:
-save its exact `prompt.md`, record its paths before sending it, and capture its final response as the
-new handoff.
+For a follow-up, create the next prompted execution under the same agent and capture its prompt,
+paths, and handoff normally.
 
-Resolve the current rollout path rather than assuming an old path remains active:
+Resolve the rollout path on attachment and after resumption:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" find <thread-uuid> --json
 ```
-
-The usual rollout path is:
-
-```text
-~/.codex/sessions/YYYY/MM/DD/rollout-<ISO-ts>-<thread-uuid>.jsonl
-```
-
-Re-find it after resumption because the same native session can append through a new rollout file.
 
 ## Session Tools And Monitor
 
@@ -101,12 +85,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" tail <session-id> --
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" state <session-id> --source ide --file <rollout-jsonl> --json
 ```
 
-Persist no monitoring offset in the journal. Callers retain `next_offset` while monitoring. After context
-loss, call `state` for a compact current summary and continue from its `next_offset`; do not tail a
-large event stream again from byte zero.
+Keep `next_offset` in the caller, not the journal. After context loss, call `state` and continue from
+its `next_offset`.
 
-The bundled run monitor treats a `run_started` entry without a later `run_closed` as Claude's
-active-run marker, then watches executions without recorded terminal execution results:
+Monitor an active run or explicit stream:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" monitor \
@@ -115,13 +97,6 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" monitor \
   --log <events-jsonl> --fail-on-session-failure
 ```
 
-It emits compact completion, failure, and stale notifications and never writes the journal. These
-markers support discovery but do not independently prove lifecycle state. Explicit paths may point
-to local headless streams or external IDE rollouts. Use bounded raw tails only when format
-confidence is low.
-
-The monitor recognizes terminal events in the stream. Claude may separately observe the exit of a
-`codex exec` process it launched; process exit is not a monitor signal. Silence is not completion. A
-stale stream may mean the session ended, blocked, or is awaiting an approval; inspect bounded
-context before deciding. Append the terminal `execution_result` only after Claude has inspected the
-handoff and repository state.
+The monitor is read-only and emits completion, failure, or stale notifications. Use bounded raw
+tails only when format confidence is low. Treat silence and staleness as ambiguous; inspect the
+handoff and repository before appending `execution_result`.

@@ -1,36 +1,19 @@
-# Agent Identity, Parallel Work, And Compute
-
-## Identity And Reuse
-
-Treat each named agent as a persistent execution context with a provider, primary role, native
-`session_id`, repository/worktree, and execution history. Continue in the same native session when
-its context remains relevant. If its context is nearly full, summarize the goal, files touched,
-decisions, check state, unresolved issues, and next request before resuming it.
-
-Create a fresh agent only for contextually unrelated work, required isolation, an unusable session
-after bounded inspection, or an explicit user request. Initial independent review and an unanchored
-alternative are deliberate exceptions: each starts a fresh named agent and native session. Reuse
-the relevant implementation or review session for continuation, fixes, reconciliation, and targeted
-rechecks. A new rollout file or new execution does not by itself create a new agent.
+# Parallel Work And Compute
 
 ## Parallel Work
 
-Every active task declares its allowed/owned file paths or globs in `files`. This is the planned
-boundary; an execution result's `files_changed` is Claude's compact attribution note, while the
-repository diff determines what actually changed. Before parallel execution, compare the task
-`files` lists:
+Before parallel execution, compare the active tasks' declared `files` and shared resources:
 
 - Disjoint lists may run concurrently in the same repository when tools will not mutate shared
   generated files.
 - Overlapping paths or shared contracts require sequential handoff or separate worktrees.
 - Shared build outputs, databases, ports, GPUs, and evidence paths also count as conflicts.
 
-An independent `--uncommitted` review reserves the reviewed task's declared `files` and relevant
-shared resources against writes until the review execution terminates and its handoff or terminal
-blocked/failed outcome is recorded. Disjoint work may continue. If the reservation cannot be
-maintained, review in a separate worktree or commit a stable snapshot.
+An independent `--uncommitted` review reserves its task's `files` and shared resources until its
+handoff or terminal blocked/failed outcome is recorded. Disjoint work may continue; otherwise use a
+separate worktree or committed snapshot.
 
-Use native Git for isolation; the plugin has no worktree protocol command:
+Use native Git worktrees for isolation:
 
 ```bash
 git worktree add ../<repo>-codex-impl-01 -b codex-impl-01
@@ -53,6 +36,5 @@ free -g
 df -h /
 ```
 
-`docker ps` showing `Up` is not proof of active compute. Check utilization, processes, memory, disk,
-ports, and task-specific outputs. Record a material compute decision in the journal when it changes
-execution timing, isolation, or acceptance.
+Check utilization, processes, memory, disk, ports, and task outputs. Record a decision when resource
+state changes execution timing, isolation, or acceptance.
