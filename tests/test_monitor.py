@@ -9,7 +9,7 @@ import time
 import unittest
 from pathlib import Path
 
-from scripts.codex_orchestrator.parse import read_jsonl_delta
+from scripts.codex_orchestrator.parse import read_stream
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"
@@ -266,7 +266,9 @@ class MonitorTests(unittest.TestCase):
             first = '{"type":"turn.started"}\n'
             path.write_text(first + "not json\n[]\n" + '{"type":"turn.completed"', encoding="utf-8")
 
-            records, offset, parse_errors = read_jsonl_delta(path, 0, "exec")
+            _, records, _, offset, parse_errors = read_stream(
+                path, "exec", since_offset=0
+            )
             self.assertEqual([record.event_type for record in records], [
                 "turn.started",
                 "<invalid-json>",
@@ -277,7 +279,9 @@ class MonitorTests(unittest.TestCase):
 
             with path.open("a", encoding="utf-8") as handle:
                 handle.write("}\n")
-            completed, next_offset, parse_errors = read_jsonl_delta(path, offset, "exec")
+            _, completed, _, next_offset, parse_errors = read_stream(
+                path, "exec", since_offset=offset
+            )
 
         self.assertEqual([record.event_type for record in completed], ["turn.completed"])
         self.assertEqual(parse_errors, 0)

@@ -6,7 +6,6 @@ import json
 import sys
 import time
 from collections import Counter
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -104,34 +103,41 @@ def decode_event_line(line: str) -> EventRecord | None:
     return EventRecord(event, event_type(event))
 
 
-def iter_json_events(lines: Iterable[str]) -> Iterable[EventRecord]:
-    for line in lines:
-        record = decode_event_line(line)
-        if record is not None:
-            yield record
-
-
-def read_lines(
+def read_stream(
     path: Path, source: str, *, since_offset: int | None = None
-) -> tuple[list[str], int, int]:
+) -> tuple[list[str], list[EventRecord], int, int, int]:
     size = path.stat().st_size
-    if since_offset is not None:
-        start = max(0, min(since_offset, size))
-    else:
-        start = 0
+    requested_offset = 0 if since_offset is None else max(0, min(since_offset, size))
+    bounded_initial_tail = source == "ide" and requested_offset == 0 and size > TAIL_LIMIT_BYTES
+    start = size - TAIL_LIMIT_BYTES if bounded_initial_tail else requested_offset
+    lines: list[str] = []
+    records: list[EventRecord] = []
+    parse_errors = 0
+    end = start
 
     with path.open("r", encoding="utf-8") as handle:
-        if source == "ide" and since_offset is None:
-            handle.seek(max(0, size - TAIL_LIMIT_BYTES))
-            start = handle.tell()
-        else:
-            handle.seek(start)
-        if source == "ide" and since_offset is None and start > 0:
+        handle.seek(start)
+        if bounded_initial_tail:
             handle.readline()
             start = handle.tell()
-        lines = [line for line in handle]
-        end = handle.tell()
-    return lines, start, end
+            end = start
+        while True:
+            line_start = handle.tell()
+            line = handle.readline()
+            if line == "":
+                break
+            if not line.endswith("\n"):
+                end = line_start
+                break
+            lines.append(line)
+            end = handle.tell()
+            record = decode_event_line(line)
+            if record is None:
+                continue
+            records.append(record)
+            if record.event_type in {"<invalid-json>", "<non-object>"}:
+                parse_errors += 1
+    return lines, records, start, end, parse_errors
 
 
 def known_types_for_source(source: str) -> set[str]:
@@ -205,8 +211,8 @@ def source_for_path(path: Path | None, declared: object = None) -> str:
         return str(declared)
     if path is None or not path.exists():
         return "exec"
-    sample_lines, _, _ = read_lines(path, "ide")
-    return source_from_events(list(iter_json_events(sample_lines)))
+    _, records, _, _, _ = read_stream(path, "ide")
+    return source_from_events(records)
 
 
 def source_and_path(args: argparse.Namespace) -> tuple[str, Path | None, list[str]]:
@@ -359,8 +365,8 @@ def classify_ide(
 def load_records(path: Path | None, source: str) -> tuple[list[EventRecord], int, int]:
     if path is None:
         return [], 0, 0
-    lines, start, end = read_lines(path, source)
-    return list(iter_json_events(lines)), start, end
+    _, records, start, end, _ = read_stream(path, source)
+    return records, start, end
 
 
 def command_find(args: argparse.Namespace) -> int:
@@ -449,8 +455,9 @@ def command_tail(args: argparse.Namespace) -> int:
         print(json_dumps(payload) if args.json else "")
         return 1
 
-    lines, start, end = read_lines(path, source, since_offset=args.since_offset)
-    records = list(iter_json_events(lines))
+    lines, records, start, end, _ = read_stream(
+        path, source, since_offset=args.since_offset
+    )
     compat = compatibility(records, source)
     compat["warnings"] = [*compat["warnings"], *source_warnings]
     if args.json:
@@ -862,40 +869,6 @@ def resolve_monitor_targets(args: argparse.Namespace) -> tuple[list[MonitorTarge
     return targets, [*warnings, *target_warnings]
 
 
-def read_jsonl_delta(
-    path: Path, offset: int, source: str
-) -> tuple[list[EventRecord], int, int]:
-    size = path.stat().st_size
-    start = 0 if offset > size else max(0, offset)
-    truncated_initial_tail = False
-    if source == "ide" and offset == 0 and size > TAIL_LIMIT_BYTES:
-        start = size - TAIL_LIMIT_BYTES
-        truncated_initial_tail = True
-    records: list[EventRecord] = []
-    parse_errors = 0
-    end = start
-    with path.open("r", encoding="utf-8") as handle:
-        handle.seek(start)
-        if truncated_initial_tail:
-            handle.readline()
-        while True:
-            line_start = handle.tell()
-            line = handle.readline()
-            if line == "":
-                break
-            if not line.endswith("\n"):
-                end = line_start
-                break
-            end = handle.tell()
-            record = decode_event_line(line)
-            if record is None:
-                continue
-            records.append(record)
-            if record.event_type in {"<invalid-json>", "<non-object>"}:
-                parse_errors += 1
-    return records, end, parse_errors
-
-
 def thread_id_from(event: dict[str, object], fallback: str) -> str:
     value = event.get("thread_id")
     if isinstance(value, str) and value:
@@ -966,8 +939,8 @@ def scan_monitor_target(
     path = target.path
     if not path.exists() or not path.is_file():
         return False, False, False
-    records, next_offset, parse_errors = read_jsonl_delta(
-        path, int(state.get("offset", 0)), target.source
+    _, records, _, next_offset, parse_errors = read_stream(
+        path, target.source, since_offset=int(state.get("offset", 0))
     )
     state["offset"] = next_offset
     if target.source == "exec":

@@ -10,7 +10,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"
-PARSE_MODULE = ROOT / "scripts" / "codex_orchestrator" / "parse.py"
 FIXTURES = ROOT / "tests" / "fixtures"
 
 
@@ -163,6 +162,44 @@ class ParseCliTests(unittest.TestCase):
         self.assertGreater(payload["next_offset"], payload["offset"])
         self.assertEqual(payload["events"][0]["type"], "thread.started")
 
+    def test_tail_retries_an_unterminated_final_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            complete = '{"type":"turn.started"}\n'
+            path.write_text(complete + '{"type":"turn.completed"', encoding="utf-8")
+
+            first = run_cli(
+                "tail",
+                "partial-event",
+                "--since-offset",
+                "0",
+                "--source",
+                "exec",
+                "--file",
+                str(path),
+                "--json",
+            )
+            first_payload = json.loads(first.stdout)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write("}\n")
+            second = run_cli(
+                "tail",
+                "partial-event",
+                "--since-offset",
+                str(first_payload["next_offset"]),
+                "--source",
+                "exec",
+                "--file",
+                str(path),
+                "--json",
+            )
+
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual([event["type"] for event in first_payload["events"]], ["turn.started"])
+        self.assertEqual(first_payload["next_offset"], len(complete.encode()))
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(json.loads(second.stdout)["events"][0]["type"], "turn.completed")
+
     def test_find_returns_the_newest_ide_rollout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             sessions = Path(tmp) / ".codex" / "sessions" / "2026" / "07" / "11"
@@ -211,11 +248,26 @@ class ParseCliTests(unittest.TestCase):
         self.assertEqual(payload["status"], "idle")
         self.assertIsNone(payload["path"])
 
-    def test_ide_reader_uses_seek_tail_pattern(self) -> None:
-        source = PARSE_MODULE.read_text(encoding="utf-8")
-        self.assertIn("seek(max(0, size - TAIL_LIMIT_BYTES))", source)
-        self.assertNotIn(".readlines(", source)
-        self.assertNotIn(".read()", source)
+    def test_ide_state_uses_a_bounded_initial_tail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rollout.jsonl"
+            terminal = json.dumps(
+                {
+                    "payload": {
+                        "type": "thread_goal_updated",
+                        "goal": {"status": "complete", "text": "Finished"},
+                    }
+                }
+            )
+            path.write_text("x" * 600_000 + "\n" + terminal + "\n", encoding="utf-8")
+            result = run_cli(
+                "state", "large-ide", "--source", "ide", "--file", str(path), "--json"
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertGreater(payload["offset"], 0)
+        self.assertEqual(payload["status"], "complete")
 
 
 if __name__ == "__main__":
