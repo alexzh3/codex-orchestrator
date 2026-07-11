@@ -167,6 +167,12 @@ class DocumentationContractTests(unittest.TestCase):
         for criterion in ("acceptance fit", "direct evidence", "reversibility", "not agent count"):
             self.assertIn(criterion, consensus)
 
+    def test_compute_gating_includes_gpu_utilization_and_process_checks(self) -> None:
+        compute = (ROOT / "skills/orchestrate/references/compute.md").read_text(encoding="utf-8")
+
+        self.assertIn("nvidia-smi --query-gpu=memory.used,memory.total", compute)
+        self.assertIn("nvidia-smi --query-compute-apps=pid,used_memory", compute)
+
     def test_review_effort_is_risk_scaled(self) -> None:
         review = " ".join(
             (ROOT / "skills/orchestrate/references/review.md")

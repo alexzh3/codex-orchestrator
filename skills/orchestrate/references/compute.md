@@ -26,5 +26,12 @@ has inspected the diff.
 ## Compute Gating
 
 Before expensive local tests or research workloads, inspect only the processes, compute, memory,
-disk, ports, or services that the task actually depends on. Record a decision when resource state
-changes execution timing, isolation, or acceptance.
+disk, ports, or services that the task actually depends on. For NVIDIA GPU workloads, check device
+utilization and active compute processes:
+
+```bash
+nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv,noheader
+nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader
+```
+
+Record a decision when resource state changes execution timing, isolation, or acceptance.
