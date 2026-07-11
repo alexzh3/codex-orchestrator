@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.codex_orchestrator.journal import validate_run
+from scripts.codex_orchestrator.journal import journal_lifecycle, validate_run
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
@@ -277,6 +277,37 @@ class ValidationTests(unittest.TestCase):
                 for issue in missing_verification_result["issues"]
             )
         )
+
+    def test_malformed_statuses_and_task_references_are_reported_not_raised(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir, records = self.make_run(Path(tmp))
+            records[1]["status"] = ["complete"]
+            for record in records[2:5]:
+                record["task"] = ["task-01"]
+            records[3]["status"] = ["complete"]
+            records[4]["result"] = ["passed"]
+            records.append({"type": "run_closed", "judgment": ["passed"]})
+            write_journal(run_dir, records)
+
+            payload = validate_run(run_dir)
+
+            write_journal(run_dir, [{"type": ["run_started"]}])
+            lifecycle = journal_lifecycle(run_dir)
+
+        self.assertFalse(payload["ok"])
+        expected_fragments = (
+            "run_closed judgment must be passed or blocked",
+            "execution_result status is not terminal",
+            "verification result is not recognized",
+            "task task-01 is not terminal",
+            "task reference must be a string",
+        )
+        for fragment in expected_fragments:
+            self.assertTrue(
+                any(fragment in issue for issue in payload["issues"]),
+                (fragment, payload["issues"]),
+            )
+        self.assertEqual(lifecycle, "invalid")
 
     def test_task_references_must_name_recorded_tasks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

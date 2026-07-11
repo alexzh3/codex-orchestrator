@@ -114,7 +114,8 @@ def validate_run(run_dir: Path) -> dict[str, object]:
     if closures and records and records[-1] is not closures[-1]:
         issues.append("run_closed must be the final journal entry")
     for closure in closures:
-        if closure.get("judgment") not in {"passed", "blocked"}:
+        judgment = closure.get("judgment")
+        if not isinstance(judgment, str) or judgment not in {"passed", "blocked"}:
             issues.append(f"{record_line(closure)}: run_closed judgment must be passed or blocked")
 
     tasks: dict[str, dict[str, object]] = {}
@@ -150,7 +151,7 @@ def validate_run(run_dir: Path) -> dict[str, object]:
             check_declared_file(run_dir, record, "events", issues)
         elif kind == "execution_result":
             status = record.get("status")
-            if status not in TERMINAL_EXECUTION_STATUSES:
+            if not isinstance(status, str) or status not in TERMINAL_EXECUTION_STATUSES:
                 issues.append(
                     f"{record_line(record)}: execution_result status is not terminal: {status}"
                 )
@@ -168,7 +169,7 @@ def validate_run(run_dir: Path) -> dict[str, object]:
                 execution_results[key] = record
         elif kind == "verification":
             result = record.get("result")
-            if result not in VERIFICATION_RESULTS:
+            if not isinstance(result, str) or result not in VERIFICATION_RESULTS:
                 issues.append(
                     f"{record_line(record)}: verification result is not recognized: {result}"
                 )
@@ -197,19 +198,17 @@ def validate_run(run_dir: Path) -> dict[str, object]:
 
     for task_id, task in tasks.items():
         status = task.get("status")
-        if status not in TERMINAL_TASK_STATUSES:
+        if not isinstance(status, str) or status not in TERMINAL_TASK_STATUSES:
             issues.append(f"task {task_id} is not terminal; latest status is {status!r}")
 
     for record in known_records:
         kind = record.get("type")
         task_id = record.get("task")
-        if (
-            kind in {"execution", "execution_result", "verification", "decision"}
-            and isinstance(task_id, str)
-            and task_id
-            and task_id not in tasks
-        ):
-            issues.append(f"{record_line(record)}: {kind} references unknown task {task_id}")
+        if kind in {"execution", "execution_result", "verification", "decision"}:
+            if "task" in record and (not isinstance(task_id, str) or not task_id):
+                issues.append(f"{record_line(record)}: {kind} task reference must be a string")
+            elif isinstance(task_id, str) and task_id not in tasks:
+                issues.append(f"{record_line(record)}: {kind} references unknown task {task_id}")
 
     for key, execution in executions.items():
         result = execution_results.get(key)
@@ -259,7 +258,7 @@ def journal_lifecycle(run_dir: Path) -> str:
     kinds = [record.get("type") for record in records]
     if (
         not kinds
-        or not all(kind in JOURNAL_ENTRY_TYPES for kind in kinds)
+        or not all(isinstance(kind, str) and kind in JOURNAL_ENTRY_TYPES for kind in kinds)
         or kinds.count("run_started") != 1
         or kinds[0] != "run_started"
         or kinds.count("run_closed") > 1
