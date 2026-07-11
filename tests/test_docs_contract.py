@@ -150,6 +150,49 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("Read the absolute `worktree` from the preceding execution", monitoring)
         self.assertIn("do not check out or reset to it", monitoring)
 
+    def test_resumed_agent_uses_the_next_execution_directory(self) -> None:
+        monitoring = (ROOT / "skills/orchestrate/references/monitoring.md").read_text(
+            encoding="utf-8"
+        )
+        resume = monitoring.split(
+            "Resume a relevant idle session as the next execution under the same agent:",
+            maxsplit=1,
+        )[1]
+
+        self.assertIn(
+            'EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/'
+            'codex-impl-01/execution-02"',
+            resume,
+        )
+        self.assertIn('$EXECUTION_DIR/handoff.md', resume)
+        self.assertIn('$EXECUTION_DIR/prompt.md', resume)
+        self.assertIn('$EXECUTION_DIR/events.jsonl', resume)
+
+    def test_journal_uniqueness_and_successor_run_guidance_match_runtime(self) -> None:
+        contract = " ".join(
+            (ROOT / "docs/orchestration-contract.md").read_text(encoding="utf-8").split()
+        )
+        workflow = " ".join(
+            (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8").split()
+        )
+
+        self.assertIn("Task IDs intentionally repeat", contract)
+        self.assertIn(
+            "`verification` and `decision` IDs must each be unique within their entry type",
+            contract,
+        )
+        self.assertIn("retain the journal", contract)
+        self.assertIn("Never rewrite journal history", workflow)
+        self.assertIn("retain the run and start a successor", workflow)
+
+    def test_historical_benchmark_distinguishes_target_from_release_tag(self) -> None:
+        benchmarks = " ".join(
+            (ROOT / "docs/benchmarks.md").read_text(encoding="utf-8").split()
+        )
+
+        self.assertIn("0.4.1 benchmark target (`01a524f`", benchmarks)
+        self.assertIn("release tag `v0.4.1` points to `9000779`", benchmarks)
+
     def test_validation_is_documented_as_an_omission_check_not_a_schema(self) -> None:
         contract = (ROOT / "docs" / "orchestration-contract.md").read_text(encoding="utf-8")
 

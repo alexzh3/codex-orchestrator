@@ -68,8 +68,8 @@ not a capability gap: 0.2.0 recovers `reproducibility-and-envsetup` and `react-t
 0.4.1 recovers those plus `breast-cancer-mlflow`. 0.4.1 was retained for this comparison because it carries the
 0.4.0 evidence-basis features at no measured cost; 0.2.0 is retained as the stronger *timed*
 reference. `bloom-filter-cache-penetration-prevention` is the one task none of these configurations
-solves even un-timed. The compared commits were 0.2.0 (`4a69447`, tag `v0.2.0`) and 0.4.1
-(`01a524f`, tag `v0.4.1`).
+solves even un-timed. The compared commits were 0.2.0 (`4a69447`, release tag `v0.2.0`) and the
+0.4.1 benchmark target (`01a524f`; the later release tag `v0.4.1` points to `9000779`).
 
 The orchestrator model was Claude Opus 4.8 with effort=max. The implementer model was Codex gpt-5.5
 with reasoning effort xhigh.

@@ -29,10 +29,12 @@ material that another reviewer may need to inspect later. Do not copy handoffs i
 ## Journal Entries
 
 One Claude orchestrator owns and appends to `journal.jsonl`. Every nonblank line is one JSON object
-with `recorded_at`. Do not let two orchestration loops write the same run. Duplicate IDs invalidate
-the run structure: retain the journal, stop appending, and start a successor run that references the
-prior run instead of rewriting history. The journal contains seven entry types. The fields below
-are the prompted run protocol, not a complete runtime-enforced schema.
+with `recorded_at`. Do not let two orchestration loops write the same run. Each `agent` + `execution`
+pair may occur in at most one `execution` and one `execution_result`; `verification` and `decision`
+IDs must each be unique within their entry type. Task IDs intentionally repeat to record status
+changes. If a unique identity is duplicated, retain the journal, stop appending, and start a
+successor run that references the prior run instead of rewriting history. The journal contains seven
+entry types. The fields below are the prompted run protocol, not a complete runtime-enforced schema.
 
 ### `run_started`
 

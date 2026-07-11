@@ -62,9 +62,12 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" validate \
   .codex-orchestrator/runs/<run-id>
 ```
 
-10. Resolve structural issues and inspect every non-passing verification. Append one final
-    `run_closed` entry with `judgment: passed|blocked`, the exact validation result, unresolved
-    risks, and follow-ups. Validation detects omissions; Claude decides acceptance.
+10. Resolve omissions that can be corrected by appending, and inspect every non-passing
+    verification. Never rewrite journal history. If a duplicate identity or another structural
+    conflict cannot be corrected by appending, retain the run and start a successor as defined by
+    the orchestration contract. Otherwise append one final `run_closed` entry with
+    `judgment: passed|blocked`, the exact validation result, unresolved risks, and follow-ups.
+    Validation detects omissions; Claude decides acceptance.
 11. After `run_closed`, invoke `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` to create `report.md`
     once.
 
