@@ -81,24 +81,42 @@ The operating instructions live in [`skills/orchestrate/SKILL.md`](skills/orches
 
 ## Full Workflow
 
-```mermaid
-flowchart TD
-    A["Claude plans<br/>goal · criteria · ownership"] --> B{"Codex plan review useful?"}
-    B -- yes --> C["Codex reviews plan"]
-    C --> D["Claude resolves findings"]
-    D --> B
-    B -- no --> E["Claude assigns scoped work"]
-    E --> F["Codex agents execute<br/>implementation · review"]
-    F --> G["Capture exact handoff<br/>and event stream"]
-    G --> H["Claude inspects final diff<br/>and independently verifies"]
-    H --> I{"Criteria accepted?"}
-    I -- "fix required" --> J["Targeted follow-up<br/>in relevant session"]
-    J --> F
-    I -- "decision / blocked" --> K["Record decision and risk"]
-    I -- yes --> L["Descriptive run validation"]
-    K --> L
-    L --> M["Claude records run_closed<br/>judgment · risks · follow-ups"]
-    M --> N["Claude creates final report.md<br/>including orchestration graph"]
+```text
+Claude initializes the run and plans
+(goal, acceptance criteria, file ownership)
+        |
+        v
+Codex reviews the plan when useful
+(Claude resolves findings and revises the plan)
+        |
+        v
+Claude assigns scoped work
+        |
+        v
+Codex agents implement or review
+        |
+        v
+Capture the exact handoff and event stream
+        |
+        v
+Claude inspects the final diff and independently verifies
+        |
+        +-- fix required --> Targeted follow-up in the relevant session
+        |                    |
+        |                    +--> repeat from Codex execution
+        |
+        +-- accepted or blocked
+        v
+Record decisions and unresolved risks
+        |
+        v
+Descriptive run validation
+        |
+        v
+Claude records the run_closed judgment
+        |
+        v
+Claude creates final report.md and the orchestration graph
 ```
 
 ## Runtime Contract
