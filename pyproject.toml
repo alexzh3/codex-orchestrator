@@ -15,9 +15,3 @@ target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
-[dependency-groups]
-dev = ["ruff>=0.8", "pytest>=8"]
