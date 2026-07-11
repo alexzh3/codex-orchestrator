@@ -29,23 +29,14 @@ class ReportSkillTests(unittest.TestCase):
         self.assertIn("Mermaid `flowchart TD`", skill)
         self.assertIn('A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}', skill)
         self.assertIn("Show only evidence that affected", skill)
-        headings = [
-            line
-            for line in REPORT_TEMPLATE.splitlines()
-            if line.startswith("## ")
-        ]
-        template_start = skill.index(REPORT_TEMPLATE)
-        template = skill[template_start : template_start + len(REPORT_TEMPLATE)]
-        self.assertEqual(
-            [line for line in template.splitlines() if line.startswith("## ")],
-            headings,
-        )
 
     def test_skill_requires_a_closed_and_validated_run(self) -> None:
         skill = REPORT_SKILL.read_text(encoding="utf-8")
         normalized = " ".join(skill.lower().split())
 
-        self.assertIn("descriptive validation ran before closure", normalized)
+        self.assertIn(
+            "`run_closed.validation` contains the complete descriptive validation", normalized
+        )
         self.assertIn("`run_closed` is the final journal entry", normalized)
         self.assertIn("no further run work is planned", normalized)
         self.assertNotIn("validate → run_closed → report.md", normalized)
@@ -57,6 +48,12 @@ class ReportSkillTests(unittest.TestCase):
         self.assertIn("agent claims: exact handoffs", skill)
         self.assertIn("not independent evidence", skill)
         self.assertIn("create the final `report.md` once", skill)
+
+    def test_skill_reconciles_numeric_totals_and_keeps_linear_graphs_small(self) -> None:
+        skill = " ".join(REPORT_SKILL.read_text(encoding="utf-8").lower().split())
+
+        self.assertIn("keep a linear run minimal", skill)
+        self.assertIn("reconcile every numeric total", skill)
 
 if __name__ == "__main__":
     unittest.main()

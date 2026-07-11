@@ -134,15 +134,13 @@ def main(argv: list[str] | None = None) -> int:
 
     events = [
         {"type": "thread.started", "thread_id": thread_id},
-        {"type": "turn.started", "thread_id": thread_id, "turn_id": "turn-1"},
+        {"type": "turn.started"},
         {
             "type": "item.completed",
             "item": {"type": "agent_message", "text": handoff.rstrip()},
         },
         {
             "type": "turn.completed",
-            "thread_id": thread_id,
-            "turn_id": "turn-1",
             "usage": {"input_tokens": 100 if is_review else 80, "output_tokens": 40},
         },
     ]

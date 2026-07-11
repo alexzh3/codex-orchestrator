@@ -13,8 +13,7 @@ write an interim report here. Return to `${CLAUDE_PLUGIN_ROOT}/skills/orchestrat
 
 Confirm that:
 
-- descriptive validation ran before closure and its complete result is recorded in
-  `run_closed.validation`;
+- `run_closed.validation` contains the complete descriptive validation result;
 - every execution has a terminal execution result and every task is terminal;
 - `run_closed` is the final journal entry and contains `judgment: passed|blocked`;
 - no further run work is planned.
@@ -81,6 +80,7 @@ evidence, repository changes, and raw events only when needed. Use this top-to-b
 
 Use one node per agent or native session, ordered by first execution. Include its task, recorded
 model/effort, main result, and terminal status; combine resumed executions in that session's node.
+Keep a linear run minimal and do not create empty subgraphs.
 Label edges concisely (`assign`, `review`, `verified`, `resolution`, `consensus`,
 `claude_decision`, `produced`, `fix required`, `recheck`, `accepted`). Show only evidence that affected
 a decision or final judgment. Combine routine passing checks and group related decisions, but keep
@@ -119,4 +119,5 @@ or a Reproducibility section.
 
 Reread the finished report. Confirm that the five required `##` sections appear once and in order,
 the Mermaid block is readable, every material claim is grounded, and Final Results faithfully
-reflects `run_closed.judgment`, validation output, risks, and follow-ups.
+reflects `run_closed.judgment`, validation output, risks, and follow-ups. Reconcile every numeric
+total against the journal entries or handoffs it summarizes.

@@ -121,7 +121,11 @@ class PromptFirstWorkflowTests(unittest.TestCase):
             },
         )
         for execution in executions:
-            self.assertTrue((self.run_dir / str(execution["prompt"])).is_file())
+            prompt = (self.run_dir / str(execution["prompt"])).read_text(encoding="utf-8")
+            self.assertEqual(
+                tuple(line for line in prompt.splitlines() if line.startswith("## ")),
+                HANDOFF_HEADINGS,
+            )
             self.assertTrue((self.run_dir / str(execution["events"])).is_file())
             handoff = (self.run_dir / str(execution["handoff"])).read_text(encoding="utf-8")
             self.assertEqual(
@@ -139,7 +143,7 @@ class PromptFirstWorkflowTests(unittest.TestCase):
         self.assertTrue(all(path.is_file() for path in evidence_paths))
         self.assertTrue((self.run_dir / "src/example.py").is_file())
         self.assertTrue((self.run_dir / "tests/test_example.py").is_file())
-        self.assertEqual(sum(record["type"] == "decision" for record in records), 1)
+        self.assertFalse(any(record["type"] == "decision" for record in records))
         self.assertEqual(records[-1]["type"], "run_closed")
         self.assertEqual(records[-1]["judgment"], "passed")
         self.assertFalse((self.run_dir / "report.md").exists())
