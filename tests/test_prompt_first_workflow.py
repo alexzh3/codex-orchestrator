@@ -79,6 +79,29 @@ class PromptFirstWorkflowTests(unittest.TestCase):
                 raise AssertionError(result.stderr)
             cls.launches.append(result)
 
+        evidence = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "tests",
+                "-p",
+                "test_example.py",
+                "-q",
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+            cwd=cls.run_dir,
+        )
+        if evidence.returncode != 0:
+            raise AssertionError(evidence.stdout + evidence.stderr)
+        evidence_path = cls.run_dir / "evidence" / "unit-tests.txt"
+        evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        evidence_path.write_text(evidence.stdout + evidence.stderr, encoding="utf-8")
+
     @classmethod
     def tearDownClass(cls) -> None:
         cls.temp_dir.cleanup()
@@ -112,6 +135,8 @@ class PromptFirstWorkflowTests(unittest.TestCase):
         ]
         self.assertTrue(evidence_paths)
         self.assertTrue(all(path.is_file() for path in evidence_paths))
+        self.assertTrue((self.run_dir / "src/example.py").is_file())
+        self.assertTrue((self.run_dir / "tests/test_example.py").is_file())
         self.assertEqual(sum(record["type"] == "decision" for record in records), 1)
         self.assertEqual(records[-1]["type"], "run_closed")
         self.assertEqual(records[-1]["judgment"], "passed")

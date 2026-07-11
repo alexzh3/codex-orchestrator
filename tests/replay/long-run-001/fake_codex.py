@@ -3,8 +3,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
+
+CHECK_COMMAND = [
+    sys.executable,
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_example.py",
+    "-q",
+]
 
 IMPLEMENTATION_HANDOFF = """## Status
 
@@ -17,6 +30,7 @@ Implemented the scoped example feature.
 ## Files Changed
 
 - `src/example.py`
+- `tests/test_example.py`
 
 ## Claims / Findings
 
@@ -24,7 +38,7 @@ Implemented the scoped example feature.
 
 ## Commands Reported
 
-- `python3 -m unittest tests.test_example` — passed
+- `python3 -m unittest discover -s tests -p test_example.py -q` — passed
 
 ## Caveats / Blockers
 
@@ -37,11 +51,11 @@ complete
 
 ## Summary
 
-Reviewed the implementation and added focused coverage.
+Reviewed the stable implementation target without editing it.
 
 ## Files Changed
 
-- `tests/test_example.py`
+- None.
 
 ## Claims / Findings
 
@@ -50,11 +64,32 @@ Reviewed the implementation and added focused coverage.
 
 ## Commands Reported
 
-- `python3 -m unittest tests.test_example` — passed
+- `python3 -m unittest discover -s tests -p test_example.py -q` — passed
 
 ## Caveats / Blockers
 
 - None.
+"""
+
+EXAMPLE_MODULE = """def double(value: int) -> int:
+    return value * 2
+"""
+
+EXAMPLE_TEST = """import unittest
+
+from src.example import double
+
+
+class ExampleTests(unittest.TestCase):
+    def test_positive_value(self) -> None:
+        self.assertEqual(double(3), 6)
+
+    def test_zero(self) -> None:
+        self.assertEqual(double(0), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
 """
 
 
@@ -66,6 +101,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def prepare_target(is_review: bool) -> None:
+    source = Path("src/example.py")
+    test = Path("tests/test_example.py")
+    if is_review:
+        if not source.is_file() or not test.is_file():
+            raise SystemExit("review target is not ready")
+    else:
+        source.parent.mkdir(parents=True, exist_ok=True)
+        test.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(EXAMPLE_MODULE, encoding="utf-8")
+        test.write_text(EXAMPLE_TEST, encoding="utf-8")
+
+    check = subprocess.run(CHECK_COMMAND, check=False, text=True, capture_output=True)
+    if check.returncode != 0:
+        raise SystemExit(check.stdout + check.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if not args.emit_json:
@@ -73,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
 
     prompt = sys.stdin.read()
     is_review = "# Review assignment" in prompt
+    prepare_target(is_review)
     handoff = REVIEW_HANDOFF if is_review else IMPLEMENTATION_HANDOFF
     thread_id = "fixture-review" if is_review else "fixture-impl"
 
