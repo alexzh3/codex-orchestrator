@@ -39,7 +39,7 @@ Follow this sequence:
     close check:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" validate \
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" validate \
      .codex-orchestrator/runs/<run-id> --json
    ```
 

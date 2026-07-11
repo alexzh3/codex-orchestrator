@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"
+SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
 FIXTURES = ROOT / "tests" / "fixtures"
 
 
@@ -24,7 +24,7 @@ def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.Complet
     )
 
 
-class ParseCliTests(unittest.TestCase):
+class ToolsCliTests(unittest.TestCase):
     def test_exec_stream_completed_status(self) -> None:
         result = run_cli(
             "state",

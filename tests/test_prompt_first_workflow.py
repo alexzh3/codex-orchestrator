@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"
+SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
 FIXTURE = ROOT / "tests" / "replay" / "long-run-001"
 HANDOFF_HEADINGS = (
     "## Status",

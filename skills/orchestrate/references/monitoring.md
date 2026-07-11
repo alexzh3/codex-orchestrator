@@ -80,7 +80,7 @@ new handoff.
 Resolve the current rollout path rather than assuming an old path remains active:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" find <thread-uuid> --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" find <thread-uuid> --json
 ```
 
 The usual rollout path is:
@@ -96,9 +96,9 @@ Re-find it after resumption because the same native session can append through a
 Use parser state and tail offsets instead of raw grep:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" state <session-id> --source exec --file <events-jsonl> --json
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" tail <session-id> --source exec --file <events-jsonl> --since-offset <offset> --json
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" state <session-id> --source ide --file <rollout-jsonl> --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" state <session-id> --source exec --file <events-jsonl> --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" tail <session-id> --source exec --file <events-jsonl> --since-offset <offset> --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" state <session-id> --source ide --file <rollout-jsonl> --json
 ```
 
 Persist no parser offset in the journal. Callers retain `next_offset` while monitoring. After context

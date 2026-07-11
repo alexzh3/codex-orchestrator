@@ -12,7 +12,7 @@ from pathlib import Path
 from scripts.codex_orchestrator.events import read_stream
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"
+SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
 WRAPPER = ROOT / "bin" / "codex-orch-monitor"
 
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Command-line interface for run validation and Codex session inspection."""
+
 from __future__ import annotations
 
 import argparse
