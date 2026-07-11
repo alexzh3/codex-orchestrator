@@ -163,9 +163,26 @@ class ParseCliTests(unittest.TestCase):
         self.assertGreater(payload["next_offset"], payload["offset"])
         self.assertEqual(payload["events"][0]["type"], "thread.started")
 
-    def test_find_accepts_common_parser_flags(self) -> None:
+    def test_find_returns_the_newest_ide_rollout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sessions = Path(tmp) / ".codex" / "sessions" / "2026" / "07" / "11"
+            sessions.mkdir(parents=True)
+            older = sessions / "rollout-old-thread-123.jsonl"
+            newer = sessions / "rollout-new-thread-123.jsonl"
+            older.write_text("{}\n", encoding="utf-8")
+            newer.write_text("{}\n", encoding="utf-8")
+            os.utime(older, (1, 1))
+            os.utime(newer, (2, 2))
+            result = run_cli("find", "thread-123", "--json", env={"HOME": tmp})
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["source"], "ide")
+        self.assertEqual(payload["path"], str(newer))
+
+    def test_state_dumps_event_types_for_format_diagnostics(self) -> None:
         result = run_cli(
-            "find",
+            "state",
             "exec-complete-001",
             "--source",
             "exec",
@@ -174,23 +191,10 @@ class ParseCliTests(unittest.TestCase):
             "--dump-event-types",
             "--json",
         )
+
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["source"], "exec")
         self.assertEqual(payload["event_types"]["turn.completed"], 1)
-
-    def test_find_auto_detects_an_explicit_exec_stream(self) -> None:
-        result = run_cli(
-            "find",
-            "exec-complete-001",
-            "--file",
-            str(FIXTURES / "exec_stream.jsonl"),
-            "--dump-event-types",
-            "--json",
-        )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["source"], "exec")
 
     def test_state_without_event_file_still_emits_status_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

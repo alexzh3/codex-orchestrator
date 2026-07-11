@@ -80,7 +80,7 @@ new handoff.
 Resolve the current rollout path rather than assuming an old path remains active:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" find <thread-uuid> --source ide --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" find <thread-uuid> --json
 ```
 
 The usual rollout path is:

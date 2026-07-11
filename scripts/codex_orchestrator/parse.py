@@ -137,9 +137,7 @@ def read_lines(
 def known_types_for_source(source: str) -> set[str]:
     if source == "exec":
         return EXEC_EVENT_TYPES
-    if source == "ide":
-        return IDE_EVENT_TYPES
-    return EXEC_EVENT_TYPES | IDE_EVENT_TYPES
+    return IDE_EVENT_TYPES
 
 
 def is_reconnect_notice(record: EventRecord) -> bool:
@@ -165,8 +163,6 @@ def compatibility(records: list[EventRecord], source: str) -> dict[str, object]:
     warnings: list[str] = []
     if not records:
         warnings.append("no events found")
-    if source == "auto":
-        warnings.append("source auto-detected from available events")
     parse_confidence = "low" if records and unknown_count > known_count else "high"
     return {
         "parser_version": PARSER_VERSION,
@@ -179,7 +175,7 @@ def compatibility(records: list[EventRecord], source: str) -> dict[str, object]:
 def incompatible_message() -> str:
     return (
         f"ERROR: Codex rollout/JSON format appears incompatible (parser {PARSER_VERSION}). "
-        "Run --dump-event-types and update the parser. Do not infer session status."
+        "Run state --dump-event-types and update the parser. Do not infer session status."
     )
 
 
@@ -368,28 +364,11 @@ def load_records(path: Path | None, source: str) -> tuple[list[EventRecord], int
 
 
 def command_find(args: argparse.Namespace) -> int:
-    explicit_path = Path(args.file).expanduser() if args.file else None
-    path = explicit_path or find_rollout(args.thread_id)
-    declared = args.source or ("ide" if explicit_path is None and path is not None else None)
-    source = source_for_path(path, declared)
-    if args.dump_event_types:
-        records, start, end = load_records(path, source)
-        counts = Counter(record.event_type for record in records)
-        payload = {
-            "thread_id": args.thread_id,
-            "source": source,
-            "path": str(path) if path else None,
-            "event_types": dict(sorted(counts.items())),
-            "compatibility": compatibility(records, source),
-            "offset": start,
-            "next_offset": end,
-        }
-        print(json_dumps(payload) if args.json else payload)
-        return 2 if payload["compatibility"]["parse_confidence"] == "low" else 0
+    path = find_rollout(args.thread_id)
     if args.json:
         print(
             json_dumps(
-                {"thread_id": args.thread_id, "source": source, "path": str(path) if path else None}
+                {"thread_id": args.thread_id, "source": "ide", "path": str(path) if path else None}
             )
         )
     elif path:
@@ -474,17 +453,6 @@ def command_tail(args: argparse.Namespace) -> int:
     records = list(iter_json_events(lines))
     compat = compatibility(records, source)
     compat["warnings"] = [*compat["warnings"], *source_warnings]
-    if args.dump_event_types:
-        counts = Counter(record.event_type for record in records)
-        payload = {
-            "thread_id": args.thread_id,
-            "source": source,
-            "path": str(path),
-            "event_types": dict(sorted(counts.items())),
-            "compatibility": compat,
-        }
-        print(json_dumps(payload) if args.json else payload)
-        return 2 if compat["parse_confidence"] == "low" else 0
     if args.json:
         payload = {
             "thread_id": args.thread_id,
@@ -1064,7 +1032,6 @@ def command_monitor(args: argparse.Namespace) -> int:
 def add_common_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source", choices=("exec", "ide"), help="Event source type.")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
-    parser.add_argument("--dump-event-types", action="store_true", help="Print recent event types.")
     parser.add_argument("--file", help="Explicit event stream or rollout JSONL path.")
 
 
@@ -1076,17 +1043,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     find_parser = subparsers.add_parser("find", help="Find the newest rollout for a thread id.")
     find_parser.add_argument("thread_id")
-    find_parser.add_argument("--source", choices=("exec", "ide"), help="Event source type.")
     find_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
-    find_parser.add_argument(
-        "--dump-event-types", action="store_true", help="Print recent event types."
-    )
-    find_parser.add_argument("--file", help="Return this explicit path if supplied.")
     find_parser.set_defaults(func=command_find)
 
     state_parser = subparsers.add_parser("state", help="Classify a Codex session state.")
     state_parser.add_argument("thread_id")
     add_common_flags(state_parser)
+    state_parser.add_argument(
+        "--dump-event-types", action="store_true", help="Print recent event types."
+    )
     state_parser.set_defaults(func=command_state)
 
     tail_parser = subparsers.add_parser("tail", help="Read new events after an offset.")
