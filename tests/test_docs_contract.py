@@ -120,7 +120,7 @@ class DocumentationContractTests(unittest.TestCase):
             "claude's tentative conclusion",
         ):
             self.assertIn(excluded, review)
-        self.assertIn("independent review in a fresh agent", orchestrate)
+        self.assertIn("for an independent review, start a fresh agent", orchestrate)
         self.assertIn("native session", orchestrate)
 
     def test_review_uses_plain_exec_with_an_exact_sha_prompt(self) -> None:
@@ -176,20 +176,26 @@ class DocumentationContractTests(unittest.TestCase):
             (ROOT / "skills/orchestrate/SKILL.md").read_text(encoding="utf-8").casefold().split()
         )
         self.assertIn("fresh agent and native session", orchestrate)
-        self.assertIn("consequential design choice", orchestrate)
-        self.assertIn("only the goal, constraints, and acceptance criteria", orchestrate)
-        self.assertIn("compare both against evidence", orchestrate)
+        self.assertIn("hard-to-reverse design choice", workflow)
+        self.assertIn("only the goal, constraints, and acceptance criteria", workflow)
+        self.assertIn("using evidence rather than agent count", workflow)
         self.assertIn("distinct unresolved question", orchestrate)
         self.assertIn("do not repeat identical reviews", orchestrate)
         self.assertNotIn("unanchored alternative", workflow)
 
-    def test_only_orchestrate_owns_the_run_protocol(self) -> None:
+    def test_workflow_owns_the_complete_run_and_delegates_focused_cycles(self) -> None:
         orchestrate = (ROOT / "skills/orchestrate/SKILL.md").read_text(encoding="utf-8")
         workflow = (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8")
 
-        self.assertIn("This skill owns the run protocol", orchestrate)
-        self.assertIn("Follow the protocol in", workflow)
-        self.assertNotIn("Append `execution` before launch", workflow)
+        self.assertIn("This skill owns the lifecycle from planning", workflow)
+        self.assertIn("Claude turns the goal into a concrete plan", workflow)
+        self.assertIn("review as a task and focused agent cycle", workflow)
+        self.assertIn("use the orchestrate skill", workflow)
+        self.assertIn("Focused Agent Cycle", orchestrate)
+        self.assertIn("Save the exact prompt and append `execution` before launch", orchestrate)
+        self.assertNotIn("This skill owns the run protocol", orchestrate)
+        self.assertNotIn("`run_started`", orchestrate)
+        self.assertNotIn("`run_closed`", orchestrate)
 
     def test_docs_exclude_removed_ide_and_observe_workflows(self) -> None:
         operational_docs = "\n".join(

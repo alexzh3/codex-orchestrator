@@ -64,7 +64,7 @@ Use `orchestrate` for one focused phase and `workflow` for the complete end-to-e
 
 | Command | Purpose |
 | --------------------------------------- | ---------------------------------------------------------------------------------- |
-| `/codex-orchestrator:orchestrate` | Run a focused task, such as implementation, review, monitoring, or verification. |
+| `/codex-orchestrator:orchestrate` | Run a focused execution, review, monitoring, or verification phase within a run. |
 | `/codex-orchestrator:workflow` | Run planning through execution, verification, closure, and report. |
 | `/codex-orchestrator:report` | Author `report.md` from an already closed run. |
 
