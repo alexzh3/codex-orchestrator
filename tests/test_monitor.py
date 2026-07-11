@@ -286,6 +286,66 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(notification["type"], "codex_session_stale")
         self.assertGreaterEqual(notification["idle_seconds"], 1)
 
+    def test_watch_mode_polls_until_a_terminal_event(self) -> None:
+        cases = (
+            ("turn.completed", "codex_session_complete", 0),
+            ("turn.failed", "codex_session_failed", 1),
+        )
+        for terminal_event, notification_type, expected_code in cases:
+            with self.subTest(terminal_event=terminal_event), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "events.jsonl"
+                write_jsonl(path, [{"type": "turn.started", "thread_id": "watched"}])
+                process = subprocess.Popen(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "monitor",
+                        "--log",
+                        str(path),
+                        "--source",
+                        "exec",
+                        "--poll-interval",
+                        "0.05",
+                        "--stale-seconds",
+                        "-1",
+                        "--fail-on-session-failure",
+                    ],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=ROOT,
+                )
+                try:
+                    time.sleep(0.15)
+                    with path.open("a", encoding="utf-8") as handle:
+                        handle.write(
+                            json.dumps(
+                                {"type": terminal_event, "thread_id": "watched"}
+                            )
+                            + "\n"
+                        )
+                    stdout, stderr = process.communicate(timeout=5)
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
+
+                self.assertEqual(process.returncode, expected_code, stderr)
+                self.assertEqual(json.loads(stdout)["type"], notification_type)
+
+    def test_monitor_reports_parse_errors_with_a_terminal_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            path.write_text(
+                'not json\n{"type":"turn.completed","thread_id":"parsed"}\n',
+                encoding="utf-8",
+            )
+            result = run_monitor("--log", str(path), "--source", "exec", "--once")
+
+        notification = json.loads(result.stdout)
+        self.assertEqual(notification["type"], "codex_session_complete")
+        self.assertEqual(notification["parse_errors"], 1)
+
     def test_invalid_lifecycle_uses_new_layout_mtime_fallback_with_warning(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

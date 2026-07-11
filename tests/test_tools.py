@@ -99,6 +99,31 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "failed")
 
+    def test_exec_reconnect_is_ignored_but_an_error_fails_the_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            reconnect_path = Path(tmp) / "reconnect.jsonl"
+            error_path = Path(tmp) / "error.jsonl"
+            reconnect_path.write_text(
+                '{"type":"thread.started"}\n'
+                '{"type":"error","message":"Reconnecting to stream"}\n',
+                encoding="utf-8",
+            )
+            error_path.write_text(
+                '{"type":"error","message":"authentication failed"}\n',
+                encoding="utf-8",
+            )
+            reconnect = run_cli(
+                "state", "reconnect", "--source", "exec", "--file", str(reconnect_path), "--json"
+            )
+            failed = run_cli(
+                "state", "error", "--source", "exec", "--file", str(error_path), "--json"
+            )
+
+        self.assertEqual(json.loads(reconnect.stdout)["status"], "idle")
+        failed_payload = json.loads(failed.stdout)
+        self.assertEqual(failed_payload["status"], "failed")
+        self.assertEqual(failed_payload["details"]["error"], "authentication failed")
+
     def test_failed_rollout_signature_detected(self) -> None:
         result = run_cli(
             "state",
@@ -111,6 +136,30 @@ class ToolTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "failed")
+
+    def test_ide_goal_status_controls_blocked_and_failed_sessions(self) -> None:
+        cases = (("blocked", "awaiting-approval"), ("failed", "failed"))
+        for goal_status, expected_status in cases:
+            with self.subTest(goal_status=goal_status), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "rollout.jsonl"
+                path.write_text(
+                    json.dumps(
+                        {
+                            "payload": {
+                                "type": "thread_goal_updated",
+                                "goal": {"status": goal_status, "text": "Current task"},
+                            }
+                        }
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                result = run_cli(
+                    "state", "ide-goal", "--source", "ide", "--file", str(path), "--json"
+                )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["status"], expected_status)
 
     def test_later_ide_goal_supersedes_an_older_failure_message(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -260,6 +309,55 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(json.loads(second.stdout)["events"][0]["type"], "turn.completed")
 
+    def test_tail_missing_source_returns_a_structured_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_cli(
+                "tail",
+                "missing-thread",
+                "--since-offset",
+                "0",
+                "--source",
+                "exec",
+                "--json",
+                env={"HOME": tmp},
+            )
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertIsNone(payload["path"])
+        self.assertEqual(payload["events"], [])
+        self.assertIn("no event source found", payload["compatibility"]["warnings"][0])
+
+    def test_tail_supports_raw_output_and_rejects_incompatible_events(self) -> None:
+        raw = run_cli(
+            "tail",
+            "exec-complete-001",
+            "--since-offset",
+            "0",
+            "--source",
+            "exec",
+            "--file",
+            str(FIXTURES / "exec_stream.jsonl"),
+        )
+        incompatible = run_cli(
+            "tail",
+            "unknown-001",
+            "--since-offset",
+            "0",
+            "--source",
+            "ide",
+            "--file",
+            str(FIXTURES / "unknown_format.jsonl"),
+            "--json",
+        )
+
+        self.assertEqual(raw.returncode, 0, raw.stderr)
+        self.assertEqual(raw.stdout, (FIXTURES / "exec_stream.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(incompatible.returncode, 2)
+        compatibility = json.loads(incompatible.stdout)["compatibility"]
+        self.assertEqual(compatibility["parse_confidence"], "low")
+        self.assertIn("Do not infer session status", incompatible.stderr)
+
     def test_find_returns_the_newest_ide_rollout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             sessions = Path(tmp) / ".codex" / "sessions" / "2026" / "07" / "11"
@@ -271,11 +369,16 @@ class ToolTests(unittest.TestCase):
             os.utime(older, (1, 1))
             os.utime(newer, (2, 2))
             result = run_cli("find", "thread-123", "--json", env={"HOME": tmp})
+            human = run_cli("find", "thread-123", env={"HOME": tmp})
+            missing = run_cli("find", "missing-thread", "--json", env={"HOME": tmp})
 
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["source"], "ide")
         self.assertEqual(payload["path"], str(newer))
+        self.assertEqual(human.stdout.strip(), str(newer))
+        self.assertEqual(missing.returncode, 1)
+        self.assertIsNone(json.loads(missing.stdout)["path"])
 
     def test_state_dumps_event_types_for_format_diagnostics(self) -> None:
         result = run_cli(
