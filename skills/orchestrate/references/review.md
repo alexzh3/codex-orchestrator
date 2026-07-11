@@ -1,56 +1,52 @@
-# Review Loop
+# Review And Verification
 
-Treat code, diffs, tests, logs, manifests, and generated artifacts as source of truth. Treat agent
-narration as intent until verified. Watch for failure spirals: weakened assertions, deleted inputs,
-shrunk ranges, or special-cased validation failures.
+Use [the orchestration contract](../../../docs/orchestration-contract.md) for journal fields.
 
-For deterministic changes, inspect diffs and run relevant tests, typecheck, lint, build, or manifest
-assertions. For nondeterministic rollout/training changes, require seeded determinism where possible,
-metric thresholds, and regression bands; do not accept one stochastic pass.
+## Verify Agent Work
+
+1. Read the handoff as claims.
+1. Inspect the actual diff and changed files. Compare them with the task's declared `files`.
+1. Evaluate every acceptance criterion with an observed check. Do not promote `Commands Reported`
+   to a passing verification.
+1. Record each criterion as a `verification`.
+1. On failure, preserve the record, send the exact finding and observation to the relevant agent,
+   and record the recheck separately.
+1. Mark the task terminal only after all criteria are evaluated.
+
+Base verification on repository state or observed output. Use handoffs and model findings to choose
+what to inspect. Keep concise observations inline; use `evidence/` only for lengthy material worth
+retaining.
 
 ## Independent Codex Review
 
-Run `codex exec review --uncommitted` or the relevant `--commit <sha>` / `--base <branch>` form as
-the standard Codex final review before acceptance whenever a diff exists.
+For the first independent review:
+
+- Start a fresh named `codex-review-NN` agent and native session; never resume the implementation
+  session.
+- Provide the goal, acceptance criteria, constraints, and exact review target.
+- Do not provide the implementer handoff, claimed test results, earlier review verdicts, or Claude's
+  tentative conclusion.
+- Save the prompt and append the execution before launch. Capture the event stream and exact
+  handoff.
 
 ```bash
-"$CODEX" exec review --uncommitted
-"$CODEX" exec review --base <branch>
-"$CODEX" exec review --commit <sha>
+EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-review-01/execution-01"
+codex exec -C <worktree> -s workspace-write -c approval_policy=never --json \
+  --output-last-message "$EXECUTION_DIR/handoff.md" \
+  - \
+  < "$EXECUTION_DIR/prompt.md" \
+  > "$EXECUTION_DIR/events.jsonl"
 ```
 
-A `claude_decision` outcome must still record evidence, rationale, risk level, and verification.
+Write the exact commit SHA into `prompt.md` and instruct Codex to review that snapshot. Use plain
+`codex exec`: the Codex CLI does not accept a stdin review prompt together with the `review`
+subcommand's revision selectors. Prefer a worktree at the reviewed commit; reviewing a fixed SHA
+does not require pausing unrelated work. Tell Codex not to edit and confirm the review worktree is
+clean afterward; `workspace-write` lets repository checks create their normal temporary outputs.
 
-Save every Codex review or consensus prompt under `prompts/` before running it, and capture its JSONL
-output under `logs/` with the same filename stem. Reference both paths from the review or consensus
-ledger record.
+For an uncommitted review, put the base HEAD SHA and exact reviewed files in `prompt.md`, run the
+same plain `codex exec` command in that working tree, and reserve those files and shared resources
+as described in [`compute.md`](compute.md).
 
-## Consensus-Gated Review Loop
-
-Use this loop after Codex yields or completes:
-
-1. Codex implements the scoped change.
-2. Claude reviews the actual diff, tests, logs, manifests, and artifacts.
-3. If Claude finds a suspected issue, share the exact finding, evidence, and proposed resolution
-   with Codex before implementing or accepting a fix.
-4. Record the outcome: `consensus`, `claude_decision`, or `user_action_required`; whether Claude and
-   Codex agree, disagree, or partially agree; root cause when known; chosen fix or no-fix rationale;
-   risk level; whether user input is required; and the verification required.
-5. Implement accepted fixes, then run Claude's final review and a Codex final review.
-6. Accept when both final reviews pass or when Claude records `claude_decision` after the evidence
-   review. Use `user_action_required` only when Claude needs user input before continuing or
-   accepting.
-
-When Claude needs Codex consensus on a finding, use a targeted prompt rather than another broad
-rereview:
-
-```bash
-"$CODEX" exec resume <thread-id> "<specific finding, evidence, and proposed fix>"
-```
-
-Do not chain broad rereviews. If a final review still finds incorrect behavior after consensus
-fixes, run one scoped rereview/fix loop for the unresolved issue and record why the extra pass was
-needed. Escalate to the user instead of continuing open-ended review rounds.
-
-Record suspected issue, root cause when known, outcome, and verification as `consensus` evidence in
-both `ledger.jsonl` and the `## Consensus` section of `report.md`.
+Verify review findings against the repository. Reuse the session for a targeted recheck; start a
+fresh reviewer only for a distinct unresolved question.

@@ -5,46 +5,71 @@ description: Run the full Codex orchestration workflow end to end.
 
 # Workflow
 
-Use this skill when Claude should run the full Codex orchestration workflow end to end: ledger
-setup, planning, dispatch, monitoring, review, verification, consensus, and report.
+Use this skill for one complete run. This skill owns the lifecycle from planning through the final
+report. Use `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for each focused Codex-agent
+execution, review, or verification cycle.
 
-Use when the user wants one coordinated run that initializes durable state, reuses or resumes
-matching Codex agents, dispatches new agents only when needed, monitors their JSONL streams or an
-existing IDE thread, reviews the result, records evidence, resolves disagreements, and writes the
-final report.
+## Run Initialization
 
-Do not use this skill for a single focused phase such as monitoring, review, consensus, handoff, or
-compute gating. Use `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for those. For explicit
-ledger-only setup, run the internal CLI init helper and stop.
+From the target Git worktree, exclude run data locally before creating it:
 
-Default typed protocol workflow:
+```bash
+REPO="$(git rev-parse --show-toplevel)"
+cd "$REPO"
+EXCLUDE_FILE="$(git rev-parse --git-path info/exclude)"
+grep -qxF '/.codex-orchestrator/' "$EXCLUDE_FILE" ||
+  printf '\n/.codex-orchestrator/\n' >> "$EXCLUDE_FILE"
+grep -qxF '/.codex-orchestrator/' "$EXCLUDE_FILE"
+git check-ignore -q .codex-orchestrator/.ignore-check
+git rev-parse HEAD
+git branch --show-current
+git status --short --untracked-files=all
+```
 
-1. Run `ensure-run` to create or reuse the durable run and record the plugin ref.
-2. Append a `task_created` event for each task with a real `goal` plus useful `context` and
-   `constraints` string arrays.
-3. Run `claim-files` so each task has an explicit `files_allowed` or `file_claimed` allowlist.
-4. Run `check-conflicts` before dispatch; resolve overlapping claims before agents edit.
-5. Run `render-prompt` so the Codex prompt includes the task goal, context, constraints, and file
-   claims.
-6. Dispatch Codex for implementation, repair, refactor, or test-writing, reusing a matching session
-   when role and context fit.
-7. Append `dispatch_started` when the session begins and `dispatch_completed` when it yields,
-   completes, or fails.
-8. Append `task_checkpoint` with `files_changed` after inspecting the diff and artifacts.
-9. Run `add-verification` with `task_id`; it auto-records a verification id and command hash when
-   `--command` is present. Use `covers_tasks` and `scope` (`task` or `global`) when evidence covers
-   multiple tasks or the whole run. Use `--acceptance-test` for acceptance checks and
-   `--finding-id` for repro runs tied to structured review findings.
-10. Append a `review` event for the acceptance review. The final-review check accepts only a passing
-    `diff` or `manual` review, or a review explicitly marked `final`.
-11. Resolve failed checks and blocking findings with basis-bearing `consensus` records. Plain
-    agreement clears only command-less convention items; failed executable or acceptance checks need
-    linked rerun evidence or an explicit valid override.
-12. Run `report --strict` to render evidence and catch missing required protocol records.
-13. Run `gate`; it must block missing task-scoped verification, file-claim conflicts, and unclaimed
-    changes outside a task allowlist.
-14. Run `report --strict` again so `report.md` includes the latest `gate_result`.
-15. Run `doctor` before handoff to catch ledger, prompt, log, and artifact inconsistencies.
+Use only this local exclude; do not edit the tracked `.gitignore`. Record the concise original goal,
+`REPO`, full starting HEAD, attached branch when the branch output is nonempty, and exact status
+lines as `goal`, `repo`, `repo_head`, optional `repo_branch`, and `repo_status` in `run_started`.
+Do not create the run unless both exclude checks succeed. Initially dirty paths are pre-existing
+user work; if planned work overlaps them, use an isolated clean worktree or get user direction
+rather than claiming those changes.
 
-Follow `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for the full operating contract and
-concrete procedures.
+## Full Workflow
+
+1. Inspect the repository and user context to understand the goal and relevant constraints.
+2. Perform Run Initialization, create `.codex-orchestrator/runs/<run-id>/journal.jsonl`, and append
+   `run_started` with the concise original goal, absolute repository path, captured Git baseline,
+   plugin ref, and available Claude and Codex versions.
+3. Claude turns the goal into a concrete plan with expected deliverables, acceptance criteria,
+   risks, and verification paths.
+4. Ask Codex to review Claude's plan when a second opinion materially reduces risk; record that
+   review as a task and focused agent cycle. For a consequential or hard-to-reverse design choice,
+   first ask a fresh Codex agent to propose an approach from only the goal, constraints, and
+   acceptance criteria. Claude compares the results using evidence rather than agent count and
+   finalizes the plan.
+5. Split the finalized plan into active `task` entries with goals, acceptance criteria, and
+   allowed/owned `files`. Serialize overlapping work or use isolated worktrees.
+6. For each task, use the orchestrate skill to assign or resume a Codex agent, capture its prompt,
+   events, and handoff, and independently verify the result. Repeat focused fix or review cycles as
+   needed.
+7. Record only consequential resolutions or user dependencies as `decision`. Append a terminal
+   `task` entry only after its acceptance criteria have been evaluated.
+8. When every task is terminal, re-read the complete journal and inspect the final repository state
+   and diff.
+9. Run the descriptive close check:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" validate \
+  .codex-orchestrator/runs/<run-id>
+```
+
+10. Resolve omissions that can be corrected by appending, and inspect every non-passing
+    verification. Never rewrite journal history. If a duplicate identity or another structural
+    conflict cannot be corrected by appending, retain the run and start a successor as defined by
+    the orchestration contract. Otherwise append one final `run_closed` entry with
+    `judgment: passed|blocked`, the exact validation result, unresolved risks, and follow-ups.
+    Validation detects omissions; Claude decides acceptance.
+11. After `run_closed`, invoke `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` to create `report.md`
+    once.
+
+The canonical close sequence is `validate → run_closed → report.md`. Validation never decides
+acceptance, and the final report never repairs or rewrites journal history.

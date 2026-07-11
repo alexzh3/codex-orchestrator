@@ -1,16 +1,22 @@
 # Benchmark Results
 
+> **Historical results:** This document preserves measurements from the schema-driven v0.2.0 and
+> v0.4.1 plugin. The prompt-first runtime does not include a benchmark command or adapter.
+
+Benchmark tooling, intermediate versions, and raw run data are kept in the currently private
+[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repository.
+
 The public head-to-head result is an OpenThoughts-TBLite benchmark in Terminal-Bench format, run
 through Harbor in per-task Docker containers and graded by each task's own verifier. The task set is
 the 10 hardest tasks out of 100 by published success rate. Each cell is one run per `(task, config)`,
 so the result is directional rather than statistical.
 
-This curated view covers the retained configurations: **0.4.1** (the current `main`), **0.2.0** (kept
-as a timed reference), and the two **solo** baselines (a single model, no plugin). The full
-seven-version history (0.1.0 → 0.5.0) and all raw artifacts live in the
-[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repo.
+This curated view covers the retained configurations: **0.4.1** (the then-current release), **0.2.0**
+(kept as a timed reference), and the two **solo** baselines (a single model, no plugin). These are
+historical benchmark-series labels; prompt-first v0.5.0 has no configuration or results in this
+series.
 
-Legend: ✅/❌ = verifier pass/fail. ⚠️ = solved without dispatching Codex, a degenerate solo solve.
+Legend: ✅/❌ = verifier pass/fail. ⚠️ = solved without assigning work to Codex, a degenerate solo solve.
 ⏱ = hit the per-task wall-clock timeout (the container is still graded, so ⏱ can accompany a pass).
 🔁 = killed by a provider API rate limit (an infra confound, not the plugin).
 
@@ -34,7 +40,7 @@ The regime Terminal-Bench actually scores: the agent is killed at the per-task w
 
 As-run, the solo baselines lead at **8/10** each, with the orchestrated plugin at **0.2.0 = 7/10**
 (including one degenerate solo solve) and **0.4.1 = 6/10**. Orchestration does more per task — scoped
-dispatch plus review — so the fixed per-task timeout bites it harder than a solo agent.
+Codex execution plus review — so the fixed per-task timeout bites it harder than a solo agent.
 
 ## No-timeout (timeout lifted)
 
@@ -59,11 +65,11 @@ a reference (ᵃ).
 Lifting the timeout raises **both 0.2.0 and 0.4.1 to 9/10** — matching or beating the solos' timed
 score. So most orchestrated "losses" are the wall-clock timeout killing a solve still in progress,
 not a capability gap: 0.2.0 recovers `reproducibility-and-envsetup` and `react-typescript-debugg`;
-0.4.1 recovers those plus `breast-cancer-mlflow`. 0.4.1 is the current `main` because it carries the
+0.4.1 recovers those plus `breast-cancer-mlflow`. 0.4.1 was retained for this comparison because it carries the
 0.4.0 evidence-basis features at no measured cost; 0.2.0 is retained as the stronger *timed*
 reference. `bloom-filter-cache-penetration-prevention` is the one task none of these configurations
-solves even un-timed. The compared commits were 0.2.0 (`4a69447`, tag `v0.2.0`) and 0.4.1
-(`01a524f`, tag `v0.4.1`).
+solves even un-timed. The compared commits were 0.2.0 (`4a69447`, release tag `v0.2.0`) and the
+0.4.1 benchmark target (`01a524f`; the later release tag `v0.4.1` points to `9000779`).
 
 The orchestrator model was Claude Opus 4.8 with effort=max. The implementer model was Codex gpt-5.5
 with reasoning effort xhigh.
@@ -71,20 +77,20 @@ with reasoning effort xhigh.
 ## Token usage (as-run)
 
 Both-sides token usage was captured: Claude usage from Harbor, and GPT/Codex usage from collected
-Codex session JSONL logs. Numbers are for the as-run (timed) regime — one run per `(task, config)`.
+Codex-agent JSONL logs. Numbers are for the as-run (timed) regime — one run per `(task, config)`.
 
 Totals per configuration:
 
 | Configuration | Σ tokens (as-run) | Claude Σ | Codex Σ | Codex sess |
 |---|--:|--:|--:|--:|
-| 0.2.0 (orchestrated)       | 29.99M | 24.98M |  5.01M | 23 |
-| 0.4.1 (orchestrated)       | 31.77M | 27.71M |  4.06M | 19 |
-| solo Claude (Opus 4.8 max) | 14.49M | 14.49M |  —     |  — |
-| solo Codex (gpt-5.5 xhigh) |  5.44M | —      |  5.44M | 20 |
+| 0.2.0 (orchestrated) | 29.99M | 24.98M | 5.01M | 23 |
+| 0.4.1 (orchestrated) | 31.77M | 27.71M | 4.06M | 19 |
+| solo Claude (Opus 4.8 max) | 14.49M | 14.49M | — | — |
+| solo Codex (gpt-5.5 xhigh) | 5.44M | — | 5.44M | 20 |
 
 Orchestrated runs split tokens across the **Claude** orchestrator and the **Codex** implementer; a
 solo run uses one model. The orchestrated configs spend ~2–6× the tokens of the solo baselines —
-scoped dispatch plus the review/consensus loop is the cost of the higher no-timeout pass rate.
+scoped Codex execution plus the review/consensus loop is the cost of the higher no-timeout pass rate.
 
 Combined Claude+Codex tokens per task (solo = single model):
 
@@ -100,11 +106,3 @@ Combined Claude+Codex tokens per task (solo = single model):
 | 8 | `multi-labeller` | 2.43M | 2.87M | 402K | 231K |
 | 9 | `react-typescript-debugg` | 1.11M | 1.84M | 1.93M | 1.44M |
 | 10 | `token-auth-websocket` | 5.41M | 4.88M | 1.44M | 798K |
-
-Full raw artifacts, the intermediate versions, aggregation tooling, and run instructions live in the
-[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repo. The
-deterministic replay self-test that remains in this repo is part of the unittest suite:
-
-```bash
-python3 -m unittest tests.test_long_workflow_report
-```

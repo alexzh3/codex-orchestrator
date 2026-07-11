@@ -1,57 +1,39 @@
-# Agent Identity, Handoff, And Compute
+# Parallel Work And Compute
 
-## Agent Identity And Reuse
+## Parallel Work
 
-Treat each Codex session as a named agent with durable identity: role, thread id, worktree, branch,
-event source, and current status. Session reuse is simple: continue in the same Codex session when
-its context is relevant to the task; if it is almost full but still relevant, compact/summarize the
-relevant state and continue there; create a new Codex session only for contextually unrelated work,
-required isolation, or an explicit user request. Do not start a duplicate agent just because another
-prompt is needed.
+Before parallel execution, compare the active tasks' declared `files` and shared resources:
 
-When compacting a relevant Codex session before continuing, preserve: goal, files touched, key
-decisions, current diff/test status, unresolved issues, and the next scoped prompt.
+- Disjoint lists may run concurrently in the same repository when tools will not mutate shared
+  generated files.
+- Overlapping paths or shared contracts require sequential handoff or separate worktrees.
+- Shared build outputs, databases, ports, GPUs, and evidence paths also count as conflicts.
 
-Before launching Codex:
+Review a committed SHA when possible. For an uncommitted target, reserve only its task's `files` and
+shared resources until the review ends. Disjoint work may continue; otherwise use a separate
+worktree or committed snapshot.
 
-1. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" status --run-id <run-id>` or inspect
-   `state.json`.
-2. Classify each candidate session with `${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py state`.
-3. If a matching session is active, keep monitoring it.
-4. If a matching session is idle or complete, resume it with the next scoped prompt.
-5. If no matching session exists, create a new named agent and record why.
-
-Start a new Codex session only when the work is contextually unrelated to existing agents, parser
-confidence is too low to trust the session after bounded inspection, isolation requires a separate
-worktree, or the user explicitly requests a fresh agent. An almost-full but relevant session is a
-compaction/resume case, not a new-session reason. Record the reason as a ledger event.
-
-For IDE rollout sessions, keep using the same `codex://threads/<thread-uuid>` for follow-up work.
-After a resume, re-find the newest rollout file for that thread id because Codex may append a new
-file for the same session. A new rollout file is not by itself a new agent.
-
-## Multi-Session And Compute
-
-Use separate worktrees for parallel sessions unless the user explicitly chooses same-worktree
-coordination:
+Use native Git worktrees for isolation:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch.py" worktree --name codex-a
+git worktree add ../<repo>-codex-impl-01 -b codex-impl-01
+git worktree list
 ```
 
-Use sequential handoff when agents touch the same files/contracts or share scarce compute/artifact
-paths. Before handoff: finish review, verify the next plan, gate compute, send a scoped prompt, and
-re-arm monitoring.
+Do not integrate or remove a worktree until its execution has stopped, its handoff is saved, and
+Claude has inspected the diff. After accepting isolated work, integrate its commits into the target,
+inspect the resulting diff, and rerun the affected acceptance checks there. Mark the task complete
+and remove the worktree only after those target checks pass.
 
-Compute checks:
+## Compute Gating
+
+Before expensive local tests or research workloads, inspect only the processes, compute, memory,
+disk, ports, or services that the task actually depends on. For NVIDIA GPU workloads, check device
+utilization and active compute processes:
 
 ```bash
 nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv,noheader
 nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader
-pgrep -af 'isaac|kit|python.sh|pytest' | grep -v codex
-docker ps --format '{{.Names}} {{.Status}}'
-free -g
-df -h /
 ```
 
-`docker ps` showing `Up` is not proof of activity; check VRAM, utilization, compute apps, and disk.
+Record a decision when resource state changes execution timing, isolation, or acceptance.

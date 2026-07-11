@@ -2,22 +2,16 @@
 
 [project]
 name = "codex-orchestrator"
-version = "0.4.2"
-description = "Coordinate reusable monitored OpenAI Codex agents and IDE sessions from Claude Code."
+version = "0.5.0"
+description = "Coordinate reusable monitored OpenAI Codex agents from Claude Code."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "alexzh3" }]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
-[dependency-groups]
-dev = ["ruff>=0.8", "pytest>=8"]
