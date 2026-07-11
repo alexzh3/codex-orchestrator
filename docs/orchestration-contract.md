@@ -147,15 +147,11 @@ observations to the execution result or verification instead.
 ## Failed Checks And Reruns
 
 Keep both observations. A passing rerun supports acceptance of the corrected repository state but
-does not erase the earlier failure. Record the failed verification, the fix execution, the passing
-verification, and the decision that explains the final outcome.
+does not erase the earlier failure. Record the failed verification, fix execution, and passing
+verification.
 
 A complete run fixture is available at
-[`tests/replay/long-run-001/journal.jsonl`](../tests/replay/long-run-001/journal.jsonl). Use
-`claude_decision` when Claude proceeds despite remaining model disagreement, and record the rejected
-alternative, rationale, and residual risk. Use `user_action_required` when acceptance needs authority
-or information Claude does not have; unresolved required user action normally closes the run as
-blocked.
+[`tests/replay/long-run-001/journal.jsonl`](../tests/replay/long-run-001/journal.jsonl).
 
 ## Descriptive Validation
 

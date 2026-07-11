@@ -57,8 +57,6 @@ class ReportSkillTests(unittest.TestCase):
         self.assertIn("agent claims: exact handoffs", skill)
         self.assertIn("not independent evidence", skill)
         self.assertIn("create the final `report.md` once", skill)
-        self.assertIn("fresh codex review as context-independent", skill)
-        self.assertIn("recorded claude-codex participation", skill)
 
 if __name__ == "__main__":
     unittest.main()

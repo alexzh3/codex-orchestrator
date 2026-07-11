@@ -61,5 +61,5 @@ Read only what the current phase needs:
 
 - `references/monitoring.md`: execution capture, CLI and IDE monitoring, and handoffs.
 - `references/review.md`: verification and independent review.
-- `references/decisions.md`: disagreement and decision outcomes.
+- `references/consensus.md`: consensus and decision outcomes.
 - `references/compute.md`: parallel ownership, worktrees, and compute gating.

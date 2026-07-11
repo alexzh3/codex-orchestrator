@@ -1,6 +1,6 @@
-# Decisions
+# Consensus And Decisions
 
-Use a `decision` only for a consequential disagreement, accepted risk, tie-break, or required user
+Use a `decision` only for a consequential disagreement, accepted risk, resolution, or required user
 action. Do not record routine agreement. Use [the orchestration
 contract](../../../docs/orchestration-contract.md) for journal fields.
 

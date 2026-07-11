@@ -81,7 +81,7 @@ evidence, repository changes, and raw events only when needed. Use this top-to-b
 
 Use one node per agent or native session, ordered by first execution. Include its task, recorded
 model/effort, main result, and terminal status; combine resumed executions in that session's node.
-Label edges concisely (`assign`, `review`, `verified`, `tie-break evidence`, `consensus`,
+Label edges concisely (`assign`, `review`, `verified`, `resolution`, `consensus`,
 `claude_decision`, `produced`, `fix required`, `recheck`, `accepted`). Show only evidence that affected
 a decision or final judgment. Combine routine passing checks and group related decisions, but keep
 Claude decisions, user actions, and unresolved outcomes distinct. Mark reconstructed facts as
@@ -91,9 +91,7 @@ Claude decisions, user actions, and unresolved outcomes distinct. Mark reconstru
 
 Summarize consequential `decision` entries with outcome, basis, resolution, and risk; state when no
 decision was required. Keep consensus, Claude decisions, user actions, accepted risks, and unresolved
-outcomes distinct. Describe a fresh Codex review as context-independent; use cross-family only for
-recorded Claude-Codex participation. Put missing basis or residual-risk treatment under Risks /
-Follow-ups.
+outcomes distinct. Put missing basis or residual-risk treatment under Risks / Follow-ups.
 
 ### Final Results
 

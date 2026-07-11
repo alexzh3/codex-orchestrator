@@ -138,18 +138,18 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("disjoint work may continue", compute)
         self.assertIn("separate worktree or committed snapshot", compute)
 
-    def test_decisions_use_evidence_not_agent_count(self) -> None:
-        decisions = " ".join(
-            (ROOT / "skills/orchestrate/references/decisions.md")
+    def test_consensus_and_decisions_use_evidence_not_agent_count(self) -> None:
+        consensus = " ".join(
+            (ROOT / "skills/orchestrate/references/consensus.md")
             .read_text(encoding="utf-8")
             .casefold()
             .split()
         )
 
         for outcome in ("consensus", "claude_decision", "user_action_required"):
-            self.assertIn(f"`{outcome}`", decisions)
+            self.assertIn(f"`{outcome}`", consensus)
         for criterion in ("acceptance fit", "direct evidence", "reversibility", "not agent count"):
-            self.assertIn(criterion, decisions)
+            self.assertIn(criterion, consensus)
 
     def test_review_effort_is_risk_scaled(self) -> None:
         review = " ".join(
