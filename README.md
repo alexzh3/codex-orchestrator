@@ -68,14 +68,13 @@ Use `orchestrate` for one focused phase and `workflow` for the complete end-to-e
 | `/codex-orchestrator:workflow` | Run planning through execution, verification, closure, and report. |
 | `/codex-orchestrator:report` | Author `report.md` from an already closed run. |
 
-To plan, implement, review, and report on a change:
+For example, to review a change within an existing run:
 
 ```text
-/codex-orchestrator:workflow
+/codex-orchestrator:orchestrate
 
-Plan and implement <feature>.
-Have another Codex agent review the result when useful.
-Verify it and produce the final report.
+In run <run-id>, have a fresh Codex agent review commit <sha> against its task requirements.
+Do not modify the target. Independently verify every material finding.
 ```
 
 The operating instructions live in [`skills/orchestrate/SKILL.md`](skills/orchestrate/SKILL.md),

@@ -74,6 +74,13 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn(step, readme)
         self.assertIn("F --> E", readme)
 
+    def test_readme_usage_examples_a_focused_independent_review(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("/codex-orchestrator:orchestrate", readme)
+        self.assertIn("fresh Codex agent review commit <sha>", readme)
+        self.assertIn("Independently verify every material finding", readme)
+
     def test_run_journal_is_claude_authored_not_global_evidence(self) -> None:
         contract = "\n".join(
             (ROOT / path).read_text(encoding="utf-8").casefold()
