@@ -168,6 +168,18 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("material localized risk", workflow)
         self.assertIn("unanchored alternative", workflow)
 
+    def test_documented_codex_commands_need_no_undefined_override(self) -> None:
+        references = "\n".join(
+            (ROOT / path).read_text(encoding="utf-8")
+            for path in (
+                "skills/orchestrate/references/monitoring.md",
+                "skills/orchestrate/references/review.md",
+            )
+        )
+
+        self.assertNotIn("$CODEX", references)
+        self.assertIn("codex exec", references)
+
     def test_only_jsonl_fences_mark_journal_examples(self) -> None:
         sample = """```json
 not valid JSON and intentionally ignored

@@ -19,7 +19,7 @@ message as `handoff.md`:
 
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/agents/codex-impl-01/execution-01"
-"$CODEX" exec --json --output-last-message "$EXECUTION_DIR/handoff.md" \
+codex exec --json --output-last-message "$EXECUTION_DIR/handoff.md" \
   -s workspace-write -c approval_policy=never -C <worktree> \
   - \
   < "$EXECUTION_DIR/prompt.md" \
@@ -49,7 +49,7 @@ Extract the last completed agent message from events only when normal handoff ca
 Resume a relevant idle session as the next execution under the same agent:
 
 ```bash
-"$CODEX" exec -C <worktree> -s workspace-write -c approval_policy=never \
+codex exec -C <worktree> -s workspace-write -c approval_policy=never \
   resume --json \
   --output-last-message "$EXECUTION_DIR/handoff.md" \
   <session-id> - \

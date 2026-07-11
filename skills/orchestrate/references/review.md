@@ -30,7 +30,7 @@ For the first independent review:
   handoff.
 
 ```bash
-"$CODEX" exec -C <worktree> -s workspace-write review --json \
+codex exec -C <worktree> -s workspace-write review --json \
   --output-last-message "$EXECUTION_DIR/handoff.md" \
   --commit <sha> - \
   < "$EXECUTION_DIR/prompt.md" \
