@@ -13,7 +13,7 @@ from pathlib import Path
 PARSER_VERSION = "0.1.0"
 TAIL_LIMIT_BYTES = 500_000
 
-LEDGER_EVENT_TYPES = {
+JOURNAL_ENTRY_TYPES = {
     "run_started",
     "task",
     "execution",
@@ -505,11 +505,11 @@ def command_tail(args: argparse.Namespace) -> int:
     return 0
 
 
-def read_ledger(path: Path) -> tuple[list[dict[str, object]], list[str]]:
+def read_journal(path: Path) -> tuple[list[dict[str, object]], list[str]]:
     records: list[dict[str, object]] = []
     issues: list[str] = []
     if not path.exists():
-        return records, [f"missing ledger: {path}"]
+        return records, [f"missing journal: {path}"]
     try:
         with path.open("r", encoding="utf-8") as handle:
             for line_number, line in enumerate(handle, start=1):
@@ -522,18 +522,18 @@ def read_ledger(path: Path) -> tuple[list[dict[str, object]], list[str]]:
                     issues.append(f"line {line_number}: invalid JSON: {exc.msg}")
                     continue
                 if not isinstance(value, dict):
-                    issues.append(f"line {line_number}: ledger record must be an object")
+                    issues.append(f"line {line_number}: journal entry must be an object")
                     continue
                 value["_line"] = line_number
                 records.append(value)
     except (OSError, UnicodeError) as exc:
-        issues.append(f"could not read ledger: {exc}")
+        issues.append(f"could not read journal: {exc}")
     return records, issues
 
 
 def record_line(record: dict[str, object]) -> str:
     line = record.get("_line")
-    return f"line {line}" if isinstance(line, int) else "ledger"
+    return f"line {line}" if isinstance(line, int) else "journal"
 
 
 def execution_key(record: dict[str, object]) -> tuple[str, str] | None:
@@ -593,28 +593,28 @@ def check_declared_file(
 
 def validate_run(run_dir: Path) -> dict[str, object]:
     run_dir = run_dir.expanduser().resolve()
-    records, issues = read_ledger(run_dir / "ledger.jsonl")
+    records, issues = read_journal(run_dir / "journal.jsonl")
     warnings: list[str] = []
     non_passing: list[dict[str, object]] = []
 
     known_records: list[dict[str, object]] = []
     for record in records:
         kind = record.get("type")
-        if not isinstance(kind, str) or kind not in LEDGER_EVENT_TYPES:
-            issues.append(f"{record_line(record)}: unknown ledger event type: {kind!r}")
+        if not isinstance(kind, str) or kind not in JOURNAL_ENTRY_TYPES:
+            issues.append(f"{record_line(record)}: unknown journal entry type: {kind!r}")
         else:
             known_records.append(record)
 
     starts = [record for record in known_records if record.get("type") == "run_started"]
     closures = [record for record in known_records if record.get("type") == "run_closed"]
     if len(starts) != 1:
-        issues.append(f"ledger must contain exactly one run_started record; found {len(starts)}")
+        issues.append(f"journal must contain exactly one run_started entry; found {len(starts)}")
     elif records and records[0] is not starts[0]:
-        issues.append("run_started must be the first ledger record")
+        issues.append("run_started must be the first journal entry")
     if len(closures) > 1:
-        issues.append(f"ledger may contain at most one run_closed record; found {len(closures)}")
+        issues.append(f"journal may contain at most one run_closed entry; found {len(closures)}")
     if closures and records and records[-1] is not closures[-1]:
-        issues.append("run_closed must be the final ledger record")
+        issues.append("run_closed must be the final journal entry")
     for closure in closures:
         if closure.get("judgment") not in {"passed", "blocked"}:
             issues.append(f"{record_line(closure)}: run_closed judgment must be passed or blocked")
@@ -757,14 +757,14 @@ def command_validate(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
-def ledger_lifecycle(run_dir: Path) -> str:
-    records, issues = read_ledger(run_dir / "ledger.jsonl")
+def journal_lifecycle(run_dir: Path) -> str:
+    records, issues = read_journal(run_dir / "journal.jsonl")
     if issues:
         return "invalid"
     kinds = [record.get("type") for record in records]
     if (
         not kinds
-        or not all(kind in LEDGER_EVENT_TYPES for kind in kinds)
+        or not all(kind in JOURNAL_ENTRY_TYPES for kind in kinds)
         or kinds.count("run_started") != 1
         or kinds[0] != "run_started"
         or kinds.count("run_closed") > 1
@@ -787,13 +787,13 @@ def new_layout_event_paths(run_dir: Path) -> list[Path]:
 
 
 def inflight_targets(run_dir: Path) -> tuple[list[MonitorTarget], list[str]]:
-    records, issues = read_ledger(run_dir / "ledger.jsonl")
+    records, issues = read_journal(run_dir / "journal.jsonl")
     if issues:
         fallback = [
             MonitorTarget(path, source_for_path(path)) for path in new_layout_event_paths(run_dir)
         ]
         warning = (
-            "ledger lifecycle could not be read; using low-confidence "
+            "journal lifecycle could not be read; using low-confidence "
             "agents/*/execution-*/events.jsonl discovery"
         )
         return fallback, [warning, *issues]
@@ -833,7 +833,7 @@ def run_activity_mtime(run_dir: Path) -> float:
     if mtimes:
         return max(mtimes)
     try:
-        return (run_dir / "ledger.jsonl").stat().st_mtime
+        return (run_dir / "journal.jsonl").stat().st_mtime
     except OSError:
         return 0.0
 
@@ -843,7 +843,7 @@ def auto_discover_run_dir(repo: Path) -> tuple[Path | None, list[str]]:
     if not runs_dir.exists():
         return None, []
     candidates = [
-        (run_dir, ledger_lifecycle(run_dir))
+        (run_dir, journal_lifecycle(run_dir))
         for run_dir in runs_dir.iterdir()
         if run_dir.is_dir()
     ]
@@ -859,7 +859,7 @@ def auto_discover_run_dir(repo: Path) -> tuple[Path | None, list[str]]:
         return None, []
     selected = max(fallback, key=lambda path: (run_activity_mtime(path), path.name))
     return selected, [
-        "no valid active ledger found; selected a run by low-confidence new-layout event mtime"
+        "no valid active journal found; selected a run by low-confidence new-layout event mtime"
     ]
 
 
@@ -1098,7 +1098,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     monitor_parser = subparsers.add_parser(
         "monitor", help="Watch in-flight agent event streams from the prompt-first run layout."
     )
-    monitor_parser.add_argument("run_dir", nargs="?", help="Run directory containing ledger.jsonl.")
+    monitor_parser.add_argument(
+        "run_dir", nargs="?", help="Run directory containing journal.jsonl."
+    )
     monitor_parser.add_argument("--run-id", help="Run id under .codex-orchestrator/runs.")
     monitor_parser.add_argument("--repo", default=".", help="Repository root used for discovery.")
     monitor_parser.add_argument(
@@ -1128,7 +1130,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     validate_parser = subparsers.add_parser(
         "validate", help="Check prompt-first run structure without making acceptance judgments."
     )
-    validate_parser.add_argument("run_dir", help="Run directory containing ledger.jsonl.")
+    validate_parser.add_argument("run_dir", help="Run directory containing journal.jsonl.")
     validate_parser.add_argument("--json", action="store_true", help="Emit compact JSON.")
     validate_parser.set_defaults(func=command_validate)
 

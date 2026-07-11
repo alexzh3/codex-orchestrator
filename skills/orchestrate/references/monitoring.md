@@ -15,7 +15,7 @@ agents/codex-impl-01/execution-01/
   handoff.md
 ```
 
-Save `prompt.md`, then append the ledger `execution` before launch. Capture raw stdout as the event
+Save `prompt.md`, then append the journal `execution` entry before launch. Capture raw stdout as the event
 stream and the native last message as the handoff:
 
 ```bash
@@ -70,7 +70,7 @@ A live IDE session is identified by `codex://threads/<thread-uuid>`. When Claude
 observe a session that is already active, append an execution with `mode: "observe"`,
 `event_source: "ide"`, the native `session_id`, the absolute rollout path in `events`, and a local
 `handoff` path. Omit `prompt` because Claude sent no prompt; this is the only missing-prompt case
-allowed by the journal contract. Do not copy the rollout into the run directory. Save the exact
+allowed by the run protocol. Do not copy the rollout into the run directory. Save the exact
 final agent message locally as `handoff.md`.
 
 If Claude later sends a follow-up, create the next normal prompted execution under the same agent:
@@ -101,11 +101,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" tail <session-id> --
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_parse.py" state <session-id> --source ide --file <rollout-jsonl> --json
 ```
 
-Persist no parser offset in the ledger. Callers retain `next_offset` while monitoring. After context
+Persist no parser offset in the journal. Callers retain `next_offset` while monitoring. After context
 loss, call `state` for a compact current summary and continue from its `next_offset`; do not tail a
 large event stream again from byte zero.
 
-The bundled run monitor treats a `run_started` record without a later `run_closed` as Claude's
+The bundled run monitor treats a `run_started` entry without a later `run_closed` as Claude's
 active-run marker, then watches executions without recorded terminal execution results:
 
 ```bash
@@ -113,7 +113,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/bin/codex-orch-monitor" --repo <repo> --run-id <r
 python3 "${CLAUDE_PLUGIN_ROOT}/bin/codex-orch-monitor" --log <events-jsonl> --fail-on-session-failure
 ```
 
-It emits compact completion, failure, and stale notifications and never writes the ledger. These
+It emits compact completion, failure, and stale notifications and never writes the journal. These
 markers support discovery but do not independently prove lifecycle state. Explicit paths may point
 to local headless streams or external IDE rollouts. Use bounded raw tails only when parser
 confidence is low.

@@ -11,9 +11,9 @@ verify, decide, close, and report. For a focused phase, use
 
 Follow this sequence:
 
-1. Create `.codex-orchestrator/runs/<run-id>/`, `ledger.jsonl`, and `agents/`. Append `run_started`
+1. Create `.codex-orchestrator/runs/<run-id>/`, `journal.jsonl`, and `agents/`. Append `run_started`
    with the repository, plugin ref, and available Claude/Codex versions.
-2. Create active `task` records with the goal, acceptance criteria, and allowed/owned file paths or
+2. Create active `task` entries with the goal, acceptance criteria, and allowed/owned file paths or
    globs in `files`. Ask Codex to review a newly created plan when a second opinion materially
    reduces risk.
 3. Check task file ownership before parallel execution. Use sequential work or native Git worktrees
@@ -31,9 +31,9 @@ Follow this sequence:
    when the observation is lengthy, binary, disputed, or important to audit.
 8. If Claude and a Codex agent disagree, use a targeted follow-up and record the outcome as a
    `decision`: `consensus`, `claude_decision`, or `user_action_required`.
-9. Repeat execution, review, and verification as needed. Append a terminal `task` record only after
+9. Repeat execution, review, and verification as needed. Append a terminal `task` entry only after
    Claude has evaluated its acceptance criteria.
-10. Re-read the full ledger, inspect the final repository state and diff, then run the descriptive
+10. Re-read the full journal, inspect the final repository state and diff, then run the descriptive
     close check:
 
    ```bash
@@ -42,13 +42,13 @@ Follow this sequence:
    ```
 
 11. Resolve structural issues, inspect all non-passing checks, and append one final `run_closed`
-    record with `judgment: passed|blocked`, the exact validation result, unresolved risks, and
+    entry with `judgment: passed|blocked`, the exact validation result, unresolved risks, and
     follow-ups. Validation detects omissions; Claude decides whether the work is acceptable.
 12. Only after `run_closed`, use `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` to have Claude create
     the final `report.md` once.
 
 The canonical close sequence is `validate → run_closed → report.md`. Validation never decides
-acceptance, and the final report never repairs or rewrites ledger history.
+acceptance, and the final report never repairs or rewrites journal history.
 
-Follow `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for the complete operating contract and
+Follow `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` for the complete run protocol and
 its focused references for monitoring, review, decisions, and compute isolation.

@@ -31,10 +31,10 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def ledger_records(run_dir: Path) -> list[dict[str, object]]:
+def journal_entries(run_dir: Path) -> list[dict[str, object]]:
     return [
         json.loads(line)
-        for line in (run_dir / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (run_dir / "journal.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
 
@@ -48,7 +48,7 @@ class PromptFirstWorkflowTests(unittest.TestCase):
         cls.launches: list[subprocess.CompletedProcess[str]] = []
 
         for execution in (
-            record for record in ledger_records(cls.run_dir) if record["type"] == "execution"
+            record for record in journal_entries(cls.run_dir) if record["type"] == "execution"
         ):
             prompt_path = cls.run_dir / str(execution["prompt"])
             events_path = cls.run_dir / str(execution["events"])
@@ -84,7 +84,7 @@ class PromptFirstWorkflowTests(unittest.TestCase):
         cls.temp_dir.cleanup()
 
     def test_fake_exec_captures_two_named_agent_executions_and_handoffs(self) -> None:
-        records = ledger_records(self.run_dir)
+        records = journal_entries(self.run_dir)
         executions = [record for record in records if record["type"] == "execution"]
 
         self.assertEqual(len(self.launches), 2)
@@ -118,7 +118,7 @@ class PromptFirstWorkflowTests(unittest.TestCase):
         self.assertFalse((self.run_dir / "report.md").exists())
 
     def test_parser_reads_both_fake_codex_streams(self) -> None:
-        records = ledger_records(self.run_dir)
+        records = journal_entries(self.run_dir)
         executions = [record for record in records if record["type"] == "execution"]
 
         for execution in executions:
@@ -141,14 +141,14 @@ class PromptFirstWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             run_dir = Path(tmp_dir) / "long-run-001"
             shutil.copytree(self.run_dir, run_dir)
-            records = ledger_records(run_dir)
+            records = journal_entries(run_dir)
             launch_records = [
                 record
                 for record in records
                 if record["type"] in {"run_started", "task", "execution"}
                 and not (record["type"] == "task" and record.get("status") != "active")
             ]
-            (run_dir / "ledger.jsonl").write_text(
+            (run_dir / "journal.jsonl").write_text(
                 "".join(
                     json.dumps(record, separators=(",", ":")) + "\n"
                     for record in launch_records

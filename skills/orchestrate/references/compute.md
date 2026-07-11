@@ -47,5 +47,5 @@ df -h /
 ```
 
 `docker ps` showing `Up` is not proof of active compute. Check utilization, processes, memory, disk,
-ports, and task-specific outputs. Record a material compute decision in the ledger when it changes
+ports, and task-specific outputs. Record a material compute decision in the journal when it changes
 execution timing, isolation, or acceptance.

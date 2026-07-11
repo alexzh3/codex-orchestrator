@@ -13,13 +13,13 @@ Use this skill for a focused orchestration phase. Use
 `${CLAUDE_PLUGIN_ROOT}/skills/workflow/SKILL.md` for a complete run and
 `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` only after the run has closed.
 
-## Run Contract
+## Run Protocol
 
 Keep durable run material under:
 
 ```text
 .codex-orchestrator/runs/<run-id>/
-  ledger.jsonl
+  journal.jsonl
   agents/
     codex-impl-01/
       execution-01/
@@ -48,17 +48,17 @@ omit `events` when their harness exposes no raw stream. Never synthesize a log.
 An agent handoff is a claim package. It establishes what the agent reported, not that the report is
 correct. Evidence is an inspectable observation that supports or contradicts a verification or
 decision. Put lengthy command output, screenshots, metrics, and other material observations under
-`evidence/`; keep small observations inline in the ledger. Prompts establish scope, and event
+`evidence/`; keep small observations inline in the journal. Prompts establish scope, and event
 streams establish session activity, but neither proves implementation correctness.
 
-## Ledger
+## Run Journal
 
-`ledger.jsonl` is a concise append-only orchestration journal and index written by Claude. It is
+`journal.jsonl` is a concise append-only orchestration journal and index written by Claude. It is
 canonical for Claude's recorded chronology, task state, and decisions, but it is not evidence that
-an agent claim or implementation result is true. Each line is one compact JSON object with
-`recorded_at`. Use exactly these event types:
+an agent claim or implementation result is true. Each journal entry is one compact JSON object with
+`recorded_at`. Use exactly these entry types:
 
-- `run_started`: first record; run id, repository, plugin ref, and available Claude/Codex versions.
+- `run_started`: first entry; run id, repository, plugin ref, and available Claude/Codex versions.
 - `task`: goal, acceptance criteria, allowed/owned file paths or globs in `files`, and latest task
   status.
 - `execution`: written before launch with `agent`, `execution`, `task`, provider, role, mode, event
@@ -67,11 +67,11 @@ an agent claim or implementation result is true. Each line is one compact JSON o
   or `failed`.
 - `verification`: Claude's evaluation of a criterion using an explicit check and observation.
 - `decision`: a consequential resolution with outcome, basis, and risk.
-- `run_closed`: the final record, including `judgment: passed|blocked`, validation result, risks, and
+- `run_closed`: the final entry, including `judgment: passed|blocked`, validation result, risks, and
   follow-ups.
 
-A task record may be repeated; its latest record is current within the journal. An execution is in
-flight until Claude records a matching terminal execution result. These records support recovery
+A task entry may be repeated; its latest entry is current within the journal. An execution is in
+flight until Claude records a matching terminal execution result. These entries support recovery
 and monitoring but do not mechanically establish process completion or correctness. A complete
 execution result does not complete its task: keep the task active until Claude has inspected the
 work, verified material claims, and recorded any needed decision. See
@@ -80,7 +80,7 @@ work, verified material claims, and recorded any needed decision. See
 ## Standard Loop
 
 1. Create the run directory and append `run_started` before task work.
-2. Append active `task` records with concrete goals, acceptance criteria, and allowed/owned file
+2. Append active `task` entries with concrete goals, acceptance criteria, and allowed/owned file
    paths or globs in `files`.
 3. Before parallel work, verify that task-owned file lists are disjoint. Serialize overlapping work
    or use native Git worktrees.
@@ -97,12 +97,12 @@ work, verified material claims, and recorded any needed decision. See
 8. Independently verify material claims. Record checks as `verification`; create evidence files only
    when inline observations are insufficient.
 9. Record consequential agreements, disagreements, overrides, or user dependencies as `decision`.
-10. Append a terminal `task` record after its acceptance criteria have been evaluated.
+10. Append a terminal `task` entry after its acceptance criteria have been evaluated.
 11. When no work remains, use the workflow skill's close procedure, then invoke the report skill.
 
-The workflow's validation step is a small descriptive omission check: it checks readable records,
+The workflow's validation step is a small descriptive omission check: it checks readable entries,
 lifecycle pairing, declared files, terminal task state, and visible non-passing checks. It is not a
-complete event schema and does not validate decision rationale or implementation truth. Claude
+complete journal-entry schema and does not validate decision rationale or implementation truth. Claude
 makes the final judgment; do not treat descriptive validation as semantic acceptance.
 
 ## Reference Map

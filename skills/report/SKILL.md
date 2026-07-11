@@ -16,25 +16,25 @@ Confirm that:
 - descriptive validation ran before closure and its complete result is recorded in
   `run_closed.validation`;
 - every execution has a terminal execution result and every task is terminal;
-- `run_closed` is the final ledger record and contains `judgment: passed|blocked`;
+- `run_closed` is the final journal entry and contains `judgment: passed|blocked`;
 - no further run work is planned.
 
-If these conditions are not true, stop and return to orchestration. Never edit the ledger merely to
+If these conditions are not true, stop and return to orchestration. Never edit the journal merely to
 make the report look complete.
 
-Read the complete `ledger.jsonl` first as the compact workflow history and navigation index. Then
+Read the complete `journal.jsonl` first as the compact workflow history and navigation index. Then
 substantiate each material claim from the source appropriate to that claim:
 
 - actual delivery: final repository state and diff;
 - Claude's checks: verification observations and referenced evidence;
 - assigned scope: exact prompts;
 - agent claims: exact handoffs;
-- recorded chronology and lifecycle status: ledger records;
+- recorded chronology and lifecycle status: journal entries;
 - material harness activity or process outcome: raw event streams and direct process observations;
-- decisions and final judgment: decision and `run_closed` records.
+- decisions and final judgment: decision and `run_closed` entries.
 
 Raw `events.jsonl` or external IDE rollouts are fallback sources for disputes, ambiguity, or
-debugging; do not mine them for facts already clear from the appropriate compact source. The ledger
+debugging; do not mine them for facts already clear from the appropriate compact source. The journal
 is Claude-authored working memory, not independent evidence. Surface conflicts instead of silently
 choosing a preferred account, and never invent or repair missing facts.
 
@@ -69,12 +69,12 @@ Mention unresolved work plainly and keep this section concise.
 
 Describe material delivered changes from the final repository state and diff, then connect them to
 their tasks or agents. Cite important repository files and evidence when useful. Distinguish
-complete, blocked, failed, and intentionally unchanged work. Do not reproduce the ledger line by
+complete, blocked, failed, and intentionally unchanged work. Do not reproduce the journal line by
 line or treat `execution_result.files_changed` as mechanical attribution.
 
 ### Orchestration Graph
 
-Create a readable Mermaid `flowchart TD`. Use `ledger.jsonl` to reconstruct workflow chronology and
+Create a readable Mermaid `flowchart TD`. Use `journal.jsonl` to reconstruct workflow chronology and
 causal links, then ground results in handoffs, verification evidence, repository changes, and raw
 events only when necessary. Do not invent facts.
 
@@ -96,15 +96,15 @@ Label assignment edges `assign`; use other concise actions such as `review`, `ve
 
 Show evidence only when it affected a decision or final judgment; combine routine passing checks.
 Group numerous related decisions by topic or deliverable while keeping `claude_decision`, user
-decisions, and unresolved outcomes distinct. Prioritize a clear causal overview over every ledger
-event. Mark reconstructed information as `inferred`, and never infer a verification result,
+decisions, and unresolved outcomes distinct. Prioritize a clear causal overview over every journal
+entry. Mark reconstructed information as `inferred`, and never infer a verification result,
 decision outcome, judgment, or terminal status.
 
 ### Consensus
 
-Summarize consequential reviews and `decision` records. State the outcome, basis, resolution, and
+Summarize consequential reviews and `decision` entries. State the outcome, basis, resolution, and
 risk for each material disagreement. Keep consensus, Claude decisions, user actions, accepted risks,
-and unresolved outcomes distinct. Say clearly when no decision record was required.
+and unresolved outcomes distinct. Say clearly when no decision entry was required.
 
 ### Final Results
 
@@ -118,7 +118,7 @@ Use these subsections in this order:
 
 Under `Gate Result`, report `run_closed.judgment`, its summary, and the recorded validation issues
 and warnings. Validation is an omission check, not evidence of correctness or the source of the
-judgment. This is a human-facing heading, not a separate ledger event. Do not recompute or soften
+judgment. This is a human-facing heading, not a separate journal entry. Do not recompute or soften
 Claude's recorded judgment.
 
 Under `Risks / Follow-ups`, list unresolved checks, blocked or failed work, user actions, accepted

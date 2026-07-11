@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-LEDGER_EVENT_TYPES = {
+JOURNAL_ENTRY_TYPES = {
     "run_started",
     "task",
     "execution",
@@ -80,7 +80,7 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn(step, readme)
         self.assertIn("F --> E", readme)
 
-    def test_ledger_is_a_claude_authored_journal_not_global_evidence(self) -> None:
+    def test_run_journal_is_claude_authored_not_global_evidence(self) -> None:
         contract = "\n".join(
             (ROOT / path).read_text(encoding="utf-8").casefold()
             for path in (
@@ -115,7 +115,7 @@ class DocumentationContractTests(unittest.TestCase):
                 self.assertNotIn(term, relative_path.as_posix().casefold(), relative_path)
                 self.assertNotIn(term, text, relative_path)
 
-    def test_only_jsonl_fences_mark_ledger_examples(self) -> None:
+    def test_only_jsonl_fences_mark_journal_examples(self) -> None:
         sample = """```json
 not valid JSON and intentionally ignored
 ```
@@ -125,7 +125,7 @@ not valid JSON and intentionally ignored
 
         self.assertEqual(jsonl_blocks(sample), [[(5, '{"type":"task"}')]])
 
-    def test_documented_ledger_examples_are_one_event_per_line(self) -> None:
+    def test_documented_journal_examples_are_one_entry_per_line(self) -> None:
         examples = 0
         for path in documentation_paths():
             relative_path = path.relative_to(ROOT)
@@ -145,14 +145,14 @@ not valid JSON and intentionally ignored
                     self.assertIsInstance(
                         event,
                         dict,
-                        f"{relative_path}:{line_number}: ledger event must be an object",
+                        f"{relative_path}:{line_number}: journal entry must be an object",
                     )
                     self.assertIn(
                         event.get("type"),
-                        LEDGER_EVENT_TYPES,
-                        f"{relative_path}:{line_number}: undocumented ledger event type",
+                        JOURNAL_ENTRY_TYPES,
+                        f"{relative_path}:{line_number}: undocumented journal entry type",
                     )
-        self.assertGreater(examples, 0, "documentation must contain a marked ledger example")
+        self.assertGreater(examples, 0, "documentation must contain a marked journal example")
 
 
 if __name__ == "__main__":

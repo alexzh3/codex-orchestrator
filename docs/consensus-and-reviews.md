@@ -1,6 +1,6 @@
 # Claims, Evidence, Verification, And Decisions
 
-The runtime ledger preserves Claude's concise causal journal and links to supporting material; it
+The run journal preserves Claude's concise causal history and links to supporting material; it
 is not a workflow engine, independent evidence, or an automated telemetry source. Claude makes the
 semantic judgments. The parser and validator only summarize event streams and check a small set of
 structural omissions.
@@ -14,7 +14,7 @@ structural omissions.
 - **Evidence:** an inspectable observation that supports or contradicts a verification or decision.
 - **Verification:** Claude's evaluation of a task criterion using an explicit check and observation.
 - **Decision:** Claude's recorded resolution of a consequential disagreement, risk, or user need.
-- **Ledger:** Claude's compact chronology, current task state, decisions, and links to these sources.
+- **Journal:** Claude's compact chronology, current task state, decisions, and links to these sources.
 - **Repository:** the final state and diff that determine what code was actually delivered.
 
 A handoff can establish that an agent *claimed* a test passed, and an event stream can establish
@@ -29,7 +29,7 @@ material that another reviewer may need to inspect later. Do not copy handoffs i
 
 ```text
 .codex-orchestrator/runs/<run-id>/
-  ledger.jsonl
+  journal.jsonl
   agents/
     codex-impl-01/
       execution-01/
@@ -49,15 +49,15 @@ Attaching only to observe an already-active IDE session uses `mode: "observe"` a
 because Claude sent nothing. A later follow-up is a new, normal prompted execution. Claude agent
 executions may omit `events` when no raw stream is exposed. Never fabricate one.
 
-## Ledger Vocabulary
+## Run Journal Entry Types
 
-Only Claude, acting as orchestrator, appends to `ledger.jsonl`. Every nonblank line is one JSON
-object with `recorded_at`. The vocabulary contains seven event types. The fields below are the
-prompted journal contract, not a complete runtime-enforced schema.
+Only Claude, acting as orchestrator, appends to `journal.jsonl`. Every nonblank line is one JSON
+object with `recorded_at`. The journal contains seven entry types. The fields below are the prompted
+run protocol, not a complete runtime-enforced schema.
 
 ### `run_started`
 
-The first record. It identifies the run, repository, plugin revision, and available tool versions.
+The first entry. It identifies the run, repository, plugin revision, and available tool versions.
 
 ```jsonl
 {"type":"run_started","run_id":"run-20260710-01","repo":"/work/project","plugin_ref":"git:abc1234","claude_version":"2.1.0","codex_version":"0.110.0","recorded_at":"2026-07-10T12:00:00Z"}
@@ -67,7 +67,7 @@ Omit a version when unavailable; do not guess it.
 
 ### `task`
 
-Records may repeat for the same task. The latest record is current within the journal. Status is `pending`,
+Entries may repeat for the same task. The latest entry is current within the journal. Status is `pending`,
 `active`, `complete`, `blocked`, or `failed`. Active tasks declare their allowed/owned file paths or
 globs in `files` before parallel execution; parallel tasks must have disjoint ownership or use
 isolated worktrees. This planned boundary is distinct from `execution_result.files_changed`, which
@@ -135,7 +135,7 @@ states residual risk. Decisions explain history but do not delete or rewrite fai
 
 ### `run_closed`
 
-The final ledger record. Claude copies the pre-close validation result into `validation` and records
+The final journal entry. Claude copies the pre-close validation result into `validation` and records
 the semantic `judgment` as `passed` or `blocked`, plus unresolved risks and follow-ups.
 
 ```jsonl
@@ -197,7 +197,7 @@ produces `run_closed.judgment: blocked`.
 
 `validate` is a small omission check, not truth or acceptance validation. It checks:
 
-- JSON objects and the seven event names;
+- JSON objects and the seven journal entry type names;
 - one initial `run_started` and at most one final `run_closed`;
 - execution/result identities, pairing, order, and matching task IDs when recorded;
 - task references plus duplicate verification and decision IDs;
@@ -206,7 +206,7 @@ produces `run_closed.judgment: blocked`.
 - nonempty completed-execution handoffs;
 - recognized verification results and a descriptive list of every non-passing verification.
 
-Its output is ordinary JSON, not a ledger event:
+Its output is ordinary JSON, not a journal entry:
 
 ```json
 {

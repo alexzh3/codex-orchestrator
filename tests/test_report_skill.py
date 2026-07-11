@@ -43,7 +43,7 @@ class ReportSkillTests(unittest.TestCase):
         normalized = " ".join(skill.lower().split())
 
         self.assertIn("descriptive validation ran before closure", normalized)
-        self.assertIn("`run_closed` is the final ledger record", normalized)
+        self.assertIn("`run_closed` is the final journal entry", normalized)
         self.assertIn("no further run work is planned", normalized)
         self.assertNotIn("validate → run_closed → report.md", normalized)
 

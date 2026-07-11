@@ -93,12 +93,12 @@ flowchart TD
     G --> H["Claude writes the final report"]
 ```
 
-## Runtime Contract
+## Run Protocol
 
 Runs live under `.codex-orchestrator/runs/<run-id>/` and are normally ignored by Git:
 
 ```text
-ledger.jsonl
+journal.jsonl
 agents/
   codex-impl-01/
     execution-01/
@@ -118,13 +118,13 @@ the same agent; starting a fresh session creates another agent.
 - `handoff.md` is the exact final agent response.
 - `evidence/` stores only material observations that are too large, binary, disputed, or important
   to keep inline.
-- `ledger.jsonl` is Claude's concise append-only workflow journal and navigation index.
+- `journal.jsonl` is Claude's concise append-only workflow journal and navigation index.
 - `report.md` is Claude's final synthesis, not evidence.
 
-The ledger is canonical for Claude's recorded chronology, task state, and decisions. It is not
+The journal is canonical for Claude's recorded chronology, task state, and decisions. It is not
 independent evidence that a process completed, a claim is true, or code was delivered.
 
-For IDE sessions, the ledger references the absolute external rollout path rather than copying it.
+For IDE sessions, the journal references the absolute external rollout path rather than copying it.
 Attaching only to observe an already-active IDE session uses `mode: "observe"` and may omit
 `prompt`, because Claude sent none; any later follow-up gets a normal prompted execution. Claude
 agents may have no raw event stream when their harness does not expose one.
@@ -141,9 +141,9 @@ codex exec --json --output-last-message "$EXECUTION_DIR/handoff.md" \
   > "$EXECUTION_DIR/events.jsonl"
 ```
 
-### Ledger Vocabulary
+### Run Journal Entry Types
 
-The ledger deliberately has seven event types:
+The journal deliberately has seven entry types:
 
 1. `run_started`
 2. `task`
@@ -156,9 +156,9 @@ The ledger deliberately has seven event types:
 Claude appends `execution` before launch, then records a matching terminal `execution_result` as
 complete, blocked, or failed after inspecting the outcome. This is workflow memory rather than
 mechanical telemetry. Agent completion does not complete the task; Claude first checks the actual
-result and acceptance criteria. The latest `task` record carries its current status.
+result and acceptance criteria. The latest `task` entry carries its current status.
 
-Validation is a small descriptive close check for readable records, lifecycle pairing, declared
+Validation is a small descriptive close check for readable entries, lifecycle pairing, declared
 files, terminal task state, and visible non-passing checks. It is deliberately not a complete event
 schema and does not judge implementation truth. Claude makes the semantic `run_closed.judgment` of
 `passed` or `blocked`. See
@@ -177,11 +177,11 @@ event streams are fallback material for monitoring, disputes, or debugging—not
 of test evidence.
 
 Use authority by claim type: prompts record assigned scope; handoffs record agent claims; event
-streams record harness activity; verification and evidence record Claude's checks; the ledger
+streams record harness activity; verification and evidence record Claude's checks; the journal
 records workflow chronology and decisions; and the final repository state and diff determine what
 was actually delivered. Surface conflicts rather than silently preferring one source.
 
-Failed checks remain in history. A fix and passing rerun get new records, and a `decision` explains
+Failed checks remain in history. A fix and passing rerun get new entries, and a `decision` explains
 the outcome without pretending the earlier failure did not happen. Decision outcomes are
 `consensus`, `claude_decision`, or `user_action_required`.
 
@@ -190,7 +190,7 @@ the outcome without pretending the earlier failure did not happen. Decision outc
 The bundled parser classifies Codex event streams and reads incremental tails. The monitor uses
 Claude-recorded `run_started`, `run_closed`, and execution-result markers to discover likely active
 runs and in-flight executions, then reads their event streams for compact completion, failure, or
-stale notifications. It never writes the ledger; ambiguous lifecycle state requires direct
+stale notifications. It never writes the journal; ambiguous lifecycle state requires direct
 inspection.
 
 Before parallel execution, tasks declare allowed/owned file paths or globs in `files`. An execution
@@ -236,12 +236,12 @@ against blind majority agreement. This plugin therefore asks Claude to resolve d
 inspectable evidence rather than model votes.
 
 Durable context also mitigates long-context degradation: exact prompts, handoffs, repository state,
-and concise ledger records remain available without repeatedly loading entire session transcripts.
+and concise journal entries remain available without repeatedly loading entire session transcripts.
 
 ## Limitations
 
 - Review and fix loops are often sequential, so orchestration may take longer than a solo agent.
-- The Claude-authored ledger improves recovery and traceability but cannot prove lifecycle facts,
+- The Claude-authored journal improves recovery and traceability but cannot prove lifecycle facts,
   implementation claims, or semantic judgments; Claude must inspect the relevant sources and run
   appropriate checks.
 - Raw event streams can be large. Normal review relies on compact handoffs and parser summaries.

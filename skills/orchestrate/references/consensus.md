@@ -1,6 +1,6 @@
 # Decisions And Consensus
 
-Use a `decision` record for consequential disagreements, accepted risks, tie-breaks, or required
+Use a `decision` entry for consequential disagreements, accepted risks, tie-breaks, or required
 user action. Do not create one for routine agreement.
 
 Allowed outcomes are:
@@ -13,7 +13,7 @@ Record the concrete `finding`, chosen `resolution`, supporting `basis` reference
 References normally point to verification IDs, execution handoffs, repository files, or evidence
 paths. A decision explains how observations were weighed; it does not erase a failed verification.
 
-Ledger example:
+Journal example:
 
 ```jsonl
 {"type":"decision","id":"decision-01","task":"task-01","finding":"The original check failed before the fix.","outcome":"consensus","resolution":"The defect was fixed and the same check passed on the next revision.","basis":["check-01","check-02"],"risk":"low","recorded_at":"2026-07-10T14:20:00Z"}

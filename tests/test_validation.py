@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_parse.py"
 
 
-def write_ledger(run_dir: Path, records: list[dict[str, object]]) -> None:
-    (run_dir / "ledger.jsonl").write_text(
+def write_journal(run_dir: Path, records: list[dict[str, object]]) -> None:
+    (run_dir / "journal.jsonl").write_text(
         "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
     )
 
@@ -60,7 +60,7 @@ class ValidationTests(unittest.TestCase):
                 "evidence": ["evidence/tests.txt"],
             },
         ]
-        write_ledger(run_dir, records)
+        write_journal(run_dir, records)
         return run_dir, records
 
     def test_sparse_open_run_is_ready_to_close_and_cli_exits_zero(self) -> None:
@@ -84,33 +84,33 @@ class ValidationTests(unittest.TestCase):
             run_dir = Path(tmp) / "run"
             run_dir.mkdir()
             missing = validate_run(run_dir)
-            (run_dir / "ledger.jsonl").write_text(
+            (run_dir / "journal.jsonl").write_text(
                 '[]\nnot json\n{"type":"mystery"}\n', encoding="utf-8"
             )
             malformed = validate_run(run_dir)
 
         self.assertFalse(missing["ok"])
-        self.assertTrue(any("missing ledger" in issue for issue in missing["issues"]))
+        self.assertTrue(any("missing journal" in issue for issue in missing["issues"]))
         self.assertFalse(malformed["ok"])
         self.assertTrue(any("must be an object" in issue for issue in malformed["issues"]))
         self.assertTrue(any("invalid JSON" in issue for issue in malformed["issues"]))
-        self.assertTrue(any("unknown ledger event" in issue for issue in malformed["issues"]))
+        self.assertTrue(any("unknown journal entry" in issue for issue in malformed["issues"]))
 
     def test_invalid_utf8_and_unresolvable_paths_are_reported_not_raised(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             run_dir, records = self.make_run(root)
-            (run_dir / "ledger.jsonl").write_bytes(b"\xff\xfe")
+            (run_dir / "journal.jsonl").write_bytes(b"\xff\xfe")
             unreadable = validate_run(run_dir)
 
             loop = root / "loop"
             loop.symlink_to(loop)
             records[2]["prompt"] = str(loop)
-            write_ledger(run_dir, records)
+            write_journal(run_dir, records)
             unresolvable = validate_run(run_dir)
 
         self.assertFalse(unreadable["ok"])
-        self.assertTrue(any("could not read ledger" in issue for issue in unreadable["issues"]))
+        self.assertTrue(any("could not read journal" in issue for issue in unreadable["issues"]))
         self.assertFalse(unresolvable["ok"])
         self.assertTrue(any("prompt file" in issue for issue in unresolvable["issues"]))
 
@@ -119,7 +119,7 @@ class ValidationTests(unittest.TestCase):
             run_dir, records = self.make_run(Path(tmp))
             close = {"type": "run_closed", "judgment": "passed"}
 
-            write_ledger(run_dir, [*records, close])
+            write_journal(run_dir, [*records, close])
             self.assertTrue(validate_run(run_dir)["ok"])
 
             cases = {
@@ -132,19 +132,19 @@ class ValidationTests(unittest.TestCase):
             }
             for name, case_records in cases.items():
                 with self.subTest(name=name):
-                    write_ledger(run_dir, case_records)
+                    write_journal(run_dir, case_records)
                     self.assertFalse(validate_run(run_dir)["ok"])
 
     def test_latest_task_status_must_be_terminal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir, records = self.make_run(Path(tmp))
             earlier_active = {"type": "task", "id": "task-01", "status": "active"}
-            write_ledger(run_dir, [records[0], earlier_active, *records[1:]])
+            write_journal(run_dir, [records[0], earlier_active, *records[1:]])
             self.assertTrue(validate_run(run_dir)["ok"])
 
             for status in ("active", "pending", "unknown"):
                 with self.subTest(status=status):
-                    write_ledger(
+                    write_journal(
                         run_dir,
                         [*records, {"type": "task", "id": "task-01", "status": status}],
                     )
@@ -183,7 +183,7 @@ class ValidationTests(unittest.TestCase):
 
             for name, (case_records, expected) in cases.items():
                 with self.subTest(name=name):
-                    write_ledger(run_dir, case_records)
+                    write_journal(run_dir, case_records)
                     payload = validate_run(run_dir)
                     self.assertFalse(payload["ok"])
                     self.assertTrue(
@@ -213,7 +213,7 @@ class ValidationTests(unittest.TestCase):
             external_events = root / "external-rollout.jsonl"
             external_events.write_text('{"type":"turn.completed"}\n', encoding="utf-8")
             records[2]["events"] = str(external_events)
-            write_ledger(run_dir, records)
+            write_journal(run_dir, records)
             self.assertTrue(validate_run(run_dir)["ok"])
 
             (execution_dir / "handoff.md").write_text("", encoding="utf-8")
@@ -222,7 +222,7 @@ class ValidationTests(unittest.TestCase):
             self.assertTrue(any("handoff is missing or empty" in x for x in complete["issues"]))
 
             records[3]["status"] = "failed"
-            write_ledger(run_dir, records)
+            write_journal(run_dir, records)
             failed = validate_run(run_dir)
             self.assertTrue(failed["ok"], failed["issues"])
             self.assertTrue(any("handoff is missing or empty" in x for x in failed["warnings"]))
@@ -244,7 +244,7 @@ class ValidationTests(unittest.TestCase):
                     },
                 ]
             )
-            write_ledger(run_dir, records)
+            write_journal(run_dir, records)
             payload = validate_run(run_dir)
 
         self.assertTrue(payload["ok"], payload["issues"])
@@ -258,12 +258,12 @@ class ValidationTests(unittest.TestCase):
             run_dir, records = self.make_run(Path(tmp))
 
             records[3].pop("status")
-            write_ledger(run_dir, records)
+            write_journal(run_dir, records)
             missing_execution_status = validate_run(run_dir)
 
             records[3]["status"] = "complete"
             records[4].pop("result")
-            write_ledger(run_dir, records)
+            write_journal(run_dir, records)
             missing_verification_result = validate_run(run_dir)
 
         self.assertFalse(missing_execution_status["ok"])
@@ -287,7 +287,7 @@ class ValidationTests(unittest.TestCase):
             records.append(
                 {"type": "decision", "id": "decision-01", "task": "task-missing"}
             )
-            write_ledger(run_dir, records)
+            write_journal(run_dir, records)
             payload = validate_run(run_dir)
 
         self.assertFalse(payload["ok"])
@@ -310,7 +310,7 @@ class ValidationTests(unittest.TestCase):
                     {"type": "decision", "id": "decision-01"},
                 ]
             )
-            write_ledger(run_dir, records)
+            write_journal(run_dir, records)
             payload = validate_run(run_dir)
 
         self.assertFalse(payload["ok"])
@@ -321,7 +321,7 @@ class ValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             run_dir, records = self.make_run(Path(tmp))
             records[4]["evidence"] = ["evidence/missing.txt", 42]
-            write_ledger(run_dir, records)
+            write_journal(run_dir, records)
             payload = validate_run(run_dir)
 
         self.assertFalse(payload["ok"])
@@ -341,7 +341,7 @@ class ValidationTests(unittest.TestCase):
                     {"type": "run_closed", "judgment": "blocked"},
                 ]
             )
-            write_ledger(run_dir, records)
+            write_journal(run_dir, records)
             payload = validate_run(run_dir)
 
         self.assertTrue(payload["ok"], payload["issues"])

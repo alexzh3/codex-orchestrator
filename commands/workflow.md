@@ -1,5 +1,5 @@
 ---
-description: Run the prompt-first Claude-Codex workflow end to end, from ledger initialization and execution through verification, closure, and the final report.
+description: Run the prompt-first Claude-Codex workflow end to end, from journal initialization and execution through verification, closure, and the final report.
 ---
 
 # Workflow

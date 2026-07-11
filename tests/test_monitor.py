@@ -34,7 +34,7 @@ def write_jsonl(path: Path, records: list[dict[str, object]]) -> None:
     path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
 
 
-def ledger_record(kind: str, **values: object) -> dict[str, object]:
+def journal_entry(kind: str, **values: object) -> dict[str, object]:
     return {"type": kind, "recorded_at": "2026-07-10T12:00:00Z", **values}
 
 
@@ -60,7 +60,7 @@ class MonitorTests(unittest.TestCase):
             if path.is_absolute() and not path.is_relative_to(run_dir)
             else str(path.relative_to(run_dir))
         )
-        record = ledger_record(
+        record = journal_entry(
             "execution",
             task="task-01",
             agent=agent,
@@ -85,18 +85,18 @@ class MonitorTests(unittest.TestCase):
                 ],
             )
             write_jsonl(
-                active / "ledger.jsonl",
-                [ledger_record("run_started", run_id="run-active"), execution],
+                active / "journal.jsonl",
+                [journal_entry("run_started", run_id="run-active"), execution],
             )
 
             closed = self.make_run(root, "run-closed")
             closed_execution, closed_events = self.add_execution(closed)
             write_jsonl(
-                closed / "ledger.jsonl",
+                closed / "journal.jsonl",
                 [
-                    ledger_record("run_started", run_id="run-closed"),
+                    journal_entry("run_started", run_id="run-closed"),
                     closed_execution,
-                    ledger_record("run_closed", judgment="passed"),
+                    journal_entry("run_closed", judgment="passed"),
                 ],
             )
             now = time.time() + 10
@@ -127,12 +127,12 @@ class MonitorTests(unittest.TestCase):
                 events=[{"type": "turn.completed", "thread_id": "second"}],
             )
             write_jsonl(
-                run_dir / "ledger.jsonl",
+                run_dir / "journal.jsonl",
                 [
-                    ledger_record("run_started", run_id="run"),
+                    journal_entry("run_started", run_id="run"),
                     first,
                     second,
-                    ledger_record(
+                    journal_entry(
                         "execution_result",
                         task="task-01",
                         agent="codex-review-01",
@@ -168,8 +168,8 @@ class MonitorTests(unittest.TestCase):
                 ],
             )
             write_jsonl(
-                run_dir / "ledger.jsonl",
-                [ledger_record("run_started", run_id="run"), execution],
+                run_dir / "journal.jsonl",
+                [journal_entry("run_started", run_id="run"), execution],
             )
 
             result = run_monitor(str(run_dir), "--once")
@@ -205,8 +205,8 @@ class MonitorTests(unittest.TestCase):
                 ],
             )
             write_jsonl(
-                run_dir / "ledger.jsonl",
-                [ledger_record("run_started", run_id="run"), execution],
+                run_dir / "journal.jsonl",
+                [journal_entry("run_started", run_id="run"), execution],
             )
 
             result = run_monitor(str(run_dir), "--once", "--stale-seconds", "-1")
@@ -302,7 +302,7 @@ class MonitorTests(unittest.TestCase):
             _, path = self.add_execution(
                 run_dir, events=[{"type": "turn.completed", "thread_id": "fallback"}]
             )
-            (run_dir / "ledger.jsonl").write_text("not json\n", encoding="utf-8")
+            (run_dir / "journal.jsonl").write_text("not json\n", encoding="utf-8")
 
             result = run_monitor("--repo", str(root), "--once")
 
