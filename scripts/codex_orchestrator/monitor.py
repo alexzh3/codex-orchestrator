@@ -90,7 +90,7 @@ def inflight_targets(run_dir: Path) -> tuple[list[MonitorTarget], list[str]]:
 
 def run_activity_mtime(run_dir: Path) -> float:
     targets, _ = inflight_targets(run_dir)
-    mtimes = [target.path.stat().st_mtime for target in targets if target.path.exists()]
+    mtimes = [target.path.stat().st_mtime for target in targets if target.path.is_file()]
     if mtimes:
         return max(mtimes)
     try:
@@ -171,14 +171,12 @@ def monitor_payload(
     kind: str,
     target: MonitorTarget,
     event: dict[str, object] | None,
-    offset: int,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "type": kind,
         "path": str(target.path),
         "source": target.source,
         "thread_id": thread_id_from(event or {}, target.path.stem),
-        "offset": offset,
         "mtime": int(target.path.stat().st_mtime),
     }
     if target.agent:
@@ -195,7 +193,6 @@ def terminal_notification(
     status: str,
     details: dict[str, object],
     terminal: EventRecord | None,
-    offset: int,
 ) -> dict[str, object] | None:
     notification_types = {
         "complete": "codex_session_complete",
@@ -204,7 +201,7 @@ def terminal_notification(
     }
     if terminal is None or status not in notification_types:
         return None
-    payload = monitor_payload(notification_types[status], target, terminal.event, offset)
+    payload = monitor_payload(notification_types[status], target, terminal.event)
     if status == "complete" and "usage" in details:
         payload["usage"] = details["usage"]
     elif status == "failed" and target.source == "exec":
@@ -231,25 +228,20 @@ def scan_monitor_target(
     target: MonitorTarget, state: dict[str, object], stale_seconds: int
 ) -> tuple[bool, bool, bool, bool]:
     path = target.path
-    if not path.exists() or not path.is_file():
+    if not path.is_file():
         return False, False, False, False
-    initial_read = "offset" not in state
-    offset = state.get("offset")
-    _, records, start, next_offset, parse_errors = read_stream(
-        path,
-        target.source,
-        since_offset=int(offset) if isinstance(offset, int) else None,
+    records, history_truncated, parse_errors = read_stream(
+        path, target.source, include_unterminated=True
     )
-    state["offset"] = next_offset
     compat = compatibility(
         records,
         target.source,
-        history_truncated=initial_read and target.source == "ide" and start > 0,
+        history_truncated=history_truncated,
     )
     if compat["parse_confidence"] == "low":
-        marker = f"{start}:{next_offset}:{','.join(compat['unknown_event_types'])}"
+        marker = f"{path.stat().st_mtime_ns}:{','.join(compat['unknown_event_types'])}"
         if state.get("compatibility_marker") != marker:
-            payload = monitor_payload("codex_session_unknown", target, None, next_offset)
+            payload = monitor_payload("codex_session_unknown", target, None)
             payload["compatibility"] = compat
             if parse_errors:
                 payload["parse_errors"] = parse_errors
@@ -260,7 +252,7 @@ def scan_monitor_target(
         status, details, terminal_event = classify_exec(records)
     else:
         status, details, terminal_event = classify_ide(records, path)
-    notification = terminal_notification(target, status, details, terminal_event, next_offset)
+    notification = terminal_notification(target, status, details, terminal_event)
     terminal = notification is not None
     failed = status == "failed" and terminal
     if notification is not None:
@@ -270,10 +262,10 @@ def scan_monitor_target(
 
     stale = False
     idle_seconds = int(time.time() - path.stat().st_mtime)
-    stale_marker = f"{path.stat().st_mtime_ns}:{next_offset}"
+    stale_marker = str(path.stat().st_mtime_ns)
     if not terminal and stale_seconds >= 0 and idle_seconds >= stale_seconds:
         if state.get("stale_marker") != stale_marker:
-            payload = monitor_payload("codex_session_stale", target, None, next_offset)
+            payload = monitor_payload("codex_session_stale", target, None)
             payload["idle_seconds"] = idle_seconds
             if parse_errors:
                 payload["parse_errors"] = parse_errors
@@ -284,20 +276,6 @@ def scan_monitor_target(
 
 
 def command_monitor(args: argparse.Namespace) -> int:
-    if args.log:
-        missing = [Path(value).expanduser() for value in args.log]
-        missing = [path for path in missing if not path.is_file()]
-        if missing:
-            for path in missing:
-                emit_monitor(
-                    {
-                        "type": "monitor_error",
-                        "path": str(path),
-                        "message": "event stream does not exist or is not a file",
-                    }
-                )
-            return 1
-
     states: dict[Path, dict[str, object]] = {}
     emitted_warnings: set[str] = set()
     while True:
@@ -308,10 +286,23 @@ def command_monitor(args: argparse.Namespace) -> int:
                 emitted_warnings.add(warning)
         any_failed = any(bool(state.get("failed")) for state in states.values())
         any_unknown = any(bool(state.get("unknown")) for state in states.values())
+        any_error = any(bool(state.get("error")) for state in states.values())
         watched_done = bool(targets)
         for target in targets:
             state = states.setdefault(target.path, {})
             if state.get("done"):
+                continue
+            if not target.path.is_file():
+                emit_monitor(
+                    {
+                        "type": "monitor_error",
+                        "path": str(target.path),
+                        "message": "event stream does not exist or is not a file",
+                    }
+                )
+                state["done"] = True
+                state["error"] = True
+                any_error = True
                 continue
             terminal, failed, stale, unknown = scan_monitor_target(
                 target, state, args.stale_seconds
@@ -327,10 +318,14 @@ def command_monitor(args: argparse.Namespace) -> int:
             if not state.get("done"):
                 watched_done = False
         if args.once:
+            if any_error:
+                return 1
             if any_unknown:
                 return 2
             return 1 if any_failed and args.fail_on_session_failure else 0
         if targets and watched_done:
+            if any_error:
+                return 1
             if any_unknown:
                 return 2
             return 1 if any_failed and args.fail_on_session_failure else 0

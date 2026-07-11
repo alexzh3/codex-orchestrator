@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PARSER_VERSION = "0.1.0"
-TAIL_LIMIT_BYTES = 500_000
+IDE_HISTORY_LIMIT_BYTES = 500_000
 
 EXEC_EVENT_TYPES = {
     "thread.started",
@@ -73,62 +73,48 @@ def read_stream(
     path: Path,
     source: str,
     *,
-    since_offset: int | None = None,
     include_unterminated: bool = False,
-    keep_lines: bool = False,
-) -> tuple[list[str], list[EventRecord], int, int, int]:
+) -> tuple[list[EventRecord], bool, int]:
     size = path.stat().st_size
-    if since_offset is None or since_offset > size:
-        requested_offset = 0
-    else:
-        requested_offset = max(0, since_offset)
-    bounded_initial_tail = (
-        source == "ide" and since_offset is None and size > TAIL_LIMIT_BYTES
-    )
-    start = size - TAIL_LIMIT_BYTES if bounded_initial_tail else requested_offset
-    lines: list[str] = []
+    history_truncated = source == "ide" and size > IDE_HISTORY_LIMIT_BYTES
+    start = size - IDE_HISTORY_LIMIT_BYTES if history_truncated else 0
     records: list[EventRecord] = []
     parse_errors = 0
-    end = start
 
     with path.open("rb") as handle:
         handle.seek(start)
-        if bounded_initial_tail and start > 0:
+        if history_truncated and start > 0:
             handle.seek(start - 1)
             starts_on_boundary = handle.read(1) == b"\n"
             handle.seek(start)
             if not starts_on_boundary:
                 handle.readline()
-            start = handle.tell()
-            end = start
         while True:
-            line_start = handle.tell()
             raw_line = handle.readline()
             if raw_line == b"":
                 break
-            if not raw_line.endswith(b"\n") and not include_unterminated:
-                end = line_start
+            terminated = raw_line.endswith(b"\n")
+            if not terminated and not include_unterminated:
                 break
-            end = handle.tell()
             try:
                 line = raw_line.decode("utf-8")
             except UnicodeDecodeError:
-                line = raw_line.decode("utf-8", errors="replace")
-                record = EventRecord({"_parse_error": "invalid UTF-8"}, "<invalid-json>")
-                records.append(record)
+                if not terminated:
+                    break
+                records.append(
+                    EventRecord({"_parse_error": "invalid UTF-8"}, "<invalid-json>")
+                )
                 parse_errors += 1
-                if keep_lines:
-                    lines.append(line)
                 continue
-            if keep_lines:
-                lines.append(line)
             record = decode_event_line(line)
             if record is None:
                 continue
+            if not terminated and record.event_type == "<invalid-json>":
+                break
             records.append(record)
             if record.event_type in {"<invalid-json>", "<non-object>"}:
                 parse_errors += 1
-    return lines, records, start, end, parse_errors
+    return records, history_truncated, parse_errors
 
 
 def known_types_for_source(source: str) -> set[str]:
@@ -208,9 +194,9 @@ def source_from_events(records: list[EventRecord]) -> str:
 def source_for_path(path: Path | None, declared: object = None) -> str:
     if isinstance(declared, str) and declared in {"exec", "ide"}:
         return str(declared)
-    if path is None or not path.exists():
+    if path is None or not path.is_file():
         return "exec"
-    _, records, _, _, _ = read_stream(path, "ide")
+    records, _, _ = read_stream(path, "ide")
     return source_from_events(records)
 
 

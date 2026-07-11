@@ -1,7 +1,8 @@
 # Monitoring And Codex Sessions
 
-Use the bundled session tools for compact status and deltas. Do not load an entire event stream
-unless a bounded inspection cannot explain an ambiguous or failed session.
+Use the bundled tools for compact status snapshots. They parse event streams locally; do not copy
+raw logs into Claude's context unless a focused inspection is needed for an ambiguous or failed
+session.
 
 ## Headless Codex
 
@@ -75,18 +76,16 @@ Resolve the rollout path on attachment and after resumption:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" find <thread-uuid> --json
 ```
 
-## Session Tools And Monitor
+## Session State And Monitor
 
-Use the `state` and `tail` commands instead of raw grep:
+Use `state` for a compact session snapshot:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" state <session-id> --source exec --file <events-jsonl> --json
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" tail <session-id> --source exec --file <events-jsonl> --since-offset <offset> --json
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" state <session-id> --source ide --file <rollout-jsonl> --json
 ```
 
-Keep `next_offset` in the caller, not the journal. After context loss, call `state` and continue from
-its `next_offset`.
+After context loss, call `state` again. Do not persist parser positions in the journal.
 
 Monitor an active run or explicit stream:
 
@@ -98,6 +97,5 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" monitor \
 ```
 
 The monitor is read-only and emits completion, failure, blocking, unknown-format, missing-stream,
-or stale notifications. Use bounded raw tails only when format confidence is low. Treat silence
-and staleness as ambiguous; inspect the handoff and repository before appending
-`execution_result`.
+or stale notifications. Treat silence and staleness as ambiguous; inspect the handoff and
+repository before appending `execution_result`.

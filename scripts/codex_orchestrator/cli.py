@@ -10,7 +10,6 @@ from collections import Counter
 from pathlib import Path
 
 from .events import (
-    PARSER_VERSION,
     classify_exec,
     classify_ide,
     compatibility,
@@ -53,13 +52,11 @@ def command_find(args: argparse.Namespace) -> int:
 def command_state(args: argparse.Namespace) -> int:
     source, path, source_warnings = source_and_path(args)
     if path is None:
-        records, start, end = [], 0, 0
+        records, history_truncated = [], False
     else:
-        _, records, start, end, _ = read_stream(
-            path, source, include_unterminated=True
-        )
+        records, history_truncated, _ = read_stream(path, source, include_unterminated=True)
     compat = compatibility(
-        records, source, history_truncated=source == "ide" and start > 0
+        records, source, history_truncated=history_truncated
     )
     compat["warnings"] = [*compat["warnings"], *source_warnings]
 
@@ -82,8 +79,6 @@ def command_state(args: argparse.Namespace) -> int:
             "path": str(path) if path else None,
             "status": "unknown",
             "compatibility": compat,
-            "offset": start,
-            "next_offset": end,
         }
         print(json_dumps(payload) if args.json else payload)
         print(incompatible_message(), file=sys.stderr)
@@ -101,58 +96,8 @@ def command_state(args: argparse.Namespace) -> int:
         "status": status,
         "details": details,
         "compatibility": compat,
-        "offset": start,
-        "next_offset": end,
     }
     print(json_dumps(payload) if args.json else payload)
-    return 0
-
-
-def command_tail(args: argparse.Namespace) -> int:
-    source, path, source_warnings = source_and_path(args)
-    if path is None:
-        payload = {
-            "thread_id": args.thread_id,
-            "source": source,
-            "path": None,
-            "events": [],
-            "offset": 0,
-            "next_offset": 0,
-            "compatibility": {
-                "parser_version": PARSER_VERSION,
-                "parse_confidence": "high",
-                "unknown_event_types": [],
-                "warnings": source_warnings,
-            },
-        }
-        print(json_dumps(payload) if args.json else "")
-        return 1
-
-    lines, records, start, end, _ = read_stream(
-        path,
-        source,
-        since_offset=args.since_offset,
-        keep_lines=not args.json,
-    )
-    compat = compatibility(records, source)
-    compat["warnings"] = [*compat["warnings"], *source_warnings]
-    if args.json:
-        payload = {
-            "thread_id": args.thread_id,
-            "source": source,
-            "path": str(path),
-            "events": [record.event for record in records],
-            "offset": start,
-            "next_offset": end,
-            "compatibility": compat,
-        }
-        print(json_dumps(payload))
-    else:
-        for line in lines:
-            print(line, end="")
-    if compat["parse_confidence"] == "low":
-        print(incompatible_message(), file=sys.stderr)
-        return 2
     return 0
 
 
@@ -186,12 +131,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--dump-event-types", action="store_true", help="Print recent event types."
     )
     state_parser.set_defaults(func=command_state)
-
-    tail_parser = subparsers.add_parser("tail", help="Read new events after an offset.")
-    tail_parser.add_argument("thread_id")
-    tail_parser.add_argument("--since-offset", required=True, type=int)
-    add_common_flags(tail_parser)
-    tail_parser.set_defaults(func=command_tail)
 
     monitor_parser = subparsers.add_parser(
         "monitor", help="Watch in-flight agent event streams from the prompt-first run layout."

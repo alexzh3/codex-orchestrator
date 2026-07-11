@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.codex_orchestrator.events import TAIL_LIMIT_BYTES, read_stream
+from scripts.codex_orchestrator.events import IDE_HISTORY_LIMIT_BYTES
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
@@ -27,44 +27,26 @@ def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.Complet
 
 
 class ToolTests(unittest.TestCase):
-    def test_reader_preserves_partial_lines_and_counts_parse_errors(self) -> None:
+    def test_state_ignores_an_incomplete_final_event(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "events.jsonl"
-            first = '{"type":"turn.started"}\n'
             path.write_text(
-                first + "not json\n[]\n" + '{"type":"turn.completed"', encoding="utf-8"
+                '{"type":"turn.started"}\n{"type":"turn.completed"',
+                encoding="utf-8",
             )
-
-            _, records, _, offset, parse_errors = read_stream(path, "exec", since_offset=0)
-            self.assertEqual(
-                [record.event_type for record in records],
-                ["turn.started", "<invalid-json>", "<non-object>"],
+            partial = run_cli(
+                "state", "partial", "--source", "exec", "--file", str(path), "--json"
             )
-            self.assertEqual(parse_errors, 2)
-            self.assertLess(offset, path.stat().st_size)
-
             with path.open("a", encoding="utf-8") as handle:
                 handle.write("}\n")
-            _, completed, _, next_offset, parse_errors = read_stream(
-                path, "exec", since_offset=offset
+            completed = run_cli(
+                "state", "complete", "--source", "exec", "--file", str(path), "--json"
             )
 
-        self.assertEqual([record.event_type for record in completed], ["turn.completed"])
-        self.assertEqual(parse_errors, 0)
-        self.assertGreater(next_offset, offset)
-
-    def test_reader_resets_a_stale_offset_after_stream_truncation(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "events.jsonl"
-            path.write_text('{"type":"turn.completed"}\n', encoding="utf-8")
-
-            _, records, start, end, _ = read_stream(
-                path, "exec", since_offset=path.stat().st_size + 100
-            )
-
-        self.assertEqual(start, 0)
-        self.assertEqual([record.event_type for record in records], ["turn.completed"])
-        self.assertGreater(end, start)
+        self.assertEqual(partial.returncode, 0, partial.stderr)
+        self.assertEqual(json.loads(partial.stdout)["status"], "active")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout)["status"], "complete")
 
     def test_state_accepts_a_complete_unterminated_final_event(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -310,110 +292,6 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(payload["compatibility"]["parse_confidence"], "low")
         self.assertIn("Do not infer session status", result.stderr)
 
-    def test_tail_since_offset_emits_json_events(self) -> None:
-        result = run_cli(
-            "tail",
-            "exec-complete-001",
-            "--since-offset",
-            "0",
-            "--source",
-            "exec",
-            "--file",
-            str(FIXTURES / "exec_stream.jsonl"),
-            "--json",
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        payload = json.loads(result.stdout)
-        self.assertGreater(payload["next_offset"], payload["offset"])
-        self.assertEqual(payload["events"][0]["type"], "thread.started")
-
-    def test_tail_retries_an_unterminated_final_event(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "events.jsonl"
-            complete = '{"type":"turn.started"}\n'
-            path.write_text(complete + '{"type":"turn.completed"', encoding="utf-8")
-
-            first = run_cli(
-                "tail",
-                "partial-event",
-                "--since-offset",
-                "0",
-                "--source",
-                "exec",
-                "--file",
-                str(path),
-                "--json",
-            )
-            first_payload = json.loads(first.stdout)
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write("}\n")
-            second = run_cli(
-                "tail",
-                "partial-event",
-                "--since-offset",
-                str(first_payload["next_offset"]),
-                "--source",
-                "exec",
-                "--file",
-                str(path),
-                "--json",
-            )
-
-        self.assertEqual(first.returncode, 0, first.stderr)
-        self.assertEqual([event["type"] for event in first_payload["events"]], ["turn.started"])
-        self.assertEqual(first_payload["next_offset"], len(complete.encode()))
-        self.assertEqual(second.returncode, 0, second.stderr)
-        self.assertEqual(json.loads(second.stdout)["events"][0]["type"], "turn.completed")
-
-    def test_tail_missing_source_returns_a_structured_error(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            result = run_cli(
-                "tail",
-                "missing-thread",
-                "--since-offset",
-                "0",
-                "--source",
-                "exec",
-                "--json",
-                env={"HOME": tmp},
-            )
-
-        self.assertEqual(result.returncode, 1, result.stderr)
-        payload = json.loads(result.stdout)
-        self.assertIsNone(payload["path"])
-        self.assertEqual(payload["events"], [])
-        self.assertIn("no event source found", payload["compatibility"]["warnings"][0])
-
-    def test_tail_supports_raw_output_and_rejects_incompatible_events(self) -> None:
-        raw = run_cli(
-            "tail",
-            "exec-complete-001",
-            "--since-offset",
-            "0",
-            "--source",
-            "exec",
-            "--file",
-            str(FIXTURES / "exec_stream.jsonl"),
-        )
-        incompatible = run_cli(
-            "tail",
-            "unknown-001",
-            "--since-offset",
-            "0",
-            "--source",
-            "ide",
-            "--file",
-            str(FIXTURES / "unknown_format.jsonl"),
-            "--json",
-        )
-
-        self.assertEqual(raw.returncode, 0, raw.stderr)
-        self.assertEqual(raw.stdout, (FIXTURES / "exec_stream.jsonl").read_text(encoding="utf-8"))
-        self.assertEqual(incompatible.returncode, 2)
-        compatibility = json.loads(incompatible.stdout)["compatibility"]
-        self.assertEqual(compatibility["parse_confidence"], "low")
-        self.assertIn("Do not infer session status", incompatible.stderr)
-
     def test_find_returns_the_newest_ide_rollout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             sessions = Path(tmp) / ".codex" / "sessions" / "2026" / "07" / "11"
@@ -467,7 +345,7 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(payload["status"], "idle")
         self.assertIsNone(payload["path"])
 
-    def test_ide_state_uses_a_bounded_initial_tail(self) -> None:
+    def test_ide_state_uses_bounded_recent_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "rollout.jsonl"
             terminal = json.dumps(
@@ -485,49 +363,9 @@ class ToolTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertGreater(payload["offset"], 0)
         self.assertEqual(payload["status"], "complete")
 
-    def test_explicit_zero_offset_reads_a_large_ide_stream_from_the_start(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "rollout.jsonl"
-            first = {
-                "payload": {
-                    "type": "agent_message",
-                    "message": "x" * (TAIL_LIMIT_BYTES + 1),
-                }
-            }
-            terminal = {
-                "payload": {
-                    "type": "thread_goal_updated",
-                    "goal": {"status": "complete", "text": "Finished"},
-                }
-            }
-            path.write_text(
-                json.dumps(first) + "\n" + json.dumps(terminal) + "\n",
-                encoding="utf-8",
-            )
-            result = run_cli(
-                "tail",
-                "large-ide",
-                "--source",
-                "ide",
-                "--file",
-                str(path),
-                "--since-offset",
-                "0",
-                "--json",
-            )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        payload = json.loads(result.stdout)
-        self.assertEqual(payload["offset"], 0)
-        self.assertEqual(
-            [event["payload"]["type"] for event in payload["events"]],
-            ["agent_message", "thread_goal_updated"],
-        )
-
-    def test_bounded_ide_tail_is_safe_at_a_multibyte_boundary(self) -> None:
+    def test_bounded_ide_read_is_safe_at_a_multibyte_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "rollout.jsonl"
             terminal = json.dumps(
@@ -550,9 +388,12 @@ class ToolTests(unittest.TestCase):
                     ensure_ascii=False,
                 )
                 raw = (first + "\n" + terminal + "\n").encode("utf-8")
-                if raw[len(raw) - TAIL_LIMIT_BYTES] & 0b1100_0000 == 0b1000_0000:
+                if raw[len(raw) - IDE_HISTORY_LIMIT_BYTES] & 0b1100_0000 == 0b1000_0000:
                     break
-            self.assertEqual(raw[len(raw) - TAIL_LIMIT_BYTES] & 0b1100_0000, 0b1000_0000)
+            self.assertEqual(
+                raw[len(raw) - IDE_HISTORY_LIMIT_BYTES] & 0b1100_0000,
+                0b1000_0000,
+            )
             path.write_bytes(raw)
             result = run_cli(
                 "state", "utf8-boundary", "--source", "ide", "--file", str(path), "--json"
@@ -569,7 +410,7 @@ class ToolTests(unittest.TestCase):
                     {
                         "payload": {
                             "type": "agent_message",
-                            "message": "x" * (TAIL_LIMIT_BYTES + 1),
+                            "message": "x" * (IDE_HISTORY_LIMIT_BYTES + 1),
                         }
                     }
                 )
