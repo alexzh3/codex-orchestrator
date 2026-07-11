@@ -49,8 +49,10 @@ when material output must be retained.
    `execution_result`.
 8. Evaluate acceptance criteria and record material checks as `verification`.
 9. Record only consequential resolutions or user dependencies as `decision`.
-10. Append a terminal `task` entry only when the focused work completes its remaining criteria;
-    otherwise leave the task active and return the unresolved work to the workflow.
+10. After evaluating the criteria, append `complete` when they are satisfied, `failed` when they
+    are conclusively unmet and no in-scope recovery remains, or `blocked` when a user or external
+    dependency prevents completion or judgment. Otherwise keep the task `active` and return the
+    unresolved work to the workflow.
 
 Routine bounded work needs Codex implementation plus Claude verification. Add a fresh reviewer only
 for material risk or a distinct unresolved question; do not repeat identical reviews.

@@ -20,8 +20,10 @@ git worktree add ../<repo>-codex-impl-01 -b codex-impl-01
 git worktree list
 ```
 
-Do not merge or remove a worktree until its execution has stopped, its handoff is saved, and Claude
-has inspected the diff.
+Do not integrate or remove a worktree until its execution has stopped, its handoff is saved, and
+Claude has inspected the diff. After accepting isolated work, integrate its commits into the target,
+inspect the resulting diff, and rerun the affected acceptance checks there. Mark the task complete
+and remove the worktree only after those target checks pass.
 
 ## Compute Gating
 

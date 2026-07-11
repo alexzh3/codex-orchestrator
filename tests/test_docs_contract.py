@@ -173,6 +173,43 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("nvidia-smi --query-gpu=memory.used,memory.total", compute)
         self.assertIn("nvidia-smi --query-compute-apps=pid,used_memory", compute)
 
+    def test_focused_cycle_defines_task_outcomes(self) -> None:
+        orchestrate = " ".join(
+            (ROOT / "skills/orchestrate/SKILL.md")
+            .read_text(encoding="utf-8")
+            .casefold()
+            .split()
+        )
+
+        self.assertIn("append `complete` when they are satisfied", orchestrate)
+        self.assertIn(
+            "`failed` when they are conclusively unmet and no in-scope recovery remains",
+            orchestrate,
+        )
+        self.assertIn("`blocked` when a user or external dependency prevents", orchestrate)
+        self.assertIn("otherwise keep the task `active`", orchestrate)
+
+    def test_accepted_worktree_changes_are_reverified_in_the_target(self) -> None:
+        compute = " ".join(
+            (ROOT / "skills/orchestrate/references/compute.md")
+            .read_text(encoding="utf-8")
+            .casefold()
+            .split()
+        )
+
+        self.assertIn("integrate its commits into the target", compute)
+        self.assertIn("rerun the affected acceptance checks there", compute)
+        self.assertIn("only after those target checks pass", compute)
+
+    def test_replay_directory_is_documented_as_a_generated_test_scaffold(self) -> None:
+        contract = " ".join(
+            (ROOT / "docs/orchestration-contract.md").read_text(encoding="utf-8").split()
+        )
+
+        self.assertIn("checked-in input scaffold, not a standalone valid closed run", contract)
+        self.assertIn("test_prompt_first_workflow.py", contract)
+        self.assertIn("validates the completed copy", contract)
+
     def test_review_effort_is_risk_scaled(self) -> None:
         review = " ".join(
             (ROOT / "skills/orchestrate/references/review.md")

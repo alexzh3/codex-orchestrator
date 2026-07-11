@@ -145,8 +145,10 @@ Keep both observations. A passing rerun supports acceptance of the corrected rep
 does not erase the earlier failure. Record the failed verification, fix execution, and passing
 verification.
 
-A replay fixture is available at
-[`tests/replay/long-run-001/journal.jsonl`](../tests/replay/long-run-001/journal.jsonl).
+[`tests/replay/long-run-001/`](../tests/replay/long-run-001/) is a checked-in input scaffold, not a
+standalone valid closed run. [`test_prompt_first_workflow.py`](../tests/test_prompt_first_workflow.py)
+copies it, generates the fake execution outputs, evidence, and example repository files, then
+validates the completed copy.
 
 ## Descriptive Validation
 
