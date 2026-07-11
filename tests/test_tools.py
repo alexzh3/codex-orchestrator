@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.codex_orchestrator.events import read_stream
+from scripts.codex_orchestrator.events import TAIL_LIMIT_BYTES, read_stream
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
@@ -52,6 +52,33 @@ class ToolTests(unittest.TestCase):
         self.assertEqual([record.event_type for record in completed], ["turn.completed"])
         self.assertEqual(parse_errors, 0)
         self.assertGreater(next_offset, offset)
+
+    def test_reader_resets_a_stale_offset_after_stream_truncation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            path.write_text('{"type":"turn.completed"}\n', encoding="utf-8")
+
+            _, records, start, end, _ = read_stream(
+                path, "exec", since_offset=path.stat().st_size + 100
+            )
+
+        self.assertEqual(start, 0)
+        self.assertEqual([record.event_type for record in records], ["turn.completed"])
+        self.assertGreater(end, start)
+
+    def test_state_accepts_a_complete_unterminated_final_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            path.write_text(
+                '{"type":"turn.started"}\n{"type":"turn.completed"}',
+                encoding="utf-8",
+            )
+            result = run_cli(
+                "state", "unterminated", "--source", "exec", "--file", str(path), "--json"
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "complete")
 
     def test_exec_stream_completed_status(self) -> None:
         result = run_cli(
@@ -219,6 +246,35 @@ class ToolTests(unittest.TestCase):
             os.utime(path, (1, 1))
             result = run_cli(
                 "state", "ide-stale", "--source", "ide", "--file", str(path), "--json"
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "active")
+
+    def test_ide_function_call_output_does_not_signal_session_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rollout.jsonl"
+            write_records = [
+                {
+                    "payload": {
+                        "type": "thread_goal_updated",
+                        "goal": {"status": "active", "text": "Continue the task"},
+                    }
+                },
+                {
+                    "payload": {
+                        "type": "function_call",
+                        "name": "shell",
+                        "arguments": {"command": "printf 'FAILED intermediate check'"},
+                    }
+                },
+            ]
+            path.write_text(
+                "".join(json.dumps(record) + "\n" for record in write_records),
+                encoding="utf-8",
+            )
+            result = run_cli(
+                "state", "ide-tool-output", "--source", "ide", "--file", str(path), "--json"
             )
 
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -431,6 +487,107 @@ class ToolTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertGreater(payload["offset"], 0)
         self.assertEqual(payload["status"], "complete")
+
+    def test_explicit_zero_offset_reads_a_large_ide_stream_from_the_start(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rollout.jsonl"
+            first = {
+                "payload": {
+                    "type": "agent_message",
+                    "message": "x" * (TAIL_LIMIT_BYTES + 1),
+                }
+            }
+            terminal = {
+                "payload": {
+                    "type": "thread_goal_updated",
+                    "goal": {"status": "complete", "text": "Finished"},
+                }
+            }
+            path.write_text(
+                json.dumps(first) + "\n" + json.dumps(terminal) + "\n",
+                encoding="utf-8",
+            )
+            result = run_cli(
+                "tail",
+                "large-ide",
+                "--source",
+                "ide",
+                "--file",
+                str(path),
+                "--since-offset",
+                "0",
+                "--json",
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["offset"], 0)
+        self.assertEqual(
+            [event["payload"]["type"] for event in payload["events"]],
+            ["agent_message", "thread_goal_updated"],
+        )
+
+    def test_bounded_ide_tail_is_safe_at_a_multibyte_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rollout.jsonl"
+            terminal = json.dumps(
+                {
+                    "payload": {
+                        "type": "thread_goal_updated",
+                        "goal": {"status": "complete", "text": "Finished"},
+                    }
+                }
+            )
+            raw = b""
+            for suffix in ("", "x"):
+                first = json.dumps(
+                    {
+                        "payload": {
+                            "type": "agent_message",
+                            "message": "é" * 300_000 + suffix,
+                        }
+                    },
+                    ensure_ascii=False,
+                )
+                raw = (first + "\n" + terminal + "\n").encode("utf-8")
+                if raw[len(raw) - TAIL_LIMIT_BYTES] & 0b1100_0000 == 0b1000_0000:
+                    break
+            self.assertEqual(raw[len(raw) - TAIL_LIMIT_BYTES] & 0b1100_0000, 0b1000_0000)
+            path.write_bytes(raw)
+            result = run_cli(
+                "state", "utf8-boundary", "--source", "ide", "--file", str(path), "--json"
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "complete")
+
+    def test_bounded_ide_history_without_lifecycle_is_low_confidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rollout.jsonl"
+            path.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "type": "agent_message",
+                            "message": "x" * (TAIL_LIMIT_BYTES + 1),
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = run_cli(
+                "state", "truncated-ide", "--source", "ide", "--file", str(path), "--json"
+            )
+
+        self.assertEqual(result.returncode, 2)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "unknown")
+        self.assertEqual(payload["compatibility"]["parse_confidence"], "low")
+        self.assertIn(
+            "bounded IDE history contains no lifecycle event",
+            payload["compatibility"]["warnings"],
+        )
 
 
 if __name__ == "__main__":

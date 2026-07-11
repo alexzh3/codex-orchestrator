@@ -70,33 +70,58 @@ def decode_event_line(line: str) -> EventRecord | None:
 
 
 def read_stream(
-    path: Path, source: str, *, since_offset: int | None = None
+    path: Path,
+    source: str,
+    *,
+    since_offset: int | None = None,
+    include_unterminated: bool = False,
+    keep_lines: bool = False,
 ) -> tuple[list[str], list[EventRecord], int, int, int]:
     size = path.stat().st_size
-    requested_offset = 0 if since_offset is None else max(0, min(since_offset, size))
-    bounded_initial_tail = source == "ide" and requested_offset == 0 and size > TAIL_LIMIT_BYTES
+    if since_offset is None or since_offset > size:
+        requested_offset = 0
+    else:
+        requested_offset = max(0, since_offset)
+    bounded_initial_tail = (
+        source == "ide" and since_offset is None and size > TAIL_LIMIT_BYTES
+    )
     start = size - TAIL_LIMIT_BYTES if bounded_initial_tail else requested_offset
     lines: list[str] = []
     records: list[EventRecord] = []
     parse_errors = 0
     end = start
 
-    with path.open("r", encoding="utf-8") as handle:
+    with path.open("rb") as handle:
         handle.seek(start)
-        if bounded_initial_tail:
-            handle.readline()
+        if bounded_initial_tail and start > 0:
+            handle.seek(start - 1)
+            starts_on_boundary = handle.read(1) == b"\n"
+            handle.seek(start)
+            if not starts_on_boundary:
+                handle.readline()
             start = handle.tell()
             end = start
         while True:
             line_start = handle.tell()
-            line = handle.readline()
-            if line == "":
+            raw_line = handle.readline()
+            if raw_line == b"":
                 break
-            if not line.endswith("\n"):
+            if not raw_line.endswith(b"\n") and not include_unterminated:
                 end = line_start
                 break
-            lines.append(line)
             end = handle.tell()
+            try:
+                line = raw_line.decode("utf-8")
+            except UnicodeDecodeError:
+                line = raw_line.decode("utf-8", errors="replace")
+                record = EventRecord({"_parse_error": "invalid UTF-8"}, "<invalid-json>")
+                records.append(record)
+                parse_errors += 1
+                if keep_lines:
+                    lines.append(line)
+                continue
+            if keep_lines:
+                lines.append(line)
             record = decode_event_line(line)
             if record is None:
                 continue
@@ -116,7 +141,9 @@ def is_reconnect_notice(record: EventRecord) -> bool:
     return "reconnecting" in json_dumps(record.event).lower()
 
 
-def compatibility(records: list[EventRecord], source: str) -> dict[str, object]:
+def compatibility(
+    records: list[EventRecord], source: str, *, history_truncated: bool = False
+) -> dict[str, object]:
     known = known_types_for_source(source)
     unknown = sorted(
         {
@@ -132,7 +159,16 @@ def compatibility(records: list[EventRecord], source: str) -> dict[str, object]:
     warnings: list[str] = []
     if not records:
         warnings.append("no events found")
-    parse_confidence = "low" if records and unknown_count > known_count else "high"
+    missing_ide_lifecycle = (
+        source == "ide"
+        and history_truncated
+        and not any(record.event_type == "thread_goal_updated" for record in records)
+    )
+    if missing_ide_lifecycle:
+        warnings.append("bounded IDE history contains no lifecycle event")
+    parse_confidence = (
+        "low" if (records and unknown_count > known_count) or missing_ide_lifecycle else "high"
+    )
     return {
         "parser_version": PARSER_VERSION,
         "parse_confidence": parse_confidence,
@@ -170,7 +206,7 @@ def source_from_events(records: list[EventRecord]) -> str:
 
 
 def source_for_path(path: Path | None, declared: object = None) -> str:
-    if declared in {"exec", "ide"}:
+    if isinstance(declared, str) and declared in {"exec", "ide"}:
         return str(declared)
     if path is None or not path.exists():
         return "exec"
@@ -274,7 +310,9 @@ def classify_ide(
 
     for record in records:
         text = event_text(record.event)
-        if any(hint in text for hint in FAILURE_HINTS):
+        if record.event_type == "agent_message" and any(
+            hint in text for hint in FAILURE_HINTS
+        ):
             status = "failed"
             terminal = record
         if record.event_type == "thread_goal_updated":
@@ -287,7 +325,11 @@ def classify_ide(
                 if status_value is not None:
                     goal_status = str(status_value)
                     status = goal_status_to_session_status(goal_status) or "idle"
-                    terminal = record if status in {"complete", "failed"} else None
+                    terminal = (
+                        record
+                        if status in {"complete", "failed", "awaiting-approval"}
+                        else None
+                    )
                 goal_text = str(text_value) if text_value is not None else goal_text
         elif record.event_type == "agent_message":
             last_agent_text = text

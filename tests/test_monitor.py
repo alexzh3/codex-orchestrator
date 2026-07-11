@@ -194,6 +194,42 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(notification["source"], "ide")
         self.assertEqual(notification["path"], str(rollout))
 
+    def test_blocked_ide_goal_emits_a_terminal_notification(self) -> None:
+        for goal_status in ("blocked", "awaiting-approval"):
+            with self.subTest(goal_status=goal_status), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                run_dir = root / "run"
+                run_dir.mkdir()
+                rollout = root / "sessions" / "rollout-external.jsonl"
+                execution, _ = self.add_execution(
+                    run_dir,
+                    event_path=rollout,
+                    source="ide",
+                    events=[
+                        {
+                            "payload": {
+                                "type": "thread_goal_updated",
+                                "goal": {
+                                    "status": goal_status,
+                                    "text": "Needs user approval",
+                                },
+                            }
+                        }
+                    ],
+                )
+                write_jsonl(
+                    run_dir / "journal.jsonl",
+                    [journal_entry("run_started", run_id="run"), execution],
+                )
+
+                result = run_monitor(str(run_dir), "--once")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            notification = json.loads(result.stdout)
+            self.assertEqual(notification["type"], "codex_session_blocked")
+            self.assertEqual(notification["goal_status"], goal_status)
+            self.assertEqual(notification["goal_text"], "Needs user approval")
+
     def test_ide_monitor_uses_latest_goal_state_in_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -345,6 +381,61 @@ class MonitorTests(unittest.TestCase):
         notification = json.loads(result.stdout)
         self.assertEqual(notification["type"], "codex_session_complete")
         self.assertEqual(notification["parse_errors"], 1)
+
+    def test_low_parser_confidence_stops_before_a_later_terminal_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            write_jsonl(
+                path,
+                [
+                    {"type": "future.event.one"},
+                    {"type": "future.event.two"},
+                ],
+            )
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "monitor",
+                    "--log",
+                    str(path),
+                    "--source",
+                    "exec",
+                    "--poll-interval",
+                    "0.05",
+                    "--stale-seconds",
+                    "-1",
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=ROOT,
+            )
+            try:
+                time.sleep(0.15)
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write('{"type":"turn.completed","thread_id":"not-trusted"}\n')
+                stdout, stderr = process.communicate(timeout=5)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+
+        self.assertEqual(process.returncode, 2, stderr)
+        notifications = [json.loads(line) for line in stdout.splitlines()]
+        self.assertEqual([item["type"] for item in notifications], ["codex_session_unknown"])
+        self.assertEqual(notifications[0]["compatibility"]["parse_confidence"], "low")
+
+    def test_explicit_missing_log_is_an_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "missing-events.jsonl"
+            result = run_monitor("--log", str(path), "--source", "exec", "--once")
+
+        self.assertEqual(result.returncode, 1)
+        notification = json.loads(result.stdout)
+        self.assertEqual(notification["type"], "monitor_error")
+        self.assertEqual(notification["path"], str(path))
+        self.assertIn("does not exist", notification["message"])
 
     def test_invalid_lifecycle_uses_new_layout_mtime_fallback_with_warning(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

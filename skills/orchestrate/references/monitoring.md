@@ -97,6 +97,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" monitor \
   --log <events-jsonl> --fail-on-session-failure
 ```
 
-The monitor is read-only and emits completion, failure, or stale notifications. Use bounded raw
-tails only when format confidence is low. Treat silence and staleness as ambiguous; inspect the
-handoff and repository before appending `execution_result`.
+The monitor is read-only and emits completion, failure, blocking, unknown-format, missing-stream,
+or stale notifications. Use bounded raw tails only when format confidence is low. Treat silence
+and staleness as ambiguous; inspect the handoff and repository before appending
+`execution_result`.

@@ -55,8 +55,12 @@ def command_state(args: argparse.Namespace) -> int:
     if path is None:
         records, start, end = [], 0, 0
     else:
-        _, records, start, end, _ = read_stream(path, source)
-    compat = compatibility(records, source)
+        _, records, start, end, _ = read_stream(
+            path, source, include_unterminated=True
+        )
+    compat = compatibility(
+        records, source, history_truncated=source == "ide" and start > 0
+    )
     compat["warnings"] = [*compat["warnings"], *source_warnings]
 
     if args.dump_event_types:
@@ -125,7 +129,10 @@ def command_tail(args: argparse.Namespace) -> int:
         return 1
 
     lines, records, start, end, _ = read_stream(
-        path, source, since_offset=args.since_offset
+        path,
+        source,
+        since_offset=args.since_offset,
+        keep_lines=not args.json,
     )
     compat = compatibility(records, source)
     compat["warnings"] = [*compat["warnings"], *source_warnings]

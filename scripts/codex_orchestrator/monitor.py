@@ -10,6 +10,7 @@ from .events import (
     EventRecord,
     classify_exec,
     classify_ide,
+    compatibility,
     event_text,
     json_dumps,
     read_stream,
@@ -61,7 +62,9 @@ def inflight_targets(run_dir: Path) -> tuple[list[MonitorTarget], list[str]]:
         for record in records
         if record.get("type") == "execution_result"
         for key in [execution_key(record)]
-        if key is not None and record.get("status") in TERMINAL_EXECUTION_STATUSES
+        if key is not None
+        and isinstance(record.get("status"), str)
+        and record.get("status") in TERMINAL_EXECUTION_STATUSES
     }
     targets: list[MonitorTarget] = []
     for record in records:
@@ -194,10 +197,14 @@ def terminal_notification(
     terminal: EventRecord | None,
     offset: int,
 ) -> dict[str, object] | None:
-    if terminal is None or status not in {"complete", "failed"}:
+    notification_types = {
+        "complete": "codex_session_complete",
+        "failed": "codex_session_failed",
+        "awaiting-approval": "codex_session_blocked",
+    }
+    if terminal is None or status not in notification_types:
         return None
-    notification_type = "codex_session_complete" if status == "complete" else "codex_session_failed"
-    payload = monitor_payload(notification_type, target, terminal.event, offset)
+    payload = monitor_payload(notification_types[status], target, terminal.event, offset)
     if status == "complete" and "usage" in details:
         payload["usage"] = details["usage"]
     elif status == "failed" and target.source == "exec":
@@ -209,6 +216,10 @@ def terminal_notification(
         hint in event_text(terminal.event) for hint in FAILURE_HINTS
     ):
         payload["message"] = event_text(terminal.event)
+    elif status == "awaiting-approval":
+        for key in ("goal_status", "goal_text"):
+            if key in details:
+                payload[key] = details[key]
     return payload
 
 
@@ -218,14 +229,33 @@ def emit_monitor(payload: dict[str, object]) -> None:
 
 def scan_monitor_target(
     target: MonitorTarget, state: dict[str, object], stale_seconds: int
-) -> tuple[bool, bool, bool]:
+) -> tuple[bool, bool, bool, bool]:
     path = target.path
     if not path.exists() or not path.is_file():
-        return False, False, False
-    _, records, _, next_offset, parse_errors = read_stream(
-        path, target.source, since_offset=int(state.get("offset", 0))
+        return False, False, False, False
+    initial_read = "offset" not in state
+    offset = state.get("offset")
+    _, records, start, next_offset, parse_errors = read_stream(
+        path,
+        target.source,
+        since_offset=int(offset) if isinstance(offset, int) else None,
     )
     state["offset"] = next_offset
+    compat = compatibility(
+        records,
+        target.source,
+        history_truncated=initial_read and target.source == "ide" and start > 0,
+    )
+    if compat["parse_confidence"] == "low":
+        marker = f"{start}:{next_offset}:{','.join(compat['unknown_event_types'])}"
+        if state.get("compatibility_marker") != marker:
+            payload = monitor_payload("codex_session_unknown", target, None, next_offset)
+            payload["compatibility"] = compat
+            if parse_errors:
+                payload["parse_errors"] = parse_errors
+            emit_monitor(payload)
+            state["compatibility_marker"] = marker
+        return False, False, False, True
     if target.source == "exec":
         status, details, terminal_event = classify_exec(records)
     else:
@@ -250,10 +280,24 @@ def scan_monitor_target(
             emit_monitor(payload)
             state["stale_marker"] = stale_marker
             stale = True
-    return terminal, failed, stale
+    return terminal, failed, stale, False
 
 
 def command_monitor(args: argparse.Namespace) -> int:
+    if args.log:
+        missing = [Path(value).expanduser() for value in args.log]
+        missing = [path for path in missing if not path.is_file()]
+        if missing:
+            for path in missing:
+                emit_monitor(
+                    {
+                        "type": "monitor_error",
+                        "path": str(path),
+                        "message": "event stream does not exist or is not a file",
+                    }
+                )
+            return 1
+
     states: dict[Path, dict[str, object]] = {}
     emitted_warnings: set[str] = set()
     while True:
@@ -263,21 +307,31 @@ def command_monitor(args: argparse.Namespace) -> int:
                 emit_monitor({"type": "monitor_warning", "message": warning})
                 emitted_warnings.add(warning)
         any_failed = any(bool(state.get("failed")) for state in states.values())
+        any_unknown = any(bool(state.get("unknown")) for state in states.values())
         watched_done = bool(targets)
         for target in targets:
-            state = states.setdefault(target.path, {"offset": 0})
+            state = states.setdefault(target.path, {})
             if state.get("done"):
                 continue
-            terminal, failed, stale = scan_monitor_target(target, state, args.stale_seconds)
-            if terminal or stale:
+            terminal, failed, stale, unknown = scan_monitor_target(
+                target, state, args.stale_seconds
+            )
+            if terminal or stale or unknown:
                 state["done"] = True
                 state["failed"] = failed
+                state["unknown"] = unknown
             if failed:
                 any_failed = True
+            if unknown:
+                any_unknown = True
             if not state.get("done"):
                 watched_done = False
         if args.once:
+            if any_unknown:
+                return 2
             return 1 if any_failed and args.fail_on_session_failure else 0
         if targets and watched_done:
+            if any_unknown:
+                return 2
             return 1 if any_failed and args.fail_on_session_failure else 0
         time.sleep(max(0.1, args.poll_interval))
