@@ -9,6 +9,20 @@ Allowed outcomes are:
 - `claude_decision`: Claude makes the final call and records rationale and risk.
 - `user_action_required`: progress or acceptance needs an explicit user choice or external action.
 
+## Independence, Diversity, And Selection
+
+Context independence and model-family diversity are different. This plugin's normal pairing is the
+Anthropic Claude family in Claude Code and the OpenAI Codex/GPT family in Codex. Codex-implemented
+work receives cross-family evaluation when Claude performs its own verification. An additional
+fresh Codex reviewer adds context independence and a complementary lens, but it does not add
+model-family diversity. When Claude authored the work, prefer Codex review when a second model
+materially reduces risk.
+
+Agent count is never a decision rule. Repeated model claims remain claims unless supported by
+distinct inspectable evidence. Select a candidate by acceptance fit, direct evidence, risk,
+simplicity, and reversibility—not by which conclusion is more popular. Record the compared sources
+in the existing `basis`; do not infer confidence from vote count.
+
 Record the concrete `finding`, chosen `resolution`, supporting `basis` references, and `risk`.
 References normally point to verification IDs, execution handoffs, repository files, or evidence
 paths. A decision explains how observations were weighed; it does not erase a failed verification.

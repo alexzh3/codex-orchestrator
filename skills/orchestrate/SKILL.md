@@ -32,8 +32,10 @@ Keep durable run material under:
 
 Agent names use `<provider>-<primary-role>-<sequence>`, for example `codex-impl-01`,
 `codex-review-01`, or `claude-review-01`. A persistent agent may have several numbered executions.
-Resume a relevant native session under the same agent directory; create a new agent only for
-unrelated work, required isolation, an unusable session, or an explicit request for a fresh one.
+Resume a relevant implementation, fix, or targeted-recheck session under the same agent directory.
+Start a fresh named agent and native session for an initial independent review or unanchored
+alternative; otherwise create one only for unrelated work, required isolation, an unusable session,
+or an explicit request for a fresh one.
 
 Each prompted execution directory contains:
 

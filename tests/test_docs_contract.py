@@ -65,7 +65,9 @@ class DocumentationContractTests(unittest.TestCase):
     def test_readme_diagrams_the_full_workflow(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-        self.assertIn("## Full Workflow", readme)
+        self.assertTrue(
+            any(heading in readme for heading in ("## Full Workflow", "## Workflow Diagram"))
+        )
         self.assertIn("```mermaid\nflowchart TD", readme)
         for step in (
             "Codex reviews the plan when useful",
@@ -100,6 +102,96 @@ class DocumentationContractTests(unittest.TestCase):
 
         self.assertIn("small omission check", contract)
         self.assertIn("does not enforce every documented field", contract)
+
+    def test_claude_verification_and_independent_review_use_different_context(self) -> None:
+        review = " ".join(
+            (ROOT / "skills/orchestrate/references/review.md")
+            .read_text(encoding="utf-8")
+            .casefold()
+            .split()
+        )
+        workflow = " ".join(
+            (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8").casefold().split()
+        )
+
+        self.assertIn("claude's own verification", review)
+        self.assertIn("read an agent handoff first", review)
+        self.assertIn("fresh named `codex-review-nn` agent", review)
+        self.assertIn("never resume the implementation session", review)
+        for excluded in (
+            "implementer handoff",
+            "claimed test results",
+            "earlier review verdicts",
+            "claude's tentative conclusion",
+        ):
+            self.assertIn(excluded, review)
+        self.assertIn("must not relay", review)
+        self.assertIn("first-pass prompt", review)
+        self.assertIn("initial independent review", workflow)
+        self.assertIn("starts a fresh agent and native session", workflow)
+
+    def test_review_target_is_immutable_or_has_a_scoped_reservation(self) -> None:
+        review = " ".join(
+            (ROOT / "skills/orchestrate/references/review.md")
+            .read_text(encoding="utf-8")
+            .casefold()
+            .split()
+        )
+        compute = " ".join(
+            (ROOT / "skills/orchestrate/references/compute.md")
+            .read_text(encoding="utf-8")
+            .casefold()
+            .split()
+        )
+
+        self.assertIn("--commit <sha>", review)
+        self.assertIn("immutable", review)
+        self.assertIn("no source-file write reservation", review)
+        self.assertIn("record the base head sha", review)
+        self.assertIn("independent `--uncommitted` review reserves", compute)
+        self.assertIn("task's declared `files`", compute)
+        self.assertIn("execution terminates", compute)
+        self.assertIn("terminal blocked/failed outcome", compute)
+        self.assertIn("disjoint work may continue", compute)
+        self.assertIn("separate worktree or commit a stable snapshot", compute)
+
+    def test_consensus_distinguishes_context_from_family_diversity(self) -> None:
+        consensus = " ".join(
+            (ROOT / "skills/orchestrate/references/consensus.md")
+            .read_text(encoding="utf-8")
+            .casefold()
+            .split()
+        )
+        report = " ".join(
+            (ROOT / "skills/report/SKILL.md").read_text(encoding="utf-8").casefold().split()
+        )
+
+        self.assertIn("anthropic claude family in claude code", consensus)
+        self.assertIn("openai codex/gpt family in codex", consensus)
+        self.assertIn("does not add model-family diversity", consensus)
+        self.assertIn("agent count is never a decision rule", consensus)
+        for criterion in ("acceptance fit", "direct evidence", "reversibility"):
+            self.assertIn(criterion, consensus)
+        self.assertIn("fresh codex review as context-independent", report)
+        self.assertIn("recorded claude-codex participation", report)
+
+    def test_review_effort_is_risk_scaled_and_lens_diverse(self) -> None:
+        review = " ".join(
+            (ROOT / "skills/orchestrate/references/review.md")
+            .read_text(encoding="utf-8")
+            .casefold()
+            .split()
+        )
+        workflow = " ".join(
+            (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8").casefold().split()
+        )
+
+        self.assertIn("one primary review lens", review)
+        self.assertIn("distinct unresolved question", review)
+        self.assertIn("routine bounded work", workflow)
+        self.assertIn("codex implementation plus claude verification", workflow)
+        self.assertIn("material localized risk", workflow)
+        self.assertIn("unanchored alternative", workflow)
 
     def test_execution_vocabulary_has_no_retired_custom_terms(self) -> None:
         retired_terms = (

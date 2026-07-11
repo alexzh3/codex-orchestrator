@@ -168,6 +168,18 @@ Headless Codex writes this exact response with `--output-last-message`. IDE and 
 the exact returned message locally. Do not rewrite a handoff into a cleaner summary; add Claude's
 observations to the execution result or verification instead.
 
+## Independent Review
+
+Claude's own verification is handoff-aware: it reads the agent's claims to determine what needs
+checking. A first independent Codex review instead uses a fresh session and receives the goal,
+criteria, constraints, stable target, and review lens without the implementer's narrative or prior
+verdicts. Prefer an immutable commit; an uncommitted review reserves only the reviewed task's files
+and shared resources, so disjoint work may continue. A second Codex session adds context and lens
+diversity, while recorded Claude-Codex participation adds model-family diversity; acceptance still
+follows inspectable evidence rather than agreement count. The operational rules live in
+[`review.md`](../skills/orchestrate/references/review.md) and
+[`compute.md`](../skills/orchestrate/references/compute.md).
+
 ## Failed Check, Fix, And Rerun
 
 Keep both observations. A passing rerun supports acceptance of the new repository state, but it does

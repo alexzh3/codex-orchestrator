@@ -8,8 +8,10 @@ its context remains relevant. If its context is nearly full, summarize the goal,
 decisions, check state, unresolved issues, and next request before resuming it.
 
 Create a fresh agent only for contextually unrelated work, required isolation, an unusable session
-after bounded inspection, or an explicit user request. A new rollout file or new execution does not
-by itself create a new agent.
+after bounded inspection, or an explicit user request. Initial independent review and an unanchored
+alternative are deliberate exceptions: each starts a fresh named agent and native session. Reuse
+the relevant implementation or review session for continuation, fixes, reconciliation, and targeted
+rechecks. A new rollout file or new execution does not by itself create a new agent.
 
 ## Parallel Work
 
@@ -22,6 +24,11 @@ repository diff determines what actually changed. Before parallel execution, com
   generated files.
 - Overlapping paths or shared contracts require sequential handoff or separate worktrees.
 - Shared build outputs, databases, ports, GPUs, and evidence paths also count as conflicts.
+
+An independent `--uncommitted` review reserves the reviewed task's declared `files` and relevant
+shared resources against writes until the review execution terminates and its handoff or terminal
+blocked/failed outcome is recorded. Disjoint work may continue. If the reservation cannot be
+maintained, review in a separate worktree or commit a stable snapshot.
 
 Use native Git for isolation; the plugin has no worktree protocol command:
 

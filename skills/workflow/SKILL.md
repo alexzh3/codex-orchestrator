@@ -14,15 +14,17 @@ Follow this sequence:
 1. Create `.codex-orchestrator/runs/<run-id>/`, `journal.jsonl`, and `agents/`. Append `run_started`
    with the repository, plugin ref, and available Claude/Codex versions.
 2. Create active `task` entries with the goal, acceptance criteria, and allowed/owned file paths or
-   globs in `files`. Ask Codex to review a newly created plan when a second opinion materially
-   reduces risk.
+   globs in `files`. Ask Codex to review Claude's plan when a second opinion materially reduces risk.
+   For a consequential, ambiguous, or hard-to-reverse design choice, first ask a fresh Codex agent
+   for an unanchored alternative before showing it Claude's candidate, then compare them.
 3. Check task file ownership before parallel execution. Use sequential work or native Git worktrees
    whenever owned paths overlap.
 4. Name each persistent agent `<provider>-<role>-<sequence>`. For prompted work, save the exact
    prompt under `agents/<agent>/execution-NN/prompt.md`. An observe-only attachment to an already
    active IDE session uses `mode: "observe"` and may omit `prompt` because Claude sent none.
 5. Append `execution` before launch, then capture the raw event stream and exact handoff. Resume a
-   contextually relevant session rather than creating a duplicate agent.
+   contextually relevant implementation or fix session. An initial independent review or unanchored
+   alternative starts a fresh agent and native session as defined in `references/review.md`.
 6. Monitor each execution until completion, failure, blocking, or staleness. Append Claude's
    terminal `execution_result`; this is durable workflow memory, not mechanical proof, and it does
    not complete the task.
@@ -46,6 +48,12 @@ Follow this sequence:
     follow-ups. Validation detects omissions; Claude decides whether the work is acceptable.
 12. Only after `run_closed`, use `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` to have Claude create
     the final `report.md` once.
+
+Scale review effort to risk. Routine bounded work uses Codex implementation plus Claude
+verification. Material localized risk may justify one fresh reviewer with a complementary lens.
+Ambiguous architecture, security boundaries, or hard-to-reverse choices justify an unanchored
+alternative before implementation and review of the selected candidate. Add further reviewers only
+for distinct unresolved questions.
 
 The canonical close sequence is `validate → run_closed → report.md`. Validation never decides
 acceptance, and the final report never repairs or rewrites journal history.

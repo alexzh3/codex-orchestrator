@@ -104,7 +104,11 @@ decision outcome, judgment, or terminal status.
 
 Summarize consequential reviews and `decision` entries. State the outcome, basis, resolution, and
 risk for each material disagreement. Keep consensus, Claude decisions, user actions, accepted risks,
-and unresolved outcomes distinct. Say clearly when no decision entry was required.
+and unresolved outcomes distinct. Say clearly when no decision entry was required. Describe a fresh
+Codex review as context-independent; reserve cross-family or family-diverse for recorded
+Claude-Codex participation. Report the recorded outcome faithfully, but do not present a
+consequential selection as evidence-backed when its basis or residual-risk treatment is missing;
+surface that omission under Risks / Follow-ups.
 
 ### Final Results
 
