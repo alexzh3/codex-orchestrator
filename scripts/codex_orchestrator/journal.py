@@ -66,26 +66,12 @@ def resolve_run_path(run_dir: Path, value: str) -> Path:
     return path.resolve() if path.is_absolute() else (run_dir / path).resolve()
 
 
-def compact_verification(record: dict[str, object]) -> dict[str, object]:
-    return {
-        key: record[key]
-        for key in ("id", "task", "result", "check", "observation")
-        if key in record
-    }
-
-
-def is_regular_file(path: Path, *, nonempty: bool = False) -> bool:
-    try:
-        return path.is_file() and (not nonempty or path.stat().st_size > 0)
-    except OSError:
-        return False
-
-
 def declared_file_exists(run_dir: Path, value: object, *, nonempty: bool = False) -> bool:
     if not isinstance(value, str) or not value:
         return False
     try:
-        return is_regular_file(resolve_run_path(run_dir, value), nonempty=nonempty)
+        path = resolve_run_path(run_dir, value)
+        return path.is_file() and (not nonempty or path.stat().st_size > 0)
     except (OSError, RuntimeError):
         return False
 
@@ -187,7 +173,13 @@ def validate_run(run_dir: Path) -> dict[str, object]:
                     f"{record_line(record)}: verification result is not recognized: {result}"
                 )
             elif result != "passed":
-                non_passing.append(compact_verification(record))
+                non_passing.append(
+                    {
+                        key: record[key]
+                        for key in ("id", "task", "result", "check", "observation")
+                        if key in record
+                    }
+                )
             evidence = record.get("evidence", [])
             if not isinstance(evidence, list):
                 issues.append(f"{record_line(record)}: evidence must be a list of file paths")

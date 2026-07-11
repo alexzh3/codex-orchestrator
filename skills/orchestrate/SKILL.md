@@ -75,7 +75,8 @@ A task entry may be repeated; its latest entry is current within the journal. An
 flight until Claude records a matching terminal execution result. A complete execution result does
 not complete its task: keep the task active until Claude has inspected the work, verified material
 claims, and recorded any needed decision. See
-`docs/orchestration-contract.md` for the recommended fields and worked example.
+`${CLAUDE_PLUGIN_ROOT}/docs/orchestration-contract.md` for the recommended fields and worked
+example.
 
 ## Standard Loop
 
@@ -89,8 +90,8 @@ claims, and recorded any needed decision. See
    `mode: "observe"`; no prompt path is required because Claude sent no prompt.
 5. Append `execution` before assigning work to the agent. This makes in-flight work recoverable after
    context loss.
-6. Monitor the event stream with the bundled parser or monitor. Do not edit files concurrently with
-   an agent that owns them.
+6. Monitor the event stream with the bundled session tools. Do not edit files concurrently with an
+   agent that owns them.
 7. Save the exact final response as `handoff.md`, inspect it and the repository, then append a
    terminal `execution_result` with Claude's concise outcome, observed or reported files, and
    caveats. The final repository state determines what was actually delivered.
@@ -109,7 +110,7 @@ makes the final judgment; do not treat descriptive validation as semantic accept
 
 Read only the references needed for the current phase:
 
-- `references/monitoring.md`: execution capture, CLI and IDE monitoring, parser commands, handoffs.
+- `references/monitoring.md`: execution capture, CLI and IDE monitoring, tool commands, handoffs.
 - `references/review.md`: claims, independent evidence, verification, and review loops.
 - `references/consensus.md`: decision outcomes and disagreement handling.
 - `references/compute.md`: agent reuse, parallel ownership, worktrees, and compute gating.

@@ -17,7 +17,6 @@ from .events import (
     find_rollout,
     incompatible_message,
     json_dumps,
-    load_records,
     read_stream,
     source_for_path,
 )
@@ -53,7 +52,10 @@ def command_find(args: argparse.Namespace) -> int:
 
 def command_state(args: argparse.Namespace) -> int:
     source, path, source_warnings = source_and_path(args)
-    records, start, end = load_records(path, source)
+    if path is None:
+        records, start, end = [], 0, 0
+    else:
+        _, records, start, end, _ = read_stream(path, source)
     compat = compatibility(records, source)
     compat["warnings"] = [*compat["warnings"], *source_warnings]
 
@@ -149,7 +151,7 @@ def command_tail(args: argparse.Namespace) -> int:
 
 def command_validate(args: argparse.Namespace) -> int:
     payload = validate_run(Path(args.run_dir))
-    print(json.dumps(payload, indent=None if args.json else 2, sort_keys=True))
+    print(json.dumps(payload, sort_keys=True))
     return 0 if payload["ok"] else 1
 
 
@@ -161,7 +163,7 @@ def add_common_flags(parser: argparse.ArgumentParser) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Parse headless Codex streams or IDE rollout JSONL."
+        description="Inspect Codex event streams and validate orchestration runs."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -220,7 +222,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "validate", help="Check prompt-first run structure without making acceptance judgments."
     )
     validate_parser.add_argument("run_dir", help="Run directory containing journal.jsonl.")
-    validate_parser.add_argument("--json", action="store_true", help="Emit compact JSON.")
     validate_parser.set_defaults(func=command_validate)
 
     return parser.parse_args(argv)

@@ -9,17 +9,12 @@ import time
 import unittest
 from pathlib import Path
 
-from scripts.codex_orchestrator.events import read_stream
-
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
-WRAPPER = ROOT / "bin" / "codex-orch-monitor"
 
 
-def run_monitor(*args: str, wrapper: bool = False) -> subprocess.CompletedProcess[str]:
-    command = [sys.executable, str(WRAPPER if wrapper else SCRIPT)]
-    if not wrapper:
-        command.append("monitor")
+def run_monitor(*args: str) -> subprocess.CompletedProcess[str]:
+    command = [sys.executable, str(SCRIPT), "monitor"]
     return subprocess.run(
         [*command, *args],
         check=False,
@@ -110,6 +105,26 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(notifications[0]["thread_id"], "thread-active")
         self.assertEqual(notifications[0]["agent"], "codex-impl-01")
         self.assertEqual(notifications[0]["execution"], "execution-01")
+
+    def test_run_id_selects_a_run_under_the_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = self.make_run(root, "run-selected")
+            execution, _ = self.add_execution(
+                run_dir,
+                events=[{"type": "turn.completed", "thread_id": "selected"}],
+            )
+            write_jsonl(
+                run_dir / "journal.jsonl",
+                [journal_entry("run_started", run_id="run-selected"), execution],
+            )
+
+            result = run_monitor(
+                "--repo", str(root), "--run-id", "run-selected", "--once"
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["thread_id"], "selected")
 
     def test_watches_all_inflight_executions_but_not_completed_ones(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -225,7 +240,6 @@ class MonitorTests(unittest.TestCase):
                 "exec",
                 "--once",
                 "--fail-on-session-failure",
-                wrapper=True,
             )
 
         self.assertEqual(result.returncode, 1)
@@ -259,33 +273,6 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(notifications[0]["thread_id"], "thread-1")
         self.assertEqual(notifications[0]["turn_id"], "turn-2")
         self.assertEqual(notifications[0]["usage"]["output_tokens"], 5)
-
-    def test_incremental_reader_preserves_partial_lines_and_counts_parse_errors(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "events.jsonl"
-            first = '{"type":"turn.started"}\n'
-            path.write_text(first + "not json\n[]\n" + '{"type":"turn.completed"', encoding="utf-8")
-
-            _, records, _, offset, parse_errors = read_stream(
-                path, "exec", since_offset=0
-            )
-            self.assertEqual([record.event_type for record in records], [
-                "turn.started",
-                "<invalid-json>",
-                "<non-object>",
-            ])
-            self.assertEqual(parse_errors, 2)
-            self.assertLess(offset, path.stat().st_size)
-
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write("}\n")
-            _, completed, _, next_offset, parse_errors = read_stream(
-                path, "exec", since_offset=offset
-            )
-
-        self.assertEqual([record.event_type for record in completed], ["turn.completed"])
-        self.assertEqual(parse_errors, 0)
-        self.assertGreater(next_offset, offset)
 
     def test_stale_stream_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

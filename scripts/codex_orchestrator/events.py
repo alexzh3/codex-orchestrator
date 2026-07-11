@@ -29,15 +29,6 @@ IDE_EVENT_TYPES = {
     "message",
 }
 
-APPROVAL_HINTS = (
-    "awaiting approval",
-    "approval required",
-    "needs approval",
-    "outside the sandbox",
-    "docker socket",
-    "approve in",
-)
-
 FAILURE_HINTS = (
     "FAILED ",
     "Traceback (most recent",
@@ -301,14 +292,6 @@ def classify_ide(
         elif record.event_type == "agent_message":
             last_agent_text = text
 
-    if status in {"active", "idle"} and any(
-        hint in last_agent_text.lower() for hint in APPROVAL_HINTS
-    ):
-        if path is None or time.time() - path.stat().st_mtime > 600:
-            status = "awaiting-approval"
-    elif status == "active" and path is not None and time.time() - path.stat().st_mtime > 600:
-        status = "idle"
-
     details: dict[str, object] = {}
     if goal_status is not None:
         details["goal_status"] = goal_status
@@ -319,10 +302,3 @@ def classify_ide(
     if path is not None:
         details["idle_seconds"] = int(time.time() - path.stat().st_mtime)
     return status, details, terminal
-
-
-def load_records(path: Path | None, source: str) -> tuple[list[EventRecord], int, int]:
-    if path is None:
-        return [], 0, 0
-    _, records, start, end, _ = read_stream(path, source)
-    return records, start, end

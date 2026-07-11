@@ -68,7 +68,7 @@ class ValidationTests(unittest.TestCase):
             run_dir, _ = self.make_run(Path(tmp))
             payload = validate_run(run_dir)
             result = subprocess.run(
-                [sys.executable, str(SCRIPT), "validate", str(run_dir), "--json"],
+                [sys.executable, str(SCRIPT), "validate", str(run_dir)],
                 check=False,
                 text=True,
                 capture_output=True,

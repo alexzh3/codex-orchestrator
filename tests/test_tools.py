@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts.codex_orchestrator.events import read_stream
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -24,7 +26,33 @@ def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.Complet
     )
 
 
-class ToolsCliTests(unittest.TestCase):
+class ToolTests(unittest.TestCase):
+    def test_reader_preserves_partial_lines_and_counts_parse_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            first = '{"type":"turn.started"}\n'
+            path.write_text(
+                first + "not json\n[]\n" + '{"type":"turn.completed"', encoding="utf-8"
+            )
+
+            _, records, _, offset, parse_errors = read_stream(path, "exec", since_offset=0)
+            self.assertEqual(
+                [record.event_type for record in records],
+                ["turn.started", "<invalid-json>", "<non-object>"],
+            )
+            self.assertEqual(parse_errors, 2)
+            self.assertLess(offset, path.stat().st_size)
+
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write("}\n")
+            _, completed, _, next_offset, parse_errors = read_stream(
+                path, "exec", since_offset=offset
+            )
+
+        self.assertEqual([record.event_type for record in completed], ["turn.completed"])
+        self.assertEqual(parse_errors, 0)
+        self.assertGreater(next_offset, offset)
+
     def test_exec_stream_completed_status(self) -> None:
         result = run_cli(
             "state",
@@ -114,6 +142,38 @@ class ToolsCliTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "complete")
+
+    def test_ide_state_does_not_guess_from_staleness_or_message_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rollout.jsonl"
+            path.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "type": "thread_goal_updated",
+                            "goal": {"status": "active", "text": "Continue the task"},
+                        }
+                    }
+                )
+                + "\n"
+                + json.dumps(
+                    {
+                        "payload": {
+                            "type": "agent_message",
+                            "message": "Waiting for approval may be necessary.",
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            os.utime(path, (1, 1))
+            result = run_cli(
+                "state", "ide-stale", "--source", "ide", "--file", str(path), "--json"
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "active")
 
     def test_later_exec_activity_supersedes_an_older_completion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

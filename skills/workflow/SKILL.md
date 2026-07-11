@@ -24,7 +24,8 @@ Follow this sequence:
    active IDE session uses `mode: "observe"` and may omit `prompt` because Claude sent none.
 5. Append `execution` before launch, then capture the raw event stream and exact handoff. Resume a
    contextually relevant implementation or fix session. An initial independent review or unanchored
-   alternative starts a fresh agent and native session as defined in `references/review.md`.
+   alternative starts a fresh agent and native session as defined in
+   `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/references/review.md`.
 6. Monitor each execution until completion, failure, blocking, or staleness. Append Claude's
    terminal `execution_result`; this is durable workflow memory, not mechanical proof, and it does
    not complete the task.
@@ -40,7 +41,7 @@ Follow this sequence:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" validate \
-     .codex-orchestrator/runs/<run-id> --json
+     .codex-orchestrator/runs/<run-id>
    ```
 
 11. Resolve structural issues, inspect all non-passing checks, and append one final `run_closed`

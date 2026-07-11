@@ -142,7 +142,7 @@ class PromptFirstWorkflowTests(unittest.TestCase):
         self.assertEqual(records[-1]["judgment"], "passed")
         self.assertFalse((self.run_dir / "report.md").exists())
 
-    def test_parser_reads_both_fake_codex_streams(self) -> None:
+    def test_tools_read_both_fake_codex_streams(self) -> None:
         records = journal_entries(self.run_dir)
         executions = [record for record in records if record["type"] == "execution"]
 
@@ -197,7 +197,7 @@ class PromptFirstWorkflowTests(unittest.TestCase):
         )
 
     def test_validation_accepts_the_closed_fixture(self) -> None:
-        result = run_cli("validate", str(self.run_dir), "--json")
+        result = run_cli("validate", str(self.run_dir))
 
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)

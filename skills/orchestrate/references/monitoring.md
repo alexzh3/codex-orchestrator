@@ -1,7 +1,7 @@
 # Monitoring And Codex Sessions
 
-Use the bundled parser for compact status and deltas. Do not load an entire event stream unless a
-bounded inspection cannot explain an ambiguous or failed session.
+Use the bundled session tools for compact status and deltas. Do not load an entire event stream
+unless a bounded inspection cannot explain an ambiguous or failed session.
 
 ## Headless Codex
 
@@ -46,8 +46,8 @@ Require Codex to end every execution with this concise handoff shape:
 ## Caveats / Blockers
 ```
 
-`--output-last-message` is the normal capture path. Parser extraction of the last completed agent
-message is a fallback for older or interrupted runs, not a reason to mine logs during normal review.
+`--output-last-message` is the normal capture path. Extracting the last completed agent message from
+events is a fallback for older or interrupted runs, not a reason to mine logs during normal review.
 
 Resume a relevant, idle session as another captured execution under the same named agent:
 
@@ -91,9 +91,9 @@ The usual rollout path is:
 
 Re-find it after resumption because the same native session can append through a new rollout file.
 
-## Parser And Monitor
+## Session Tools And Monitor
 
-Use parser state and tail offsets instead of raw grep:
+Use the `state` and `tail` commands instead of raw grep:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" state <session-id> --source exec --file <events-jsonl> --json
@@ -101,7 +101,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" tail <session-id> --
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" state <session-id> --source ide --file <rollout-jsonl> --json
 ```
 
-Persist no parser offset in the journal. Callers retain `next_offset` while monitoring. After context
+Persist no monitoring offset in the journal. Callers retain `next_offset` while monitoring. After context
 loss, call `state` for a compact current summary and continue from its `next_offset`; do not tail a
 large event stream again from byte zero.
 
@@ -109,13 +109,15 @@ The bundled run monitor treats a `run_started` entry without a later `run_closed
 active-run marker, then watches executions without recorded terminal execution results:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/bin/codex-orch-monitor" --repo <repo> --run-id <run-id>
-python3 "${CLAUDE_PLUGIN_ROOT}/bin/codex-orch-monitor" --log <events-jsonl> --fail-on-session-failure
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" monitor \
+  --repo <repo> --run-id <run-id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" monitor \
+  --log <events-jsonl> --fail-on-session-failure
 ```
 
 It emits compact completion, failure, and stale notifications and never writes the journal. These
 markers support discovery but do not independently prove lifecycle state. Explicit paths may point
-to local headless streams or external IDE rollouts. Use bounded raw tails only when parser
+to local headless streams or external IDE rollouts. Use bounded raw tails only when format
 confidence is low.
 
 The monitor recognizes terminal events in the stream. Claude may separately observe the exit of a
