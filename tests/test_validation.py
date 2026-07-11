@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.codex_orchestrator.journal import journal_lifecycle, validate_run
+from scripts.codex_orchestrator.journal import validate_run
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
@@ -294,9 +294,6 @@ class ValidationTests(unittest.TestCase):
 
             payload = validate_run(run_dir)
 
-            write_journal(run_dir, [{"type": ["run_started"]}])
-            lifecycle = journal_lifecycle(run_dir)
-
         self.assertFalse(payload["ok"])
         expected_fragments = (
             "run_closed judgment must be passed or blocked",
@@ -310,8 +307,6 @@ class ValidationTests(unittest.TestCase):
                 any(fragment in issue for issue in payload["issues"]),
                 (fragment, payload["issues"]),
             )
-        self.assertEqual(lifecycle, "invalid")
-
     def test_task_references_must_name_recorded_tasks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir, records = self.make_run(Path(tmp))

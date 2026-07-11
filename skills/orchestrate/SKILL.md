@@ -46,7 +46,7 @@ when material output must be retained.
    approach from only the goal, constraints, and acceptance criteria before showing it Claude's
    candidate, then compare both against evidence.
 5. Save the exact prompt and append `execution` before launch.
-6. Monitor with the bundled session tools without editing files owned by the active agent.
+6. Monitor with the bundled tools without editing files owned by the active agent.
 7. Save the exact handoff, inspect it and the repository, then append terminal
    `execution_result`.
 8. Evaluate acceptance criteria and record material checks as `verification`.

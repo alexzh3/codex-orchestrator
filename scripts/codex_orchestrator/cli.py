@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command-line interface for run validation and Codex session inspection."""
+"""Command-line interface for run validation and Codex agent inspection."""
 
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    state_parser = subparsers.add_parser("state", help="Classify a Codex session state.")
+    state_parser = subparsers.add_parser("state", help="Classify a Codex agent state.")
     state_parser.add_argument("thread_id")
     state_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     state_parser.add_argument("--file", help="Managed Codex exec JSONL path.")
@@ -105,14 +105,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     monitor_parser = subparsers.add_parser(
         "monitor", help="Watch in-flight agent event streams from the prompt-first run layout."
     )
-    monitor_parser.add_argument(
-        "run_dir", nargs="?", help="Run directory containing journal.jsonl."
-    )
     monitor_parser.add_argument("--run-id", help="Run id under .codex-orchestrator/runs.")
     monitor_parser.add_argument("--repo", help="Repository root paired with --run-id.")
     monitor_parser.add_argument(
         "--log",
-        "--file",
         action="append",
         dest="log",
         help="Explicit managed exec stream path. Repeatable.",
@@ -125,9 +121,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--poll-interval", type=float, default=30.0, help="Seconds between watch scans."
     )
     monitor_parser.add_argument(
-        "--fail-on-session-failure",
+        "--fail-on-agent-failure",
         action="store_true",
-        help="Exit nonzero when a watched session fails.",
+        help="Exit nonzero when a watched agent fails.",
     )
     monitor_parser.set_defaults(func=command_monitor)
 

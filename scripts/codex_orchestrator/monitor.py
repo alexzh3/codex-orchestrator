@@ -104,12 +104,11 @@ def inflight_targets(
 def resolve_monitor_targets(
     args: argparse.Namespace,
 ) -> tuple[list[MonitorTarget], list[dict[str, object]]]:
-    selectors = bool(args.log) + bool(args.run_dir) + bool(args.run_id or args.repo)
+    selectors = bool(args.log) + bool(args.run_id or args.repo)
     if selectors != 1:
         return [], [
             error_payload(
-                "provide exactly one target: a run directory, --repo with --run-id, "
-                "or one or more --log paths"
+                "provide exactly one target: --repo with --run-id or one or more --log paths"
             )
         ]
 
@@ -124,8 +123,6 @@ def resolve_monitor_targets(
             / "runs"
             / args.run_id
         )
-    else:
-        run_dir = Path(args.run_dir).expanduser()
     return inflight_targets(run_dir)
 
 
@@ -166,8 +163,8 @@ def terminal_notification(
     summary: StreamSummary,
 ) -> dict[str, object] | None:
     notification_types = {
-        "complete": "codex_session_complete",
-        "failed": "codex_session_failed",
+        "complete": "codex_agent_complete",
+        "failed": "codex_agent_failed",
     }
     terminal = summary.terminal
     if terminal is None or summary.status not in notification_types:
@@ -200,7 +197,7 @@ def scan_monitor_target(target: MonitorTarget, stale_seconds: int) -> str:
         summary = summarize_stream(path)
         compat = compatibility(summary)
         if compat["parse_confidence"] == "low":
-            payload = monitor_payload("codex_session_unknown", target, summary, None)
+            payload = monitor_payload("codex_agent_unknown", target, summary, None)
             payload["compatibility"] = compat
             if summary.parse_errors:
                 payload["parse_errors"] = summary.parse_errors
@@ -216,7 +213,7 @@ def scan_monitor_target(target: MonitorTarget, stale_seconds: int) -> str:
 
         idle_seconds = int(time.time() - path.stat().st_mtime)
         if stale_seconds >= 0 and idle_seconds >= stale_seconds:
-            payload = monitor_payload("codex_session_stale", target, summary, None)
+            payload = monitor_payload("codex_agent_stale", target, summary, None)
             payload["idle_seconds"] = idle_seconds
             if summary.parse_errors:
                 payload["parse_errors"] = summary.parse_errors
@@ -254,9 +251,9 @@ def command_monitor(args: argparse.Namespace) -> int:
         if args.once:
             if unknown_seen:
                 return 2
-            return 1 if failed_seen and args.fail_on_session_failure else 0
+            return 1 if failed_seen and args.fail_on_agent_failure else 0
         if targets and all(target in done for target in targets):
             if unknown_seen:
                 return 2
-            return 1 if failed_seen and args.fail_on_session_failure else 0
+            return 1 if failed_seen and args.fail_on_agent_failure else 0
         time.sleep(max(0.1, args.poll_interval))

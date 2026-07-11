@@ -13,7 +13,8 @@ so the result is directional rather than statistical.
 
 This curated view covers the retained configurations: **0.4.1** (the then-current release), **0.2.0**
 (kept as a timed reference), and the two **solo** baselines (a single model, no plugin). These are
-historical benchmark-series labels; `0.5.0` does not describe this prompt-first release.
+historical benchmark-series labels; prompt-first v0.5.0 has no configuration or results in this
+series.
 
 Legend: ✅/❌ = verifier pass/fail. ⚠️ = solved without assigning work to Codex, a degenerate solo solve.
 ⏱ = hit the per-task wall-clock timeout (the container is still graded, so ⏱ can accompany a pass).
@@ -76,7 +77,7 @@ with reasoning effort xhigh.
 ## Token usage (as-run)
 
 Both-sides token usage was captured: Claude usage from Harbor, and GPT/Codex usage from collected
-Codex session JSONL logs. Numbers are for the as-run (timed) regime — one run per `(task, config)`.
+Codex-agent JSONL logs. Numbers are for the as-run (timed) regime — one run per `(task, config)`.
 
 Totals per configuration:
 

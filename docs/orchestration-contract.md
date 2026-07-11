@@ -2,7 +2,7 @@
 
 The run journal preserves Claude's concise causal history and links to supporting material; it
 is not a workflow engine, independent evidence, or an automated telemetry source. Claude makes the
-semantic judgments. The session tools only summarize event streams and check a small set of
+semantic judgments. The bundled tools only summarize event streams and check a small set of
 structural omissions.
 
 ## Record Authority

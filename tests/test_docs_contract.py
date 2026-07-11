@@ -18,7 +18,7 @@ JOURNAL_ENTRY_TYPES = {
 
 def documentation_paths() -> list[Path]:
     paths = [ROOT / "README.md"]
-    for directory in ("commands", "docs", "skills"):
+    for directory in ("docs", "skills"):
         paths.extend((ROOT / directory).rglob("*.md"))
     return sorted(path for path in paths if path.is_file())
 
@@ -139,6 +139,8 @@ class DocumentationContractTests(unittest.TestCase):
 
         self.assertIn("exact commit sha", review)
         self.assertIn("plain `codex exec`", review)
+        self.assertIn("for an uncommitted review", review)
+        self.assertIn("base head sha", review)
         self.assertNotIn(" review --json", review)
         self.assertNotIn("--commit", review)
         self.assertIn("reserve only its task's `files` and shared resources", compute)

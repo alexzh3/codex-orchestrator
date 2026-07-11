@@ -29,6 +29,7 @@ class ReportSkillTests(unittest.TestCase):
         self.assertIn("Mermaid `flowchart TD`", skill)
         self.assertIn('A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}', skill)
         self.assertIn("Show only evidence that affected", skill)
+        self.assertIn("one node per named agent", skill)
 
     def test_skill_requires_a_closed_and_validated_run(self) -> None:
         skill = REPORT_SKILL.read_text(encoding="utf-8")

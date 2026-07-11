@@ -256,20 +256,3 @@ def validate_run(run_dir: Path) -> dict[str, object]:
         "warnings": warnings,
         "non_passing_verifications": non_passing,
     }
-
-
-def journal_lifecycle(run_dir: Path) -> str:
-    records, issues = read_journal(run_dir / "journal.jsonl")
-    if issues:
-        return "invalid"
-    kinds = [record.get("type") for record in records]
-    if (
-        not kinds
-        or not all(isinstance(kind, str) and kind in JOURNAL_ENTRY_TYPES for kind in kinds)
-        or kinds.count("run_started") != 1
-        or kinds[0] != "run_started"
-        or kinds.count("run_closed") > 1
-        or ("run_closed" in kinds and kinds[-1] != "run_closed")
-    ):
-        return "invalid"
-    return "closed" if kinds[-1] == "run_closed" else "active"

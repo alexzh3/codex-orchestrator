@@ -44,5 +44,9 @@ subcommand's revision selectors. Prefer a worktree at the reviewed commit; revie
 does not require pausing unrelated work. Tell Codex not to edit and confirm the review worktree is
 clean afterward; `workspace-write` lets repository checks create their normal temporary outputs.
 
+For an uncommitted review, put the base HEAD SHA and exact reviewed files in `prompt.md`, run the
+same plain `codex exec` command in that working tree, and reserve those files and shared resources
+as described in [`compute.md`](compute.md).
+
 Verify review findings against the repository. Reuse the session for a targeted recheck; start a
 fresh reviewer only for a distinct unresolved question.

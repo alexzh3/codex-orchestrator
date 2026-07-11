@@ -78,9 +78,9 @@ evidence, repository changes, and raw events only when needed. Use this top-to-b
 - material reviews, checks, decisions, and produced deliverables;
 - final judgment and state, including meaningful fix/recheck loops.
 
-Use one node per agent or native session, ordered by first execution. Include its task, recorded
-model/effort, main result, and terminal status; combine resumed executions in that session's node.
-Keep a linear run minimal and do not create empty subgraphs.
+Use one node per named agent, ordered by first execution. Include its task, recorded model/effort,
+main result, and terminal status; combine that agent's resumed executions in its node. Keep a linear
+run minimal and do not create empty subgraphs.
 Label edges concisely (`assign`, `review`, `verified`, `resolution`, `consensus`,
 `claude_decision`, `produced`, `fix required`, `recheck`, `accepted`). Show only evidence that affected
 a decision or final judgment. Combine routine passing checks and group related decisions, but keep

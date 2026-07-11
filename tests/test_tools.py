@@ -79,7 +79,7 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "failed")
 
-    def test_reconnect_is_ignored_but_an_error_fails_the_session(self) -> None:
+    def test_reconnect_is_ignored_but_an_error_fails_the_agent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             reconnect_path = Path(tmp) / "reconnect.jsonl"
             error_path = Path(tmp) / "error.jsonl"
@@ -120,7 +120,7 @@ class ToolTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(payload["status"], "unknown")
         self.assertEqual(payload["compatibility"]["parse_confidence"], "low")
-        self.assertIn("Do not infer session status", result.stderr)
+        self.assertIn("Do not infer agent status", result.stderr)
 
     def test_state_dumps_event_types_for_format_diagnostics(self) -> None:
         result = run_cli(

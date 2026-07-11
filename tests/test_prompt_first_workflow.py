@@ -168,7 +168,8 @@ class PromptFirstWorkflowTests(unittest.TestCase):
 
     def test_monitor_watches_both_in_flight_executions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            run_dir = Path(tmp_dir) / "long-run-001"
+            root = Path(tmp_dir)
+            run_dir = root / ".codex-orchestrator" / "runs" / "long-run-001"
             shutil.copytree(self.run_dir, run_dir)
             records = journal_entries(run_dir)
             launch_records = [
@@ -185,14 +186,21 @@ class PromptFirstWorkflowTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = run_cli("monitor", str(run_dir), "--once")
+            result = run_cli(
+                "monitor",
+                "--repo",
+                str(root),
+                "--run-id",
+                "long-run-001",
+                "--once",
+            )
 
         self.assertEqual(result.returncode, 0, result.stderr)
         notifications = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
         completed = [
             notification
             for notification in notifications
-            if notification.get("type") == "codex_session_complete"
+            if notification.get("type") == "codex_agent_complete"
         ]
         self.assertEqual(len(completed), 2, notifications)
         self.assertEqual(

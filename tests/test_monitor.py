@@ -24,6 +24,10 @@ def run_monitor(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def run_id_monitor(root: Path, run_id: str, *args: str) -> subprocess.CompletedProcess[str]:
+    return run_monitor("--repo", str(root), "--run-id", run_id, *args)
+
+
 def write_jsonl(path: Path, records: list[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
@@ -65,7 +69,9 @@ class MonitorTests(unittest.TestCase):
         cases = (
             run_monitor("--once"),
             run_monitor("--repo", ".", "--once"),
-            run_monitor("run", "--log", "events.jsonl", "--once"),
+            run_monitor(
+                "--repo", ".", "--run-id", "run", "--log", "events.jsonl", "--once"
+            ),
         )
 
         for result in cases:
@@ -95,25 +101,20 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["thread_id"], "selected")
 
-    def test_nonexistent_run_directory_and_run_id_are_errors(self) -> None:
+    def test_nonexistent_run_id_is_an_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            cases = (
-                run_monitor(str(root / "missing-run"), "--once"),
-                run_monitor("--repo", str(root), "--run-id", "missing", "--once"),
-            )
+            result = run_id_monitor(root, "missing", "--once")
 
-        for result in cases:
-            with self.subTest(args=result.args):
-                self.assertEqual(result.returncode, 1, result.stderr)
-                payload = json.loads(result.stdout)
-                self.assertEqual(payload["type"], "monitor_error")
-                self.assertIn("run directory", payload["message"])
+        self.assertEqual(result.returncode, 1, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["type"], "monitor_error")
+        self.assertIn("run directory", payload["message"])
 
     def test_watches_all_inflight_executions_but_not_completed_ones(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            run_dir = Path(tmp) / "run"
-            run_dir.mkdir()
+            root = Path(tmp)
+            run_dir = self.make_run(root, "run")
             first, _ = self.add_execution(
                 run_dir,
                 events=[
@@ -145,7 +146,7 @@ class MonitorTests(unittest.TestCase):
                 ],
             )
 
-            result = run_monitor(str(run_dir), "--once")
+            result = run_id_monitor(root, "run", "--once")
 
         notifications = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual(len(notifications), 1)
@@ -153,8 +154,8 @@ class MonitorTests(unittest.TestCase):
 
     def test_no_codex_targets_returns_without_polling(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            run_dir = Path(tmp) / "run"
-            run_dir.mkdir()
+            root = Path(tmp)
+            run_dir = self.make_run(root, "run")
             write_jsonl(
                 run_dir / "journal.jsonl",
                 [
@@ -179,15 +180,15 @@ class MonitorTests(unittest.TestCase):
                 ],
             )
 
-            result = run_monitor(str(run_dir))
+            result = run_id_monitor(root, "run")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
 
     def test_non_exec_journal_stream_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            run_dir = Path(tmp) / "run"
-            run_dir.mkdir()
+            root = Path(tmp)
+            run_dir = self.make_run(root, "run")
             execution, _ = self.add_execution(run_dir)
             execution["event_source"] = "ide"
             write_jsonl(
@@ -195,23 +196,23 @@ class MonitorTests(unittest.TestCase):
                 [journal_entry("run_started", run_id="run"), execution],
             )
 
-            result = run_monitor(str(run_dir), "--once")
+            result = run_id_monitor(root, "run", "--once")
 
         self.assertEqual(result.returncode, 1, result.stderr)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["type"], "monitor_error")
         self.assertIn("only managed exec streams", payload["message"])
 
-    def test_explicit_file_alias_and_failure_exit(self) -> None:
+    def test_explicit_log_and_failure_exit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "failed.jsonl"
             write_jsonl(path, [{"type": "turn.failed", "error": {"message": "boom"}}])
             result = run_monitor(
-                "--file", str(path), "--once", "--fail-on-session-failure"
+                "--log", str(path), "--once", "--fail-on-agent-failure"
             )
 
         self.assertEqual(result.returncode, 1)
-        self.assertEqual(json.loads(result.stdout)["type"], "codex_session_failed")
+        self.assertEqual(json.loads(result.stdout)["type"], "codex_agent_failed")
 
     def test_latest_exec_signal_emits_one_notification_with_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -236,7 +237,7 @@ class MonitorTests(unittest.TestCase):
 
         notifications = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual(len(notifications), 1)
-        self.assertEqual(notifications[0]["type"], "codex_session_complete")
+        self.assertEqual(notifications[0]["type"], "codex_agent_complete")
         self.assertEqual(notifications[0]["thread_id"], "native-thread")
         self.assertEqual(notifications[0]["turn_id"], "turn-2")
         self.assertEqual(notifications[0]["usage"]["output_tokens"], 5)
@@ -250,7 +251,7 @@ class MonitorTests(unittest.TestCase):
             result = run_monitor("--log", str(path), "--once")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["type"], "codex_session_complete")
+        self.assertEqual(json.loads(result.stdout)["type"], "codex_agent_complete")
 
     def test_stale_stream_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -261,13 +262,13 @@ class MonitorTests(unittest.TestCase):
             result = run_monitor("--log", str(path), "--once", "--stale-seconds", "1")
 
         notification = json.loads(result.stdout)
-        self.assertEqual(notification["type"], "codex_session_stale")
+        self.assertEqual(notification["type"], "codex_agent_stale")
         self.assertGreaterEqual(notification["idle_seconds"], 1)
 
     def test_watch_mode_polls_until_a_terminal_event(self) -> None:
         cases = (
-            ("turn.completed", "codex_session_complete", 0),
-            ("turn.failed", "codex_session_failed", 1),
+            ("turn.completed", "codex_agent_complete", 0),
+            ("turn.failed", "codex_agent_failed", 1),
         )
         for terminal_event, notification_type, expected_code in cases:
             with self.subTest(terminal_event=terminal_event), tempfile.TemporaryDirectory() as tmp:
@@ -287,7 +288,7 @@ class MonitorTests(unittest.TestCase):
                         "0.05",
                         "--stale-seconds",
                         "-1",
-                        "--fail-on-session-failure",
+                        "--fail-on-agent-failure",
                     ],
                     text=True,
                     stdout=subprocess.PIPE,
@@ -358,7 +359,7 @@ class MonitorTests(unittest.TestCase):
             result = run_monitor("--log", str(path), "--once")
 
         notification = json.loads(result.stdout)
-        self.assertEqual(notification["type"], "codex_session_complete")
+        self.assertEqual(notification["type"], "codex_agent_complete")
         self.assertEqual(notification["parse_errors"], 1)
 
     def test_low_parser_confidence_is_terminal(self) -> None:
@@ -369,7 +370,7 @@ class MonitorTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2, result.stderr)
         notification = json.loads(result.stdout)
-        self.assertEqual(notification["type"], "codex_session_unknown")
+        self.assertEqual(notification["type"], "codex_agent_unknown")
         self.assertEqual(notification["compatibility"]["parse_confidence"], "low")
 
     def test_explicit_missing_log_is_an_error(self) -> None:
@@ -386,8 +387,8 @@ class MonitorTests(unittest.TestCase):
     def test_journal_declared_missing_or_directory_stream_is_an_error(self) -> None:
         for path_kind in ("missing", "directory"):
             with self.subTest(path_kind=path_kind), tempfile.TemporaryDirectory() as tmp:
-                run_dir = Path(tmp) / "run"
-                run_dir.mkdir()
+                root = Path(tmp)
+                run_dir = self.make_run(root, "run")
                 path = run_dir / "codex-impl-01" / "execution-01" / "events.jsonl"
                 if path_kind == "directory":
                     path.mkdir(parents=True)
@@ -403,7 +404,7 @@ class MonitorTests(unittest.TestCase):
                     [journal_entry("run_started", run_id="run"), execution],
                 )
 
-                result = run_monitor(str(run_dir), "--once")
+                result = run_id_monitor(root, "run", "--once")
 
             self.assertEqual(result.returncode, 1, result.stderr)
             notification = json.loads(result.stdout)
@@ -412,8 +413,8 @@ class MonitorTests(unittest.TestCase):
 
     def test_missing_events_field_and_invalid_journal_are_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            run_dir = Path(tmp) / "run"
-            run_dir.mkdir()
+            root = Path(tmp)
+            run_dir = self.make_run(root, "run")
             write_jsonl(
                 run_dir / "journal.jsonl",
                 [
@@ -423,9 +424,9 @@ class MonitorTests(unittest.TestCase):
                     ),
                 ],
             )
-            missing_events = run_monitor(str(run_dir), "--once")
+            missing_events = run_id_monitor(root, "run", "--once")
             (run_dir / "journal.jsonl").write_text("not json\n", encoding="utf-8")
-            invalid_journal = run_monitor(str(run_dir), "--once")
+            invalid_journal = run_id_monitor(root, "run", "--once")
 
         for result in (missing_events, invalid_journal):
             with self.subTest(stdout=result.stdout):

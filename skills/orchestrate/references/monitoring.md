@@ -2,7 +2,7 @@
 
 Use the bundled tools for compact status snapshots. They parse event streams locally; do not copy
 raw logs into Claude's context unless a focused inspection is needed for an ambiguous or failed
-session.
+agent.
 
 ## Headless Codex
 
@@ -61,9 +61,9 @@ codex exec -C <worktree> -s workspace-write -c approval_policy=never \
 Use the original worktree with `-C`, the same `session_id`, and an absolute `EXECUTION_DIR` when the
 shell runs elsewhere. A fresh native session requires a new named agent.
 
-## Session State And Monitor
+## Agent State And Monitor
 
-Use `state` for a compact session snapshot:
+Use `state` for a compact agent snapshot:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" state <session-id> \
@@ -78,11 +78,10 @@ Monitor an active run or explicit stream:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" monitor \
   --repo <repo> --run-id <run-id>
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" monitor \
-  --log <events-jsonl> --fail-on-session-failure
+  --log <events-jsonl> --fail-on-agent-failure
 ```
 
-Always select the target with `--run-id` (plus its repository) or `--log`; do not rely on automatic
-run or stream discovery.
+Always select the target with `--run-id` plus its repository or with `--log`.
 
 The monitor is read-only and emits completion, failure, unknown-format, missing-stream, or stale
 notifications. Treat silence and staleness as ambiguous; inspect the handoff and repository before

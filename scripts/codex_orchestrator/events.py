@@ -177,7 +177,7 @@ def compatibility(summary: StreamSummary) -> dict[str, object]:
 def incompatible_message() -> str:
     return (
         f"ERROR: Codex exec JSONL appears incompatible (parser {PARSER_VERSION}). "
-        "Run state --dump-event-types and update the parser. Do not infer session status."
+        "Run state --dump-event-types and update the parser. Do not infer agent status."
     )
 
 
