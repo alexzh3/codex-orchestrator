@@ -152,8 +152,6 @@ class PromptFirstWorkflowTests(unittest.TestCase):
             result = run_cli(
                 "state",
                 str(execution["agent"]),
-                "--source",
-                "exec",
                 "--file",
                 str(self.run_dir / str(execution["events"])),
                 "--json",

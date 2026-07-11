@@ -6,67 +6,52 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections import Counter
 from pathlib import Path
 
 from .events import (
-    classify_exec,
-    classify_ide,
     compatibility,
-    find_rollout,
     incompatible_message,
     json_dumps,
-    read_stream,
-    source_for_path,
+    summarize_stream,
 )
 from .journal import validate_run
 from .monitor import command_monitor
 
 
-def source_and_path(args: argparse.Namespace) -> tuple[str, Path | None, list[str]]:
-    warnings: list[str] = []
-    explicit_path = Path(args.file).expanduser() if args.file else None
-    path = explicit_path
-    if path is None:
-        path = find_rollout(args.thread_id)
-        if path is None:
-            warnings.append("no event source found; provide --file or check the thread id")
-    declared = args.source or ("ide" if explicit_path is None and path is not None else None)
-    source = source_for_path(path, declared)
-    return source, path, warnings
+def command_state(args: argparse.Namespace) -> int:
+    path = Path(args.file).expanduser() if args.file else None
+    if path is None or not path.is_file():
+        payload = {
+            "type": "state_error",
+            "thread_id": args.thread_id,
+            "path": str(path) if path is not None else None,
+            "message": "event stream does not exist or is not a file",
+        }
+        print(json_dumps(payload))
+        return 1
 
-
-def command_find(args: argparse.Namespace) -> int:
-    path = find_rollout(args.thread_id)
-    if args.json:
+    try:
+        summary = summarize_stream(path)
+    except (OSError, RuntimeError) as exc:
         print(
             json_dumps(
-                {"thread_id": args.thread_id, "source": "ide", "path": str(path) if path else None}
+                {
+                    "type": "state_error",
+                    "thread_id": args.thread_id,
+                    "path": str(path),
+                    "message": f"could not read event stream: {exc}",
+                }
             )
         )
-    elif path:
-        print(path)
-    return 0 if path else 1
-
-
-def command_state(args: argparse.Namespace) -> int:
-    source, path, source_warnings = source_and_path(args)
-    if path is None:
-        records, history_truncated = [], False
-    else:
-        records, history_truncated, _ = read_stream(path, source, include_unterminated=True)
-    compat = compatibility(
-        records, source, history_truncated=history_truncated
-    )
-    compat["warnings"] = [*compat["warnings"], *source_warnings]
+        return 1
+    compat = compatibility(summary)
 
     if args.dump_event_types:
-        counts = Counter(record.event_type for record in records)
         payload = {
-            "thread_id": args.thread_id,
-            "source": source,
-            "path": str(path) if path else None,
-            "event_types": dict(sorted(counts.items())),
+            "thread_id": summary.thread_id or args.thread_id,
+            "source": "exec",
+            "path": str(path),
+            "event_types": dict(sorted(summary.event_counts.items())),
             "compatibility": compat,
         }
         print(json_dumps(payload) if args.json else payload)
@@ -74,9 +59,9 @@ def command_state(args: argparse.Namespace) -> int:
 
     if compat["parse_confidence"] == "low":
         payload = {
-            "thread_id": args.thread_id,
-            "source": source,
-            "path": str(path) if path else None,
+            "thread_id": summary.thread_id or args.thread_id,
+            "source": "exec",
+            "path": str(path),
             "status": "unknown",
             "compatibility": compat,
         }
@@ -84,17 +69,12 @@ def command_state(args: argparse.Namespace) -> int:
         print(incompatible_message(), file=sys.stderr)
         return 2
 
-    if source == "exec":
-        status, details, _ = classify_exec(records)
-    else:
-        status, details, _ = classify_ide(records, path)
-
     payload = {
-        "thread_id": args.thread_id,
-        "source": source,
-        "path": str(path) if path else None,
-        "status": status,
-        "details": details,
+        "thread_id": summary.thread_id or args.thread_id,
+        "source": "exec",
+        "path": str(path),
+        "status": summary.status,
+        "details": summary.details(),
         "compatibility": compat,
     }
     print(json_dumps(payload) if args.json else payload)
@@ -107,28 +87,18 @@ def command_validate(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
-def add_common_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--source", choices=("exec", "ide"), help="Event source type.")
-    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
-    parser.add_argument("--file", help="Explicit event stream or rollout JSONL path.")
-
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Inspect Codex event streams and validate orchestration runs."
+        description="Inspect managed Codex exec streams and validate orchestration runs."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    find_parser = subparsers.add_parser("find", help="Find the newest rollout for a thread id.")
-    find_parser.add_argument("thread_id")
-    find_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
-    find_parser.set_defaults(func=command_find)
-
     state_parser = subparsers.add_parser("state", help="Classify a Codex session state.")
     state_parser.add_argument("thread_id")
-    add_common_flags(state_parser)
+    state_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    state_parser.add_argument("--file", help="Managed Codex exec JSONL path.")
     state_parser.add_argument(
-        "--dump-event-types", action="store_true", help="Print recent event types."
+        "--dump-event-types", action="store_true", help="Print observed event types."
     )
     state_parser.set_defaults(func=command_state)
 
@@ -139,16 +109,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "run_dir", nargs="?", help="Run directory containing journal.jsonl."
     )
     monitor_parser.add_argument("--run-id", help="Run id under .codex-orchestrator/runs.")
-    monitor_parser.add_argument("--repo", default=".", help="Repository root used for discovery.")
+    monitor_parser.add_argument("--repo", help="Repository root paired with --run-id.")
     monitor_parser.add_argument(
         "--log",
         "--file",
         action="append",
         dest="log",
-        help="Explicit event stream path. Repeatable.",
-    )
-    monitor_parser.add_argument(
-        "--source", choices=("exec", "ide"), help="Source for explicit event streams."
+        help="Explicit managed exec stream path. Repeatable.",
     )
     monitor_parser.add_argument("--once", action="store_true", help="Scan once and exit.")
     monitor_parser.add_argument(

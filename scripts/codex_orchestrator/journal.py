@@ -177,7 +177,14 @@ def validate_run(run_dir: Path) -> dict[str, object]:
                 non_passing.append(
                     {
                         key: record[key]
-                        for key in ("id", "task", "result", "check", "observation")
+                        for key in (
+                            "id",
+                            "task",
+                            "criterion",
+                            "result",
+                            "check",
+                            "observation",
+                        )
                         if key in record
                     }
                 )

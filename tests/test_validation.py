@@ -210,7 +210,7 @@ class ValidationTests(unittest.TestCase):
             )
             (run_dir / "evidence" / "tests.txt").write_text("restored\n", encoding="utf-8")
 
-            external_events = root / "external-rollout.jsonl"
+            external_events = root / "external-events.jsonl"
             external_events.write_text('{"type":"turn.completed"}\n', encoding="utf-8")
             records[2]["events"] = str(external_events)
             write_journal(run_dir, records)
@@ -251,6 +251,9 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(
             [item["id"] for item in payload["non_passing_verifications"]],
             ["check-01", "check-02", "check-03"],
+        )
+        self.assertEqual(
+            payload["non_passing_verifications"][0]["criterion"], "focused tests"
         )
 
     def test_core_status_values_are_still_checked(self) -> None:
