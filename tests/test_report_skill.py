@@ -26,6 +26,9 @@ class ReportSkillTests(unittest.TestCase):
         self.assertIn(REPORT_TEMPLATE, skill)
         self.assertIn("### Gate Result", skill)
         self.assertIn("### Risks / Follow-ups", skill)
+        self.assertIn("Mermaid `flowchart TD`", skill)
+        self.assertIn('A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}', skill)
+        self.assertIn("Show only evidence that affected", skill)
         headings = [
             line
             for line in REPORT_TEMPLATE.splitlines()

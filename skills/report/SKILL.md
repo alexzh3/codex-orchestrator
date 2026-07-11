@@ -22,21 +22,18 @@ Confirm that:
 If these conditions are not true, stop and return to orchestration. Never edit the journal merely to
 make the report look complete.
 
-Read the complete `journal.jsonl` first as the compact workflow history and navigation index. Then
-substantiate each material claim from the source appropriate to that claim:
+Read the complete `journal.jsonl`, then ground each claim in its appropriate source:
 
 - actual delivery: final repository state and diff;
 - Claude's checks: verification observations and referenced evidence;
 - assigned scope: exact prompts;
 - agent claims: exact handoffs;
-- recorded chronology and lifecycle status: journal entries;
-- material harness activity or process outcome: raw event streams and direct process observations;
+- lifecycle and chronology: journal entries;
+- ambiguous process activity: raw events or direct observation;
 - decisions and final judgment: decision and `run_closed` entries.
 
-Raw `events.jsonl` or external IDE rollouts are fallback sources for disputes, ambiguity, or
-debugging; do not mine them for facts already clear from the appropriate compact source. The journal
-is Claude-authored working memory, not independent evidence. Surface conflicts instead of silently
-choosing a preferred account, and never invent or repair missing facts.
+The journal is working memory, not independent evidence. Use raw events only for ambiguity or
+debugging. Surface conflicts and missing facts; do not silently repair them.
 
 ## Required Report Structure
 
@@ -74,41 +71,29 @@ line or treat `execution_result.files_changed` as mechanical attribution.
 
 ### Orchestration Graph
 
-Create a readable Mermaid `flowchart TD`. Use `journal.jsonl` to reconstruct workflow chronology and
-causal links, then ground results in handoffs, verification evidence, repository changes, and raw
-events only when necessary. Do not invent facts.
+Create a readable Mermaid `flowchart TD` from journal chronology, grounded in handoffs, verification
+evidence, repository changes, and raw events only when needed. Use this top-to-bottom shape:
 
-Use this top-to-bottom structure:
+- `A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}`;
+- separate non-empty Claude-agent and Codex-agent subgraphs;
+- material reviews, checks, decisions, and produced deliverables;
+- final judgment and state, including meaningful fix/recheck loops.
 
-1. `A_CLAUDE{{"Claude Code<br/>planner · orchestrator"}}`
-2. Separate non-empty subgraphs for assigned Claude agents and Codex agents.
-3. Important reviews, verifications, direct checks, consensus, and decisions.
-4. Produced deliverables.
-5. Final judgment, meaningful fix/recheck loops, and final state.
-
-Create one node per distinct agent or native session. Include its assigned task, model/effort when
-recorded, main result, and terminal status. A resumed session remains one node even when it has
-multiple executions. Order agents by first execution.
-
-Label assignment edges `assign`; use other concise actions such as `review`, `verified`,
-`tie-break evidence`, `consensus`, `claude_decision`, `produced`, `fix required`, `recheck`, and
-`accepted`.
-
-Show evidence only when it affected a decision or final judgment; combine routine passing checks.
-Group numerous related decisions by topic or deliverable while keeping `claude_decision`, user
-decisions, and unresolved outcomes distinct. Prioritize a clear causal overview over every journal
-entry. Mark reconstructed information as `inferred`, and never infer a verification result,
-decision outcome, judgment, or terminal status.
+Use one node per agent or native session, ordered by first execution. Include its task, recorded
+model/effort, main result, and terminal status; combine resumed executions in that session's node.
+Label edges concisely (`assign`, `review`, `verified`, `tie-break evidence`, `consensus`,
+`claude_decision`, `produced`, `fix required`, `recheck`, `accepted`). Show only evidence that affected
+a decision or final judgment. Combine routine passing checks and group related decisions, but keep
+Claude decisions, user actions, and unresolved outcomes distinct. Mark reconstructed facts as
+`inferred`; never infer verification results, decision outcomes, judgments, or terminal status.
 
 ### Consensus
 
-Summarize consequential reviews and `decision` entries. State the outcome, basis, resolution, and
-risk for each material disagreement. Keep consensus, Claude decisions, user actions, accepted risks,
-and unresolved outcomes distinct. Say clearly when no decision entry was required. Describe a fresh
-Codex review as context-independent; reserve cross-family or family-diverse for recorded
-Claude-Codex participation. Report the recorded outcome faithfully, but do not present a
-consequential selection as evidence-backed when its basis or residual-risk treatment is missing;
-surface that omission under Risks / Follow-ups.
+Summarize consequential `decision` entries with outcome, basis, resolution, and risk; state when no
+decision was required. Keep consensus, Claude decisions, user actions, accepted risks, and unresolved
+outcomes distinct. Describe a fresh Codex review as context-independent; use cross-family only for
+recorded Claude-Codex participation. Put missing basis or residual-risk treatment under Risks /
+Follow-ups.
 
 ### Final Results
 

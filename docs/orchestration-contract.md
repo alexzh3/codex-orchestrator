@@ -144,14 +144,6 @@ Headless Codex writes this exact response with `--output-last-message`. IDE and 
 the exact returned message locally. Do not rewrite a handoff into a cleaner summary; add Claude's
 observations to the execution result or verification instead.
 
-## Independent Review
-
-Claude verification reads the handoff and repository. A first independent Codex review starts from
-a fresh, unprimed session and stable target; acceptance follows evidence, not agreement count. The
-operational rules for review isolation, review lenses, and concurrent work live in
-[`review.md`](../skills/orchestrate/references/review.md) and
-[`compute.md`](../skills/orchestrate/references/compute.md).
-
 ## Failed Checks And Reruns
 
 Keep both observations. A passing rerun supports acceptance of the corrected repository state but

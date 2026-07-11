@@ -51,10 +51,9 @@ Follow this sequence:
     the final `report.md` once.
 
 Scale review effort to risk. Routine bounded work uses Codex implementation plus Claude
-verification. Material localized risk may justify one fresh reviewer with a complementary lens.
-Ambiguous architecture, security boundaries, or hard-to-reverse choices justify an unanchored
-alternative before implementation and review of the selected candidate. Add further reviewers only
-for distinct unresolved questions.
+verification. Material localized risk may justify one fresh reviewer; ambiguous or hard-to-reverse
+choices may justify an unanchored alternative. Add reviewers only for distinct unresolved
+questions.
 
 The canonical close sequence is `validate → run_closed → report.md`. Validation never decides
 acceptance, and the final report never repairs or rewrites journal history.

@@ -117,7 +117,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("initial independent review", workflow)
         self.assertIn("starts a fresh agent and native session", workflow)
 
-    def test_review_target_is_immutable_or_has_a_scoped_reservation(self) -> None:
+    def test_review_target_is_stable_or_has_a_scoped_reservation(self) -> None:
         review = " ".join(
             (ROOT / "skills/orchestrate/references/review.md")
             .read_text(encoding="utf-8")
@@ -139,17 +139,17 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("separate worktree or committed snapshot", compute)
 
     def test_decisions_use_evidence_not_agent_count(self) -> None:
-        consensus = " ".join(
-            (ROOT / "skills/orchestrate/references/consensus.md")
+        decisions = " ".join(
+            (ROOT / "skills/orchestrate/references/decisions.md")
             .read_text(encoding="utf-8")
             .casefold()
             .split()
         )
 
         for outcome in ("consensus", "claude_decision", "user_action_required"):
-            self.assertIn(f"`{outcome}`", consensus)
+            self.assertIn(f"`{outcome}`", decisions)
         for criterion in ("acceptance fit", "direct evidence", "reversibility", "not agent count"):
-            self.assertIn(criterion, consensus)
+            self.assertIn(criterion, decisions)
 
     def test_review_effort_is_risk_scaled(self) -> None:
         review = " ".join(
@@ -169,6 +169,9 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("unanchored alternative", workflow)
 
     def test_documented_codex_commands_need_no_undefined_override(self) -> None:
+        review = (ROOT / "skills/orchestrate/references/review.md").read_text(
+            encoding="utf-8"
+        )
         references = "\n".join(
             (ROOT / path).read_text(encoding="utf-8")
             for path in (
@@ -179,6 +182,7 @@ class DocumentationContractTests(unittest.TestCase):
 
         self.assertNotIn("$CODEX", references)
         self.assertIn("codex exec", references)
+        self.assertIn('EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/', review)
 
     def test_only_jsonl_fences_mark_journal_examples(self) -> None:
         sample = """```json

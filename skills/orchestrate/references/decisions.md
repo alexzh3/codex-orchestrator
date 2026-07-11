@@ -1,4 +1,4 @@
-# Decisions And Disagreements
+# Decisions
 
 Use a `decision` only for a consequential disagreement, accepted risk, tie-break, or required user
 action. Do not record routine agreement. Use [the orchestration
