@@ -125,23 +125,16 @@ closure flow are documented in [`docs/orchestration-contract.md`](docs/orchestra
 
 ## Historical v0.4.1 Benchmarks
 
-These results measure the schema-driven v0.4.1 plugin, not the current prompt-first v0.5 release.
-With its time limit lifted, v0.4.1 passed 9 of the 10 benchmark tasks. The timed solo Claude Code
-and solo Codex baselines passed 8/10 each:
-
 | Configuration | Regime | Passed |
 | --- | --- | ---: |
 | Plugin v0.4.1 | No timeout | **9/10** |
 | Solo Claude Code | Timed | 8/10 |
 | Solo Codex | Timed | 8/10 |
 
-The solo runs were not repeated without a time limit, so this comparison separates the
-orchestrator's latency from its eventual task success rather than providing a like-for-like speed
-comparison. These results are directional, not statistically conclusive: each configuration was
-run only once per task, and the available compute budget did not allow repeated trials.
-
-Results, limitations, and methodology are documented in
-[`docs/benchmarks.md`](docs/benchmarks.md).
+These historical results are directional, not statistically reliable or like-for-like: each
+configuration ran only once per task, the plugin had no timeout while the solo baselines were
+timed, and prompt-first v0.5.0 has not been evaluated. See
+[`docs/benchmarks.md`](docs/benchmarks.md) for the methodology and limitations.
 
 ## Limitations
 
