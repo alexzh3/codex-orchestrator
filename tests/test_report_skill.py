@@ -38,12 +38,14 @@ class ReportSkillTests(unittest.TestCase):
             headings,
         )
 
-    def test_skill_closes_run_between_validation_and_report(self) -> None:
+    def test_skill_requires_a_closed_and_validated_run(self) -> None:
         skill = REPORT_SKILL.read_text(encoding="utf-8")
         normalized = " ".join(skill.lower().split())
 
-        self.assertRegex(normalized, r"validate\s*(?:->|→)\s*run_closed\s*(?:->|→)\s*report\.md")
-        self.assertIn("judgment", normalized)
+        self.assertIn("descriptive validation ran before closure", normalized)
+        self.assertIn("`run_closed` is the final ledger record", normalized)
+        self.assertIn("no further run work is planned", normalized)
+        self.assertNotIn("validate → run_closed → report.md", normalized)
 
     def test_skill_uses_claim_specific_sources_and_creates_one_final_report(self) -> None:
         skill = " ".join(REPORT_SKILL.read_text(encoding="utf-8").lower().split())

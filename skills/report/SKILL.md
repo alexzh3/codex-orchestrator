@@ -11,12 +11,6 @@ write an interim report here. Return to `${CLAUDE_PLUGIN_ROOT}/skills/orchestrat
 
 ## Preconditions
 
-The run must have followed this order:
-
-```text
-validate → run_closed → report.md
-```
-
 Confirm that:
 
 - descriptive validation ran before closure and its complete result is recorded in
@@ -35,7 +29,8 @@ substantiate each material claim from the source appropriate to that claim:
 - Claude's checks: verification observations and referenced evidence;
 - assigned scope: exact prompts;
 - agent claims: exact handoffs;
-- lifecycle or ambiguous session behavior: ledger records and, when needed, raw event streams;
+- recorded chronology and lifecycle status: ledger records;
+- material harness activity or process outcome: raw event streams and direct process observations;
 - decisions and final judgment: decision and `run_closed` records.
 
 Raw `events.jsonl` or external IDE rollouts are fallback sources for disputes, ambiguity, or

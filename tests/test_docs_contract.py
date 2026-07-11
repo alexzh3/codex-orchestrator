@@ -52,6 +52,32 @@ def jsonl_blocks(text: str) -> list[list[tuple[int, str]]]:
 
 
 class DocumentationContractTests(unittest.TestCase):
+    def test_workflow_skill_owns_the_exact_close_sequence(self) -> None:
+        phrase = "validate → run_closed → report.md"
+        owners = [
+            path.relative_to(ROOT).as_posix()
+            for path in documentation_paths()
+            if phrase in path.read_text(encoding="utf-8")
+        ]
+
+        self.assertEqual(owners, ["skills/workflow/SKILL.md"])
+
+    def test_readme_diagrams_the_full_workflow(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("## Full Workflow", readme)
+        self.assertIn("```mermaid\nflowchart TD", readme)
+        for step in (
+            "Codex plan review useful?",
+            "Codex reviews plan",
+            "Claude assigns scoped work",
+            "independently verifies",
+            "fix required",
+            "run_closed",
+            "creates final report.md",
+        ):
+            self.assertIn(step, readme)
+
     def test_ledger_is_a_claude_authored_journal_not_global_evidence(self) -> None:
         contract = "\n".join(
             (ROOT / path).read_text(encoding="utf-8").casefold()

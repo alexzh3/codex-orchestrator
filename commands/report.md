@@ -1,5 +1,5 @@
 ---
-description: Author the final report after the descriptive close check and final run_closed judgment.
+description: Author the final report for a closed run.
 ---
 
 # Report

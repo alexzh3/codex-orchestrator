@@ -57,7 +57,7 @@ Use Codex review when a second model materially reduces risk. Save the review pr
 its execution, then capture both the event stream and handoff:
 
 ```bash
-"$CODEX" exec review --json \
+"$CODEX" exec -C <worktree> -s workspace-write review --json \
   --output-last-message "$EXECUTION_DIR/handoff.md" \
   --uncommitted - \
   < "$EXECUTION_DIR/prompt.md" \
@@ -65,7 +65,9 @@ its execution, then capture both the event stream and handoff:
 ```
 
 Use the same command with `--base <branch>` instead of `--uncommitted` to review changes against a
-branch, or `--commit <sha>` to review one commit.
+branch, or `--commit <sha>` to review one commit. Target the repository being reviewed with `-C`;
+if the shell runs elsewhere, make `EXECUTION_DIR` absolute so prompt, event, and handoff paths still
+refer to the run directory.
 
 Represent a monitored review as a named review agent and execution, with its exact prompt/event
 source/handoff. Treat review findings as claims until Claude checks them against the repository.

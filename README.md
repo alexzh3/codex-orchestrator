@@ -79,6 +79,28 @@ The operating instructions live in [`skills/orchestrate/SKILL.md`](skills/orches
 [`skills/workflow/SKILL.md`](skills/workflow/SKILL.md), and
 [`skills/report/SKILL.md`](skills/report/SKILL.md). Slash-command files only load these skills.
 
+## Full Workflow
+
+```mermaid
+flowchart TD
+    A["Claude plans<br/>goal · criteria · ownership"] --> B{"Codex plan review useful?"}
+    B -- yes --> C["Codex reviews plan"]
+    C --> D["Claude resolves findings"]
+    D --> B
+    B -- no --> E["Claude assigns scoped work"]
+    E --> F["Codex agents execute<br/>implementation · review"]
+    F --> G["Capture exact handoff<br/>and event stream"]
+    G --> H["Claude inspects final diff<br/>and independently verifies"]
+    H --> I{"Criteria accepted?"}
+    I -- "fix required" --> J["Targeted follow-up<br/>in relevant session"]
+    J --> F
+    I -- "decision / blocked" --> K["Record decision and risk"]
+    I -- yes --> L["Descriptive run validation"]
+    K --> L
+    L --> M["Claude records run_closed<br/>judgment · risks · follow-ups"]
+    M --> N["Claude creates final report.md<br/>including orchestration graph"]
+```
+
 ## Runtime Contract
 
 Runs live under `.codex-orchestrator/runs/<run-id>/` and are normally ignored by Git:
@@ -144,18 +166,12 @@ complete, blocked, or failed after inspecting the outcome. This is workflow memo
 mechanical telemetry. Agent completion does not complete the task; Claude first checks the actual
 result and acceptance criteria. The latest `task` record carries its current status.
 
-The close sequence is:
-
-```text
-validate → run_closed → report.md
-```
-
 Validation is a small descriptive close check for readable records, lifecycle pairing, declared
 files, terminal task state, and visible non-passing checks. It is deliberately not a complete event
 schema and does not judge implementation truth. Claude makes the semantic `run_closed.judgment` of
 `passed` or `blocked`. See
 [`docs/consensus-and-reviews.md`](docs/consensus-and-reviews.md) for recommended event fields and a
-worked fix/rerun example.
+worked fix/rerun example; the workflow skill owns the end-to-end close procedure.
 
 ## Claims, Evidence, And Verification
 
@@ -177,18 +193,6 @@ Failed checks remain in history. A fix and passing rerun get new records, and a 
 the outcome without pretending the earlier failure did not happen. Decision outcomes are
 `consensus`, `claude_decision`, or `user_action_required`.
 
-This keeps the division of responsibility simple:
-
-```text
-agent handoff claims
-        |
-        v
-Claude inspection + independent evidence
-        |
-        v
-verification → decision → validate → run_closed → report
-```
-
 ## Monitoring And Parallel Work
 
 The bundled parser classifies Codex event streams and reads incremental tails. The monitor uses
@@ -205,7 +209,7 @@ compute references under `skills/orchestrate/references/`.
 
 ## Final Report
 
-After `validate` and `run_closed`, Claude creates the final `report.md` once using exactly:
+For a closed run, Claude creates the final `report.md` once using exactly:
 
 1. Summary
 2. Changes

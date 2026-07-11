@@ -98,18 +98,12 @@ work, verified material claims, and recorded any needed decision. See
    when inline observations are insufficient.
 9. Record consequential agreements, disagreements, overrides, or user dependencies as `decision`.
 10. Append a terminal `task` record after its acceptance criteria have been evaluated.
-11. When no work remains, run `validate`, append `run_closed`, then invoke the report skill.
+11. When no work remains, use the workflow skill's close procedure, then invoke the report skill.
 
-The close order is fixed:
-
-```text
-validate → run_closed → report.md
-```
-
-Validation is a small descriptive omission check: it checks readable records, lifecycle pairing,
-declared files, terminal task state, and visible non-passing checks. It is not a complete event
-schema and does not validate decision rationale or implementation truth. Claude makes the
-`run_closed.judgment`; do not treat descriptive validation as semantic acceptance.
+The workflow's validation step is a small descriptive omission check: it checks readable records,
+lifecycle pairing, declared files, terminal task state, and visible non-passing checks. It is not a
+complete event schema and does not validate decision rationale or implementation truth. Claude
+makes the final judgment; do not treat descriptive validation as semantic acceptance.
 
 ## Reference Map
 

@@ -1,7 +1,7 @@
 # Claims, Evidence, Verification, And Decisions
 
 The runtime ledger preserves Claude's concise causal journal and links to supporting material; it
-is not a workflow engine, independent evidence, or a mechanical event recorder. Claude makes the
+is not a workflow engine, independent evidence, or an automated telemetry source. Claude makes the
 semantic judgments. The parser and validator only summarize event streams and check a small set of
 structural omissions.
 
@@ -71,7 +71,7 @@ Records may repeat for the same task. The latest record is current within the jo
 `active`, `complete`, `blocked`, or `failed`. Active tasks declare their allowed/owned file paths or
 globs in `files` before parallel execution; parallel tasks must have disjoint ownership or use
 isolated worktrees. This planned boundary is distinct from `execution_result.files_changed`, which
-records the paths that actually changed.
+is Claude's compact attribution note; the repository diff determines what actually changed.
 
 ```jsonl
 {"type":"task","id":"task-01","status":"active","goal":"Add request validation.","acceptance":["Invalid input is rejected","Relevant tests pass"],"files":["src/api.py","tests/test_api.py"],"recorded_at":"2026-07-10T12:01:00Z"}
@@ -142,14 +142,9 @@ the semantic `judgment` as `passed` or `blocked`, plus unresolved risks and foll
 {"type":"run_closed","judgment":"passed","summary":"All acceptance criteria were independently verified.","validation":{"ok":true,"issues":[],"warnings":[],"non_passing_verifications":[]},"risks":[],"follow_ups":[],"recorded_at":"2026-07-10T13:00:00Z"}
 ```
 
-The close order is always:
-
-```text
-validate → run_closed → report.md
-```
-
-Validation does not decide `judgment`. Claude reviews its output, all non-passing verification,
-open decisions, and repository state before closing the run.
+The `validation` field preserves the descriptive check immediately preceding closure. Validation
+does not decide `judgment`: Claude reviews its output, all non-passing verification, open decisions,
+and repository state before closing the run. The workflow skill owns the complete close procedure.
 
 ## Handoff Contract
 

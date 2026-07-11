@@ -44,8 +44,8 @@ Follow this sequence:
 11. Resolve structural issues, inspect all non-passing checks, and append one final `run_closed`
     record with `judgment: passed|blocked`, the exact validation result, unresolved risks, and
     follow-ups. Validation detects omissions; Claude decides whether the work is acceptable.
-12. Only after `run_closed`, use `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` to have Claude replace
-    `report.md` with the final report.
+12. Only after `run_closed`, use `${CLAUDE_PLUGIN_ROOT}/skills/report/SKILL.md` to have Claude create
+    the final `report.md` once.
 
 The canonical close sequence is `validate → run_closed → report.md`. Validation never decides
 acceptance, and the final report never repairs or rewrites ledger history.
