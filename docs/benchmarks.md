@@ -1,21 +1,19 @@
 # Benchmark Results
 
 > **Historical results:** This document preserves measurements from the schema-driven v0.2.0 and
-> v0.4.1 plugin. The prompt-first runtime does not include a benchmark command or adapter. Current
-> benchmark tooling and raw run data live in the external
-> [`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repository.
+> v0.4.1 plugin. The prompt-first runtime does not include a benchmark command or adapter.
+
+Benchmark tooling, intermediate versions, and raw run data are kept in the currently private
+[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repository.
 
 The public head-to-head result is an OpenThoughts-TBLite benchmark in Terminal-Bench format, run
 through Harbor in per-task Docker containers and graded by each task's own verifier. The task set is
 the 10 hardest tasks out of 100 by published success rate. Each cell is one run per `(task, config)`,
 so the result is directional rather than statistical.
 
-This curated view covers the retained configurations: **0.4.1** (the then-current release), **0.2.0** (kept
-as a timed reference), and the two **solo** baselines (a single model, no plugin). The full archived
-seven-label benchmark series (0.1.0 → 0.5.0) and all raw run data live in the
-[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repo.
-Those are historical benchmark-series labels; its `0.5.0` label does not describe this prompt-first
-release.
+This curated view covers the retained configurations: **0.4.1** (the then-current release), **0.2.0**
+(kept as a timed reference), and the two **solo** baselines (a single model, no plugin). These are
+historical benchmark-series labels; `0.5.0` does not describe this prompt-first release.
 
 Legend: ✅/❌ = verifier pass/fail. ⚠️ = solved without assigning work to Codex, a degenerate solo solve.
 ⏱ = hit the per-task wall-clock timeout (the container is still graded, so ⏱ can accompany a pass).
@@ -84,10 +82,10 @@ Totals per configuration:
 
 | Configuration | Σ tokens (as-run) | Claude Σ | Codex Σ | Codex sess |
 |---|--:|--:|--:|--:|
-| 0.2.0 (orchestrated)       | 29.99M | 24.98M |  5.01M | 23 |
-| 0.4.1 (orchestrated)       | 31.77M | 27.71M |  4.06M | 19 |
-| solo Claude (Opus 4.8 max) | 14.49M | 14.49M |  —     |  — |
-| solo Codex (gpt-5.5 xhigh) |  5.44M | —      |  5.44M | 20 |
+| 0.2.0 (orchestrated) | 29.99M | 24.98M | 5.01M | 23 |
+| 0.4.1 (orchestrated) | 31.77M | 27.71M | 4.06M | 19 |
+| solo Claude (Opus 4.8 max) | 14.49M | 14.49M | — | — |
+| solo Codex (gpt-5.5 xhigh) | 5.44M | — | 5.44M | 20 |
 
 Orchestrated runs split tokens across the **Claude** orchestrator and the **Codex** implementer; a
 solo run uses one model. The orchestrated configs spend ~2–6× the tokens of the solo baselines —
@@ -107,6 +105,3 @@ Combined Claude+Codex tokens per task (solo = single model):
 | 8 | `multi-labeller` | 2.43M | 2.87M | 402K | 231K |
 | 9 | `react-typescript-debugg` | 1.11M | 1.84M | 1.93M | 1.44M |
 | 10 | `token-auth-websocket` | 5.41M | 4.88M | 1.44M | 798K |
-
-Full raw run data, the intermediate versions, aggregation tooling, and run instructions live in the
-[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repo.

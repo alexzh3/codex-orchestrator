@@ -21,14 +21,16 @@ Claude and Codex come from different model families and harnesses, so they can c
 Work on heterogeneous ensembles—including [LLM-Blender](https://arxiv.org/abs/2306.02561), [Mixture-of-Agents](https://arxiv.org/abs/2406.04692), and [FrugalGPT](https://arxiv.org/abs/2305.05176)—supports combining distinct models while warning against blind majority agreement.
 This plugin asks Claude to resolve disagreements from inspectable evidence rather than model votes.
 
-### 2. Claude Has a Larger Context Window
+### 2. Claude Maintains Global Context
 
-Claude tracks the overall goal, agent history, verification, and decisions while Codex receives focused execution tasks.
-Anthropic's [1M context release](https://claude.com/blog/1m-context-ga) supports using Claude for this broader context.
+Claude tracks the overall goal, agent history, verification, and decisions while Codex receives
+focused execution tasks. Anthropic's
+[1M context release](https://claude.com/blog/1m-context-ga) supports using Claude for this broader
+context.
 
 Large context windows are not enough on their own.
 [Context Rot](https://www.trychroma.com/research/context-rot) shows that performance can decline as context grows.
-Durable prompts, handoffs, repository state, and journal entries preserve the facts that matter.
+Durable prompts, handoffs, repository state, and journal entries preserve the context that matters.
 
 ### 3. Native Harnesses Matter
 
@@ -71,7 +73,7 @@ To plan, implement, review, and report on a change:
 /codex-orchestrator:workflow
 
 Plan and implement <feature>.
-Have another Codex agent review the result.
+Have another Codex agent review the result when useful.
 Verify it and produce the final report.
 ```
 
@@ -124,17 +126,30 @@ report.md                 # written by Claude after run closure
 Each agent directory is a persistent execution context. Every prompt, event stream, and handoff
 cycle gets the next numbered execution; resuming a native session creates another execution under
 the same agent. Each execution keeps the exact prompt, raw Codex events, and final handoff together
-so that each agent turn can be inspected later.
+so that each execution can be inspected later.
 
-`journal.jsonl` is the compact index for the run, `evidence/` holds optional supporting artifacts,
+`journal.jsonl` is the compact index for the run, `evidence/` holds optional supporting evidence,
 and `report.md` contains Claude's final summary. The detailed journal format, trust boundaries, and
-closure flow are documented in [`docs/consensus-and-reviews.md`](docs/consensus-and-reviews.md).
+closure flow are documented in [`docs/orchestration-contract.md`](docs/orchestration-contract.md).
 
 ## Benchmarks
 
-Results, limitations, methodology, and raw-run links are documented in
-[`docs/benchmarks.md`](docs/benchmarks.md) and the external
-[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repository.
+With its time limit lifted, the orchestrator passed 9 of the 10 benchmark tasks. The timed solo
+Claude Code and solo Codex baselines passed 8/10 each:
+
+| Configuration | Regime | Passed |
+| --- | --- | ---: |
+| Orchestrator | No timeout | **9/10** |
+| Solo Claude Code | Timed | 8/10 |
+| Solo Codex | Timed | 8/10 |
+
+The solo runs were not repeated without a time limit, so this comparison separates the
+orchestrator's latency from its eventual task success rather than providing a like-for-like speed
+comparison. These results are directional, not statistically conclusive: each configuration was
+run only once per task, and the available compute budget did not allow repeated trials.
+
+Results, limitations, and methodology are documented in
+[`docs/benchmarks.md`](docs/benchmarks.md).
 
 ## Limitations
 

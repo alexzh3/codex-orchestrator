@@ -1,11 +1,11 @@
-# Claims, Evidence, Verification, And Decisions
+# Orchestration Contract
 
 The run journal preserves Claude's concise causal history and links to supporting material; it
 is not a workflow engine, independent evidence, or an automated telemetry source. Claude makes the
 semantic judgments. The parser and validator only summarize event streams and check a small set of
 structural omissions.
 
-## Trust Boundaries
+## Record Authority
 
 - **Prompt:** the exact immutable input sent for one execution. It records assigned scope.
 - **Event stream:** raw Codex JSONL, or an external IDE rollout. It records what the harness emitted
@@ -25,31 +25,7 @@ Evidence need not always be a file. Keep a small command result or diff observat
 optional `evidence/` directory for lengthy output, screenshots, metrics, failure diagnostics, or
 material that another reviewer may need to inspect later. Do not copy handoffs into `evidence/`.
 
-## Run Layout
-
-```text
-.codex-orchestrator/runs/<run-id>/
-  journal.jsonl
-  agents/
-    codex-impl-01/
-      execution-01/
-        prompt.md
-        events.jsonl
-        handoff.md
-  evidence/
-  report.md
-```
-
-Agent names use `<provider>-<primary-role>-<sequence>`. Each prompt/execution/handoff cycle gets the
-next `execution-NN` directory directly under that agent. A resumed Codex session remains the same
-agent and gets a new execution; a deliberately fresh session gets a new agent name.
-
-For IDE sessions, `execution.events` is an absolute rollout path and is not copied into the run.
-Attaching only to observe an already-active IDE session uses `mode: "observe"` and may omit `prompt`
-because Claude sent nothing. A later follow-up is a new, normal prompted execution. Claude agent
-executions may omit `events` when no raw stream is exposed. Never fabricate one.
-
-## Run Journal Entry Types
+## Journal Entries
 
 Only Claude, acting as orchestrator, appends to `journal.jsonl`. Every nonblank line is one JSON
 object with `recorded_at`. The journal contains seven entry types. The fields below are the prompted
@@ -170,40 +146,24 @@ observations to the execution result or verification instead.
 
 ## Independent Review
 
-Claude's own verification is handoff-aware: it reads the agent's claims to determine what needs
-checking. A first independent Codex review instead uses a fresh session and receives the goal,
-criteria, constraints, stable target, and review lens without the implementer's narrative or prior
-verdicts. Prefer an immutable commit; an uncommitted review reserves only the reviewed task's files
-and shared resources, so disjoint work may continue. A second Codex session adds context and lens
-diversity, while recorded Claude-Codex participation adds model-family diversity; acceptance still
-follows inspectable evidence rather than agreement count. The operational rules live in
+Claude verification reads the handoff and repository. A first independent Codex review starts from
+a fresh, unprimed session and stable target; acceptance follows evidence, not agreement count. The
+operational rules for review isolation, review lenses, and concurrent work live in
 [`review.md`](../skills/orchestrate/references/review.md) and
 [`compute.md`](../skills/orchestrate/references/compute.md).
 
-## Failed Check, Fix, And Rerun
+## Failed Checks And Reruns
 
-Keep both observations. A passing rerun supports acceptance of the new repository state, but it does
-not make the earlier failure disappear. This complete example shows the lifecycle from run start to
-closure:
+Keep both observations. A passing rerun supports acceptance of the corrected repository state but
+does not erase the earlier failure. Record the failed verification, the fix execution, the passing
+verification, and the decision that explains the final outcome.
 
-```jsonl
-{"type":"run_started","run_id":"run-20260710-01","repo":"/work/project","plugin_ref":"git:abc1234","claude_version":"2.1.0","codex_version":"0.110.0","recorded_at":"2026-07-10T12:00:00Z"}
-{"type":"task","id":"task-01","status":"active","goal":"Add request validation.","acceptance":["Invalid input is rejected","Relevant tests pass"],"files":["src/api.py","tests/test_api.py"],"recorded_at":"2026-07-10T12:01:00Z"}
-{"type":"execution","agent":"codex-impl-01","execution":"execution-01","task":"task-01","provider":"codex","role":"implementation","mode":"headless","event_source":"exec","model":"gpt-5","effort":"high","prompt":"agents/codex-impl-01/execution-01/prompt.md","events":"agents/codex-impl-01/execution-01/events.jsonl","handoff":"agents/codex-impl-01/execution-01/handoff.md","recorded_at":"2026-07-10T12:02:00Z"}
-{"type":"execution_result","agent":"codex-impl-01","execution":"execution-01","task":"task-01","status":"complete","session_id":"thread-123","handoff":"agents/codex-impl-01/execution-01/handoff.md","summary":"Implemented validation and tests.","files_changed":["src/api.py","tests/test_api.py"],"caveats":[],"recorded_at":"2026-07-10T12:20:00Z"}
-{"type":"verification","id":"check-01","task":"task-01","criterion":"Whitespace-only names are rejected","method":"command","check":"python -m pytest tests/test_api.py -q","result":"failed","observation":"1 failed, 11 passed; whitespace-only input was accepted.","recorded_at":"2026-07-10T12:25:00Z"}
-{"type":"execution","agent":"codex-impl-01","execution":"execution-02","task":"task-01","provider":"codex","role":"fix","mode":"headless","event_source":"exec","session_id":"thread-123","prompt":"agents/codex-impl-01/execution-02/prompt.md","events":"agents/codex-impl-01/execution-02/events.jsonl","handoff":"agents/codex-impl-01/execution-02/handoff.md","recorded_at":"2026-07-10T12:27:00Z"}
-{"type":"execution_result","agent":"codex-impl-01","execution":"execution-02","task":"task-01","status":"complete","session_id":"thread-123","handoff":"agents/codex-impl-01/execution-02/handoff.md","summary":"Added stripped-empty validation and regression coverage.","files_changed":["src/api.py","tests/test_api.py"],"caveats":[],"recorded_at":"2026-07-10T12:40:00Z"}
-{"type":"verification","id":"check-02","task":"task-01","criterion":"Whitespace-only names are rejected","method":"command","check":"python -m pytest tests/test_api.py -q","result":"passed","observation":"12 tests passed; exit code 0.","evidence":["evidence/task-01-tests-after-fix.txt"],"recorded_at":"2026-07-10T12:43:00Z"}
-{"type":"decision","id":"decision-01","task":"task-01","finding":"The first implementation accepted whitespace-only names.","outcome":"consensus","resolution":"The defect was fixed and the same test command passed against the corrected worktree.","basis":["check-01","check-02"],"risk":"low","recorded_at":"2026-07-10T12:45:00Z"}
-{"type":"task","id":"task-01","status":"complete","goal":"Add request validation.","acceptance":["Invalid input is rejected","Relevant tests pass"],"files":["src/api.py","tests/test_api.py"],"summary":"Validation and regression coverage accepted after fix and rerun.","recorded_at":"2026-07-10T12:46:00Z"}
-{"type":"run_closed","judgment":"passed","summary":"The task passed after the defect was fixed and independently rerun.","validation":{"ok":true,"issues":[],"warnings":[],"non_passing_verifications":[{"id":"check-01","task":"task-01","result":"failed","check":"python -m pytest tests/test_api.py -q","observation":"1 failed, 11 passed; whitespace-only input was accepted."}]},"risks":[],"follow_ups":[],"recorded_at":"2026-07-10T13:00:00Z"}
-```
-
-Use `claude_decision` when Claude proceeds despite remaining model disagreement; record the rejected
-alternative, rationale, and residual risk. Use `user_action_required` when progress or acceptance
-needs authority or information Claude does not have. Unresolved required user action normally
-produces `run_closed.judgment: blocked`.
+A complete run fixture is available at
+[`tests/replay/long-run-001/journal.jsonl`](../tests/replay/long-run-001/journal.jsonl). Use
+`claude_decision` when Claude proceeds despite remaining model disagreement, and record the rejected
+alternative, rationale, and residual risk. Use `user_action_required` when acceptance needs authority
+or information Claude does not have; unresolved required user action normally closes the run as
+blocked.
 
 ## Descriptive Validation
 

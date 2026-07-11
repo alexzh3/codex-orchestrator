@@ -47,18 +47,17 @@ An observe-only IDE attachment omits `prompt.md` because Claude sent no prompt. 
 reference an absolute external rollout path instead of copying an event stream. Claude agents may
 omit `events` when their harness exposes no raw stream. Never synthesize a log.
 
-An agent handoff is a claim package. It establishes what the agent reported, not that the report is
-correct. Evidence is an inspectable observation that supports or contradicts a verification or
-decision. Put lengthy command output, screenshots, metrics, and other material observations under
-`evidence/`; keep small observations inline in the journal. Prompts establish scope, and event
-streams establish session activity, but neither proves implementation correctness.
+## Trust Boundaries
+
+Prompts define assigned scope. Handoffs record agent claims. Event streams show what the harness
+emitted. The journal records Claude's chronology, task state, and decisions. Evidence is an
+inspectable observation used to verify those claims against checks and the final repository state.
+Keep small observations inline; put lengthy output, screenshots, or metrics under `evidence/`.
 
 ## Run Journal
 
-`journal.jsonl` is a concise append-only orchestration journal and index written by Claude. It is
-canonical for Claude's recorded chronology, task state, and decisions, but it is not evidence that
-an agent claim or implementation result is true. Each journal entry is one compact JSON object with
-`recorded_at`. Use exactly these entry types:
+`journal.jsonl` is Claude's concise append-only orchestration journal and navigation index. Each
+journal entry is one compact JSON object with `recorded_at`. Use exactly these entry types:
 
 - `run_started`: first entry; run id, repository, plugin ref, and available Claude/Codex versions.
 - `task`: goal, acceptance criteria, allowed/owned file paths or globs in `files`, and latest task
@@ -73,11 +72,10 @@ an agent claim or implementation result is true. Each journal entry is one compa
   follow-ups.
 
 A task entry may be repeated; its latest entry is current within the journal. An execution is in
-flight until Claude records a matching terminal execution result. These entries support recovery
-and monitoring but do not mechanically establish process completion or correctness. A complete
-execution result does not complete its task: keep the task active until Claude has inspected the
-work, verified material claims, and recorded any needed decision. See
-`docs/consensus-and-reviews.md` for the recommended fields and worked example.
+flight until Claude records a matching terminal execution result. A complete execution result does
+not complete its task: keep the task active until Claude has inspected the work, verified material
+claims, and recorded any needed decision. See
+`docs/orchestration-contract.md` for the recommended fields and worked example.
 
 ## Standard Loop
 

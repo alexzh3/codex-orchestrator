@@ -96,7 +96,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertNotIn("source of truth", contract)
 
     def test_validation_is_documented_as_an_omission_check_not_a_schema(self) -> None:
-        contract = (ROOT / "docs" / "consensus-and-reviews.md").read_text(encoding="utf-8")
+        contract = (ROOT / "docs" / "orchestration-contract.md").read_text(encoding="utf-8")
 
         self.assertIn("small omission check", contract)
         self.assertIn("does not enforce every documented field", contract)
