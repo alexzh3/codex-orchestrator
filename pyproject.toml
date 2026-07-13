@@ -2,7 +2,7 @@
 
 [project]
 name = "codex-orchestrator"
-version = "0.5.0"
+version = "0.5.1"
 description = "Coordinate reusable monitored OpenAI Codex agents from Claude Code."
 readme = "README.md"
 requires-python = ">=3.10"
