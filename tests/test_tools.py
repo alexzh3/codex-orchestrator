@@ -8,7 +8,7 @@ import tracemalloc
 import unittest
 from pathlib import Path
 
-from scripts.codex_orchestrator.events import summarize_stream
+from scripts.codex_orchestrator.events import decode_event_line, summarize_stream
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
@@ -65,6 +65,21 @@ class ToolTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(payload["status"], "starting")
         self.assertEqual(payload["compatibility"]["parse_confidence"], "high")
+
+    def test_oversized_integer_is_counted_as_a_parse_error(self) -> None:
+        hostile = '{"type":"turn.started","n":' + ("9" * 5_000) + "}\n"
+        record = decode_event_line(hostile)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            path.write_text(hostile + '{"type":"turn.started"}\n', encoding="utf-8")
+            summary = summarize_stream(path)
+
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual(record.event_type, "<invalid-json>")
+        self.assertEqual(summary.parse_errors, 1)
+        self.assertEqual(summary.event_count, 2)
+        self.assertEqual(summary.status, "active")
 
     def test_exec_stream_completed_status(self) -> None:
         result = run_cli(

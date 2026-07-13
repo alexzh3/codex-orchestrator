@@ -16,6 +16,7 @@ from .events import (
 )
 from .journal import validate_run
 from .monitor import command_monitor
+from .runner import command_run
 
 
 def command_state(args: argparse.Namespace) -> int:
@@ -87,6 +88,11 @@ def command_validate(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def command_run_hint(_args: argparse.Namespace) -> int:
+    print(f"usage: {Path(sys.argv[0]).name} run --help", file=sys.stderr)
+    return 2
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Inspect managed Codex exec streams and validate orchestration runs."
@@ -133,9 +139,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     validate_parser.add_argument("run_dir", help="Run directory containing journal.jsonl.")
     validate_parser.set_defaults(func=command_validate)
 
+    run_parser = subparsers.add_parser(
+        "run", help="Capture child events; see run --help."
+    )
+    run_parser.set_defaults(func=command_run_hint)
+
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
+    effective_argv = sys.argv[1:] if argv is None else argv
+    if effective_argv and effective_argv[0] == "run":
+        return command_run(effective_argv[1:])
+    args = parse_args(effective_argv)
     return args.func(args)

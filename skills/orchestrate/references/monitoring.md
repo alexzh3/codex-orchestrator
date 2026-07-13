@@ -16,8 +16,9 @@ codex-impl-01/execution-01/
 ```
 
 Save `prompt.md` and append `execution` with the absolute `worktree`, full `head`, and attached
-`branch` when present before launch. Capture stdout as `events.jsonl` and the last message as
-`handoff.md`. Resolve the recorded Git values from the same path passed to `-C`:
+`branch` when present before launch. The runner sends the saved prompt to Codex, captures raw
+stdout as `events.jsonl`, and lets Codex save the last message as `handoff.md`. Resolve the
+recorded Git values from the same path passed to `-C`:
 
 ```bash
 git -C <worktree> rev-parse --show-toplevel
@@ -29,12 +30,23 @@ Then launch Codex:
 
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-impl-01/execution-01"
-codex exec --json --output-last-message "$EXECUTION_DIR/handoff.md" \
-  -s workspace-write -c approval_policy=never -C <worktree> \
-  - \
-  < "$EXECUTION_DIR/prompt.md" \
-  > "$EXECUTION_DIR/events.jsonl"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
+  --label codex-impl-01 \
+  --events "$EXECUTION_DIR/events.jsonl" \
+  --prompt "$EXECUTION_DIR/prompt.md" \
+  -- codex exec --json --output-last-message "$EXECUTION_DIR/handoff.md" \
+     -s workspace-write -c approval_policy=never -C <worktree> -
 ```
+
+Launch the runner as a Claude Code background Bash task. It creates `events.jsonl` exclusively,
+aborting before Codex starts if that file already exists, then captures raw Codex stdout there
+byte-for-byte. Its own stdout contains compact one-line progress for the human `/tasks` view.
+Those lines are not a Claude monitor stream: Claude keeps using `state` and `monitor` and receives
+only completion, failure, stale, missing-stream, or incompatible-format notifications. Codex
+stderr passes through for native diagnostics. After a clean capture, the runner exits with Codex's
+exit code. Capture, prompt, or launch failures exit nonzero; cancellation exits with 128 plus the
+signal number. Everything after `--` passes to Codex unchanged, including fresh, resume, and
+review commands.
 
 Never use `--ephemeral`. Use broad access only with explicit authorization and isolation.
 
@@ -60,12 +72,13 @@ Resume a relevant idle session as the next execution under the same agent:
 
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-impl-01/execution-02"
-codex exec -C <worktree> -s workspace-write -c approval_policy=never \
-  resume --json \
-  --output-last-message "$EXECUTION_DIR/handoff.md" \
-  <session-id> - \
-  < "$EXECUTION_DIR/prompt.md" \
-  > "$EXECUTION_DIR/events.jsonl"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
+  --label codex-impl-01 \
+  --events "$EXECUTION_DIR/events.jsonl" \
+  --prompt "$EXECUTION_DIR/prompt.md" \
+  -- codex exec -C <worktree> -s workspace-write -c approval_policy=never \
+     resume --json --output-last-message "$EXECUTION_DIR/handoff.md" \
+     <session-id> -
 ```
 
 Read the absolute `worktree` from the preceding execution and use it with `-C` and the same
@@ -96,6 +109,6 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" monitor \
 
 Always select the target with `--run-id` plus its repository or with `--log`.
 
-The monitor is read-only and emits completion, failure, unknown-format, missing-stream, or stale
-notifications. Treat silence and staleness as ambiguous; inspect the handoff and repository before
-appending `execution_result`.
+The monitor is read-only and emits completion, failure, incompatible-format, missing-stream, or
+stale notifications. Treat silence and staleness as ambiguous; inspect the handoff and repository
+before appending `execution_result`.

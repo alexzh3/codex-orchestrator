@@ -168,6 +168,28 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('$EXECUTION_DIR/prompt.md', resume)
         self.assertIn('$EXECUTION_DIR/events.jsonl', resume)
 
+    def test_documented_codex_launches_use_the_runner(self) -> None:
+        monitoring = (ROOT / "skills/orchestrate/references/monitoring.md").read_text(
+            encoding="utf-8"
+        )
+        review = (ROOT / "skills/orchestrate/references/review.md").read_text(
+            encoding="utf-8"
+        )
+        runner_command = 'codex_orch_tools.py" run'
+        launch = monitoring.split("Then launch Codex:", maxsplit=1)[1].split(
+            "Never use `--ephemeral`", maxsplit=1
+        )[0]
+        resume = monitoring.split(
+            "Resume a relevant idle session as the next execution under the same agent:",
+            maxsplit=1,
+        )[1].split("Read the absolute `worktree`", maxsplit=1)[0]
+        review_launch = review.split("```bash", maxsplit=1)[1].split("```", maxsplit=1)[0]
+
+        for block in (launch, resume, review_launch):
+            self.assertIn(runner_command, block)
+        for reference in (monitoring, review):
+            self.assertNotIn('> "$EXECUTION_DIR/events.jsonl"', reference)
+
     def test_journal_uniqueness_and_successor_run_guidance_match_runtime(self) -> None:
         contract = " ".join(
             (ROOT / "docs/orchestration-contract.md").read_text(encoding="utf-8").split()
