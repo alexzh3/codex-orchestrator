@@ -332,14 +332,16 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("rerun the affected acceptance checks there", compute)
         self.assertIn("only after those target checks pass", compute)
 
-    def test_replay_directory_is_documented_as_a_generated_test_scaffold(self) -> None:
-        contract = " ".join(
-            (ROOT / "docs/orchestration-contract.md").read_text(encoding="utf-8").split()
+    def test_replay_directory_documents_generated_test_scaffold(self) -> None:
+        replay_readme = " ".join(
+            (ROOT / "tests/replay/README.md").read_text(encoding="utf-8").split()
         )
 
-        self.assertIn("checked-in input scaffold, not a standalone valid closed run", contract)
-        self.assertIn("test_prompt_first_workflow.py", contract)
-        self.assertIn("validates the completed copy", contract)
+        self.assertIn(
+            "checked-in input scaffold, not a standalone valid closed run", replay_readme
+        )
+        self.assertIn("test_prompt_first_workflow.py", replay_readme)
+        self.assertIn("validates the completed copy", replay_readme)
 
     def test_review_effort_is_risk_scaled(self) -> None:
         review = " ".join(
