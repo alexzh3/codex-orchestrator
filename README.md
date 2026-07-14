@@ -85,70 +85,6 @@ The operating instructions live in [`skills/orchestrate/SKILL.md`](skills/orches
 [`skills/workflow/SKILL.md`](skills/workflow/SKILL.md), and
 [`skills/report/SKILL.md`](skills/report/SKILL.md).
 
-## Optional Role Configuration
-
-Codex normally runs unchanged and resolves its model and performance settings from the native
-Codex configuration, including `config.toml`. The plugin does not create a role configuration
-implicitly. To opt in for one repository, initialize it explicitly:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" config init --repo <repo>
-```
-
-This creates `.codex-orchestrator/config.ini` without overwriting an existing file and locally
-excludes `/.codex-orchestrator/` from Git. The generated policy is:
-
-```ini
-[meta]
-version = 1
-
-[defaults]
-model = gpt-5.6-sol
-speed = fast
-
-[role.implementation]
-reasoning_efforts = xhigh, max, ultra
-
-[role.review]
-reasoning_efforts = max, ultra
-
-[role.planning]
-reasoning_efforts = max, ultra
-
-[role.planning_review]
-reasoning_efforts = max, ultra
-```
-
-Users may edit the file directly. Every role and its `reasoning_efforts` list is required; each list
-must be a nonempty, unique subset of `low`, `medium`, `high`, `xhigh`, `max`, and `ultra` in that
-order. `model` and `speed` may instead be omitted from `[defaults]` or overridden in a role section;
-an omitted value inherits native Codex behavior, while the only configured speed is `fast`.
-Arbitrary extra keys are rejected.
-
-For managed launches carrying `--repo`, an existing file is applied automatically. Claude selects
-one allowed effort for each execution according to task difficulty, breadth, and required context;
-`fast` selects Codex Fast service tier. Inspect or validate the policy after editing and before
-launch with:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" config check --repo <repo>
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" config show \
-  --repo <repo> --role implementation --json
-```
-
-The four roles and their persistent agent-directory prefixes are:
-
-| Role | Prefix | Purpose |
-| --- | --- | --- |
-| `implementation` | `codex-impl-NN` | Implement scoped work and resume focused fixes. |
-| `review` | `codex-review-NN` | Independently review an implementation. |
-| `planning` | `codex-plan-NN` | Independently propose an approach before Claude finalizes the plan. |
-| `planning_review` | `codex-plan-review-NN` | Critique Claude's draft plan in a separate session. |
-
-If `config.ini` is absent, role metadata does not alter the child command, no configuration is
-created, and native Codex defaults remain authoritative. Invalid configured values or unavailable
-model/Fast-tier entitlements fail explicitly rather than being silently downgraded.
-
 ## Workflow
 
 The `/codex-orchestrator:workflow` command runs this full flow, from planning and scoped execution
@@ -195,6 +131,34 @@ the closing judgment.
 `journal.jsonl` is the compact index for the run, `evidence/` holds optional supporting evidence,
 and `report.md` contains Claude's final summary. The detailed journal format, trust boundaries, and
 closure flow are documented in [`docs/orchestration-contract.md`](docs/orchestration-contract.md).
+
+## Optional Role Configuration
+
+Role configuration is opt-in; the plugin does not create a role configuration implicitly. Without
+it, Codex uses its native `config.toml` and built-in defaults unchanged. Generate a repository
+config explicitly with:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" config init --repo <repo>
+```
+
+This creates `.codex-orchestrator/config.ini` without overwriting an existing file and locally
+excludes `/.codex-orchestrator/` from Git. Its generated defaults are:
+
+| Role | Prefix | Default model | Default allowed efforts | Default speed | Purpose |
+| --- | --- | --- | --- | --- | --- |
+| `implementation` | `codex-impl-NN` | `gpt-5.6-sol` | `xhigh`, `max`, `ultra` | `fast` | Implement scoped work and focused fixes. |
+| `review` | `codex-review-NN` | `gpt-5.6-sol` | `max`, `ultra` | `fast` | Independently review an implementation. |
+| `planning` | `codex-plan-NN` | `gpt-5.6-sol` | `max`, `ultra` | `fast` | Propose an independent approach. |
+| `planning_review` | `codex-plan-review-NN` | `gpt-5.6-sol` | `max`, `ultra` | `fast` | Critique Claude's draft plan. |
+
+These values correspond to `model = gpt-5.6-sol` and `speed = fast`. Users may edit the file
+directly. Every role and its effort list is required; efforts must be a nonempty, ordered, unique
+subset of `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`. Model and speed may be omitted to
+inherit native Codex behavior or overridden per role. Extra keys and speeds other than `fast` are
+rejected. Claude selects one allowed effort per execution based on difficulty, breadth, and context.
+After editing, validate with `config check --repo <repo>` and inspect a role with
+`config show --repo <repo> --role implementation --json`.
 
 ## Historical v0.4.1 Benchmarks
 
