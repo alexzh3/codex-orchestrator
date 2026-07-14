@@ -2,8 +2,9 @@
 
 ![Claude–Codex Orchestrator overview](docs/assets/codex-orchestrator-overview.png)
 
-A Claude Code plugin for coordinating OpenAI Codex agents. Claude plans and verifies the work;
-Codex handles scoped implementation and review through its CLI.
+A Claude Code plugin for coordinating OpenAI Codex agents. Claude owns the plan and verifies the
+work; Codex provides optional planning input and handles scoped implementation and review through
+its CLI.
 
 ## What It Does
 
@@ -11,6 +12,7 @@ Use this plugin when you want Claude Code to supervise Codex rather than manuall
 between the two tools. It helps Claude:
 
 - assign or resume scoped Codex agents;
+- request independent Codex planning or plan review when it materially reduces risk;
 - monitor active Codex agents;
 - preserve exact prompts, event streams, and handoffs;
 - independently verify results and record consequential decisions.
@@ -83,6 +85,70 @@ The operating instructions live in [`skills/orchestrate/SKILL.md`](skills/orches
 [`skills/workflow/SKILL.md`](skills/workflow/SKILL.md), and
 [`skills/report/SKILL.md`](skills/report/SKILL.md).
 
+## Optional Role Configuration
+
+Codex normally runs unchanged and resolves its model and performance settings from the native
+Codex configuration, including `config.toml`. The plugin does not create a role configuration
+implicitly. To opt in for one repository, initialize it explicitly:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" config init --repo <repo>
+```
+
+This creates `.codex-orchestrator/config.ini` without overwriting an existing file and locally
+excludes `/.codex-orchestrator/` from Git. The generated policy is:
+
+```ini
+[meta]
+version = 1
+
+[defaults]
+model = gpt-5.6-sol
+speed = fast
+
+[role.implementation]
+reasoning_efforts = xhigh, max, ultra
+
+[role.review]
+reasoning_efforts = max, ultra
+
+[role.planning]
+reasoning_efforts = max, ultra
+
+[role.planning_review]
+reasoning_efforts = max, ultra
+```
+
+Users may edit the file directly. Every role and its `reasoning_efforts` list is required; each list
+must be a nonempty, unique subset of `low`, `medium`, `high`, `xhigh`, `max`, and `ultra` in that
+order. `model` and `speed` may instead be omitted from `[defaults]` or overridden in a role section;
+an omitted value inherits native Codex behavior, while the only configured speed is `fast`.
+Arbitrary extra keys are rejected.
+
+For managed launches carrying `--repo`, an existing file is applied automatically. Claude selects
+one allowed effort for each execution according to task difficulty, breadth, and required context;
+`fast` selects Codex Fast service tier. Inspect or validate the policy after editing and before
+launch with:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" config check --repo <repo>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" config show \
+  --repo <repo> --role implementation --json
+```
+
+The four roles and their persistent agent-directory prefixes are:
+
+| Role | Prefix | Purpose |
+| --- | --- | --- |
+| `implementation` | `codex-impl-NN` | Implement scoped work and resume focused fixes. |
+| `review` | `codex-review-NN` | Independently review an implementation. |
+| `planning` | `codex-plan-NN` | Independently propose an approach before Claude finalizes the plan. |
+| `planning_review` | `codex-plan-review-NN` | Critique Claude's draft plan in a separate session. |
+
+If `config.ini` is absent, role metadata does not alter the child command, no configuration is
+created, and native Codex defaults remain authoritative. Invalid configured values or unavailable
+model/Fast-tier entitlements fail explicitly rather than being silently downgraded.
+
 ## Workflow
 
 The `/codex-orchestrator:workflow` command runs this full flow, from planning and scoped execution
@@ -121,6 +187,10 @@ Each top-level agent directory is a persistent execution context. Every prompt, 
 handoff cycle gets the next numbered execution; resuming a native session creates another execution
 under the same agent. Each execution keeps the exact prompt, raw Codex events, and final handoff
 together so that each execution can be inspected later.
+
+Planning and plan-review agents are optional, fresh, read-only sessions. They advise Claude; they
+do not replace Claude's responsibility to finalize the plan, verify repository evidence, and make
+the closing judgment.
 
 `journal.jsonl` is the compact index for the run, `evidence/` holds optional supporting evidence,
 and `report.md` contains Claude's final summary. The detailed journal format, trust boundaries, and

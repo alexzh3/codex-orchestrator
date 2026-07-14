@@ -22,6 +22,7 @@ from .events import (
     is_reconnect_notice,
     json_dumps,
 )
+from .role_config import ROLES, RoleConfigError, RolePolicy, load_role_config
 
 _ANSI_RE = re.compile(
     r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])"
@@ -51,6 +52,12 @@ _TERMINATE_TIMEOUT = 5.0
 _DISPLAY_QUEUE_SIZE = 256
 _DISPLAY_JOIN_TIMEOUT = 0.2
 _DISPLAY_BACKLOG_WARNING = "warning: display backlogged; progress lines dropped"
+_PERFORMANCE_CONFIG_KEYS = {
+    "features.fast_mode",
+    "model",
+    "model_reasoning_effort",
+    "service_tier",
+}
 
 
 def scrub_text(value: object) -> str:
@@ -594,6 +601,71 @@ def _run_child(
             signal.signal(signum, previous_handler)
 
 
+def _configured_command(
+    command: list[str], policy: RolePolicy, reasoning_effort: str
+) -> list[str]:
+    if (
+        len(command) < 2
+        or Path(command[0]).name not in {"codex", "codex.exe"}
+        or command[1] != "exec"
+    ):
+        raise RoleConfigError("active role configuration requires a 'codex exec' child command")
+    if reasoning_effort not in policy.reasoning_efforts:
+        allowed = ", ".join(policy.reasoning_efforts)
+        raise RoleConfigError(
+            f"reasoning effort {reasoning_effort!r} is not allowed for this role; "
+            f"choose one of: {allowed}"
+        )
+    _reject_performance_conflicts(command)
+
+    overrides: list[str] = []
+    if policy.model is not None:
+        overrides.extend(("--model", policy.model))
+    overrides.extend(("-c", f'model_reasoning_effort="{reasoning_effort}"'))
+    if policy.speed == "fast":
+        overrides.extend(("-c", 'service_tier="fast"', "--enable", "fast_mode"))
+    return [*command[:2], *overrides, *command[2:]]
+
+
+def _reject_performance_conflicts(command: list[str]) -> None:
+    index = 2
+    while index < len(command):
+        argument = command[index]
+        if argument == "--":
+            return
+        if (
+            argument in {"-m", "--model"}
+            or (argument.startswith("-m") and len(argument) > 2)
+            or argument.startswith("--model=")
+        ):
+            raise RoleConfigError(f"child command contains conflicting option {argument!r}")
+        if argument in {"-c", "--config"}:
+            if index + 1 < len(command):
+                _reject_performance_config_value(command[index + 1])
+                index += 2
+                continue
+        elif argument.startswith("--config="):
+            _reject_performance_config_value(argument.split("=", 1)[1])
+        elif argument.startswith("-c") and len(argument) > 2:
+            _reject_performance_config_value(argument[2:].removeprefix("="))
+        if argument in {"--enable", "--disable"}:
+            if index + 1 < len(command) and command[index + 1] == "fast_mode":
+                raise RoleConfigError(
+                    f"child command contains conflicting option {argument!r} for fast_mode"
+                )
+            index += 2
+            continue
+        if argument in {"--enable=fast_mode", "--disable=fast_mode"}:
+            raise RoleConfigError(f"child command contains conflicting option {argument!r}")
+        index += 1
+
+
+def _reject_performance_config_value(value: str) -> None:
+    key = value.split("=", 1)[0].strip()
+    if key in _PERFORMANCE_CONFIG_KEYS:
+        raise RoleConfigError(f"child command contains conflicting config override {key!r}")
+
+
 def command_run(argv: list[str]) -> int:
     """Parse run-only flags and execute the untouched command after the first ``--``."""
 
@@ -601,6 +673,11 @@ def command_run(argv: list[str]) -> int:
     parser.add_argument("--events", required=True, help="Raw child stdout capture path.")
     parser.add_argument("--prompt", required=True, help="Prompt bytes sent to child stdin.")
     parser.add_argument("--label", default="codex", help="Progress-line label.")
+    parser.add_argument("--repo", help="Repository root containing the opt-in role policy.")
+    parser.add_argument("--role", choices=ROLES, help="Orchestration role for this execution.")
+    parser.add_argument(
+        "--reasoning-effort", help="Concrete effort selected from the role's allowed values."
+    )
 
     try:
         separator = argv.index("--")
@@ -610,6 +687,27 @@ def command_run(argv: list[str]) -> int:
     command = argv[separator + 1 :] if separator < len(argv) else []
     if not command:
         parser.error("a child command is required after --")
+
+    try:
+        config = load_role_config(Path(args.repo)) if args.repo is not None else None
+        if config is None:
+            if args.reasoning_effort is not None:
+                raise RoleConfigError(
+                    "--reasoning-effort requires an active repository role configuration"
+                )
+        else:
+            if args.role is None:
+                raise RoleConfigError("--role is required when role configuration is active")
+            if args.reasoning_effort is None:
+                raise RoleConfigError(
+                    "--reasoning-effort is required when role configuration is active"
+                )
+            command = _configured_command(
+                command, config.policy_for(args.role), args.reasoning_effort
+            )
+    except RoleConfigError as exc:
+        print(f"run: {exc}", file=sys.stderr)
+        return 2
 
     started = time.monotonic()
     prompt_path = Path(args.prompt)

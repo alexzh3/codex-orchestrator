@@ -26,12 +26,17 @@ For the first independent review:
 - Provide the goal, acceptance criteria, constraints, and exact review target.
 - Do not provide the implementer handoff, claimed test results, earlier review verdicts, or Claude's
   tentative conclusion.
-- Save the prompt and append the execution before launch. Let the runner capture the event stream
-  and Codex save the exact handoff.
+- Save the prompt and append the execution before launch. With active role configuration, resolve
+  `review`, select `max` for one coherent target or `ultra` for broad/context-heavy analysis, and
+  record the selected effort plus any model and service tier supplied by the policy. Let the runner
+  capture the event stream and Codex save the exact handoff.
 
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-review-01/execution-01"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
+  --repo <repo> \
+  --role review \
+  --reasoning-effort max \
   --label codex-review-01 \
   --events "$EXECUTION_DIR/events.jsonl" \
   --prompt "$EXECUTION_DIR/prompt.md" \
@@ -43,8 +48,10 @@ Launch this as a Claude Code background Bash task. The runner creates `events.js
 and aborts on a pre-existing file, captures raw Codex stdout there byte-for-byte, and prints only
 compact one-line progress to its own stdout for the human `/tasks` view. Codex stderr passes
 through for native diagnostics. After a clean capture, the runner exits with Codex's exit code.
-Capture, prompt, or launch failures exit nonzero; cancellation exits with 128 plus the signal
-number. Everything after `--`, including this review command, passes to Codex unchanged.
+Capture, prompt, configuration, or launch failures exit nonzero; cancellation exits with 128 plus
+the signal number. The example assumes active role configuration. If it is absent, retain `--repo`
+and `--role`, omit `--reasoning-effort`, and the runner passes the review command to Codex
+byte-for-byte.
 
 Write the exact commit SHA into `prompt.md` and instruct Codex to review that snapshot. Use plain
 `codex exec`: the Codex CLI does not accept a stdin review prompt together with the `review`
