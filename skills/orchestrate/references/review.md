@@ -48,9 +48,9 @@ Launch this as a Claude Code background Bash task whose title is the exact named
 `codex-review-01`. Keep `--label` in the starting command for compatibility and launch-command
 visibility; it is not repeated on every progress line. The runner creates `events.jsonl`
 exclusively and aborts on a pre-existing file, captures raw Codex stdout there byte-for-byte, and
-prints timestamped progress plus scrubbed command output to its own stdout for the human `/tasks`
-view. Codex stderr passes through for native diagnostics. After a clean capture, the runner exits
-with Codex's exit code. Capture, prompt, configuration, or launch failures exit nonzero;
+prints timestamped progress plus bounded, scrubbed command output to its own stdout for the human
+`/tasks` view. Codex stderr passes through for native diagnostics. After a clean capture, the runner
+exits with Codex's exit code. Capture, prompt, configuration, or launch failures exit nonzero;
 cancellation exits with 128 plus the signal number. The example assumes active role configuration.
 If it is absent, retain `--repo` and `--role`, omit `--reasoning-effort`, and the runner passes the
 review command to Codex byte-for-byte.

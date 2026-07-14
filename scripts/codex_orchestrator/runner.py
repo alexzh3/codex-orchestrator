@@ -47,13 +47,18 @@ _SPACED_SECRET_RE = re.compile(
 _BEARER_SECRET_RE = re.compile(r"(?i)\bBearer\s+(?:\"[^\"]*\"|'[^']*'|\S+)")
 _WHITESPACE_RE = re.compile(r"\s+")
 _CONTROL_CHARS = dict.fromkeys([*range(32), 127], " ")
-_OUTPUT_CONTROL_CHARS = dict.fromkeys([*range(10), *range(11, 32), 127], " ")
+_OUTPUT_CONTROL_CHARS = dict.fromkeys(
+    [*range(10), *range(11, 13), *range(14, 32), 127], " "
+)
 _TEXT_LIMIT = 160
+_COMMAND_OUTPUT_HEAD_LINES = 8
+_COMMAND_OUTPUT_TAIL_LINES = 8
 _TERMINATE_TIMEOUT = 5.0
 _DISPLAY_QUEUE_SIZE = 256
 _DISPLAY_JOIN_TIMEOUT = 0.2
 _DISPLAY_BACKLOG_WARNING = "warning: display backlogged; progress lines dropped"
 _PERFORMANCE_CONFIG_KEYS = {
+    "features",
     "features.fast_mode",
     "model",
     "model_reasoning_effort",
@@ -95,15 +100,44 @@ def sanitize_text(value: object) -> str:
 
 
 def _sanitize_output_lines(value: object) -> list[str]:
-    """Safely preserve physical command-output lines for the progress display."""
+    """Render bounded command output while collapsing terminal redraws."""
 
     if not isinstance(value, str) or not value:
         return []
-    text = value.replace("\r\n", "\n").replace("\r", "\n")
+    text = value.replace("\r\n", "\n")
     text = _ANSI_RE.sub("", text)
     text = text.translate(_OUTPUT_CONTROL_CHARS)
     text = _redact_secrets(text)
-    return [sanitize_text(line) for line in text.splitlines()]
+    rows = text.split("\n")
+    if text.endswith("\n"):
+        rows.pop()
+
+    lines = []
+    for row in rows:
+        redraws = row.split("\r")
+        latest = next((redraw for redraw in reversed(redraws) if redraw), "")
+        lines.append(sanitize_text(latest))
+
+    visible_limit = _COMMAND_OUTPUT_HEAD_LINES + _COMMAND_OUTPUT_TAIL_LINES
+    if len(lines) <= visible_limit:
+        return lines
+    omitted = len(lines) - visible_limit
+    return [
+        *lines[:_COMMAND_OUTPUT_HEAD_LINES],
+        f"... {omitted} lines omitted ...",
+        *lines[-_COMMAND_OUTPUT_TAIL_LINES:],
+    ]
+
+
+def _command_failure_line(item: dict[str, object]) -> str | None:
+    exit_code = item.get("exit_code")
+    status_failed = item.get("status") == "failed"
+    exit_failed = type(exit_code) is int and exit_code != 0
+    if exit_failed:
+        return f"command failed exit={exit_code}"
+    if status_failed:
+        return "command failed"
+    return None
 
 
 def _value_text(value: object) -> str:
@@ -198,7 +232,11 @@ class EventRenderer:
                 command = sanitize_text(_value_text(item.get("command")))
                 return [command]
             if event_kind == "item.completed":
-                return _sanitize_output_lines(item.get("aggregated_output"))
+                lines = _sanitize_output_lines(item.get("aggregated_output"))
+                failure = _command_failure_line(item)
+                if failure is not None:
+                    lines.append(failure)
+                return lines
             return []
         if item_type == "file_change":
             return self._file_change(event_kind, item)
@@ -291,8 +329,7 @@ class EventRenderer:
 
 
 class _Display:
-    def __init__(self, label: str, started: float, stream: TextIO) -> None:
-        self._label = sanitize_text(label)
+    def __init__(self, started: float, stream: TextIO) -> None:
         self._started = started
         self._stream = stream
         try:
@@ -505,7 +542,6 @@ def _run_child(
     command: list[str],
     prompt: bytes,
     events: BinaryIO,
-    label: str,
     started: float,
 ) -> int:
     cancelled_signal: int | None = None
@@ -547,7 +583,7 @@ def _run_child(
         writer.start()
 
         renderer = EventRenderer()
-        display = _Display(label, started, sys.stdout)
+        display = _Display(started, sys.stdout)
         runner_error: str | None = None
         progress_failed = False
         try:
@@ -707,6 +743,8 @@ def command_run(argv: list[str]) -> int:
         parser.error("a child command is required after --")
 
     try:
+        if args.role is not None and args.repo is None:
+            raise RoleConfigError("--role requires --repo")
         config = load_role_config(Path(args.repo)) if args.repo is not None else None
         if config is None:
             if args.reasoning_effort is not None:
@@ -745,7 +783,7 @@ def command_run(argv: list[str]) -> int:
     result = 1
     close_error: OSError | None = None
     try:
-        result = _run_child(command, prompt, events, args.label, started)
+        result = _run_child(command, prompt, events, started)
     finally:
         try:
             events.close()

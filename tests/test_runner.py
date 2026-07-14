@@ -139,26 +139,27 @@ class EventRendererTests(unittest.TestCase):
         command["aggregated_output"] = ""
         self.assertEqual(
             render(renderer, {"type": "item.completed", "item": command}),
-            [],
+            ["command failed"],
         )
         del command["aggregated_output"]
         self.assertEqual(
             render(renderer, {"type": "item.completed", "item": command}),
-            [],
+            ["command failed"],
         )
         command["aggregated_output"] = {"unexpected": "shape"}
         self.assertEqual(
             render(renderer, {"type": "item.completed", "item": command}),
-            [],
+            ["command failed"],
         )
 
         command["aggregated_output"] = (
-            "\x1b[31mfailed\x1b[0m\n--token\nSENSITIVE\n" + "x" * 200
+            "\x1b[31mfailed\x1b[0m\n--token\x07\nSENSITIVE\n" + "x" * 200
         )
         output = render(renderer, {"type": "item.completed", "item": command})
         self.assertEqual(output[:2], ["failed", "--token [redacted]"])
         self.assertEqual(len(output[2]), 160)
         self.assertTrue(output[2].endswith("..."))
+        self.assertEqual(output[-1], "command failed")
 
         changes = [
             {"kind": "update", "path": f"path-{index}.py"} for index in range(1, 8)
@@ -226,6 +227,84 @@ class EventRendererTests(unittest.TestCase):
             self.assertEqual(
                 render(renderer, {"type": "item.completed", "item": hidden}), []
             )
+
+    def test_command_output_collapses_redraws_and_preserves_normal_lines(self) -> None:
+        renderer = EventRenderer()
+        command = {
+            "type": "command_execution",
+            "status": "completed",
+            "exit_code": 0,
+        }
+
+        command["aggregated_output"] = "\r".join(
+            f"Downloading {percent}%" for percent in range(101)
+        )
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            ["Downloading 100%"],
+        )
+
+        command["aggregated_output"] = "phase 1\rphase 2\r\nstable\npending\r"
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            ["phase 2", "stable", "pending"],
+        )
+
+    def test_command_output_redacts_secrets_across_control_redraws(self) -> None:
+        renderer = EventRenderer()
+        cases = (
+            ("--token\x07\rSENSITIVE", "--token [redacted]"),
+            ("token=\x00\rSENSITIVE", "token=[redacted]"),
+            ("Bearer\x07\rSENSITIVE", "Bearer [redacted]"),
+        )
+
+        for aggregated_output, expected in cases:
+            with self.subTest(aggregated_output=aggregated_output):
+                command = {
+                    "type": "command_execution",
+                    "aggregated_output": aggregated_output,
+                    "status": "completed",
+                    "exit_code": 0,
+                }
+                self.assertEqual(
+                    render(renderer, {"type": "item.completed", "item": command}),
+                    [expected],
+                )
+
+    def test_command_output_is_bounded_and_keeps_failure_marker(self) -> None:
+        renderer = EventRenderer()
+        lines = [f"line {index}" for index in range(40)]
+        command = {
+            "type": "command_execution",
+            "aggregated_output": "\n".join(lines),
+            "status": "completed",
+            "exit_code": 7,
+        }
+
+        output = render(renderer, {"type": "item.completed", "item": command})
+
+        self.assertEqual(
+            output,
+            [
+                *lines[:8],
+                "... 24 lines omitted ...",
+                *lines[-8:],
+                "command failed exit=7",
+            ],
+        )
+
+        command["aggregated_output"] = ""
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            ["command failed exit=7"],
+        )
+
+        command["status"] = "failed"
+        command["exit_code"] = 0
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            ["command failed"],
+        )
 
     def test_todo_transitions_and_duplicate_completion_are_suppressed(self) -> None:
         renderer = EventRenderer()
@@ -463,7 +542,7 @@ class RunnerProcessTests(unittest.TestCase):
             ) as render_bytes,
         ):
             result = runner._run_child(
-                [sys.executable, "-c", code], b"", events, "test-agent", time.monotonic()
+                [sys.executable, "-c", code], b"", events, time.monotonic()
             )
 
         warnings = [line for line in stdout.getvalue().splitlines() if " warning:" in line]
@@ -734,6 +813,7 @@ class RunnerProcessTests(unittest.TestCase):
             ("--config", 'model_reasoning_effort="ultra"'),
             ("--config=service_tier=standard",),
             ("-cfeatures.fast_mode=false",),
+            ("-c", "features={fast_mode=false}"),
             ("--enable", "fast_mode"),
             ("--disable", "fast_mode"),
             ("--enable=fast_mode",),
@@ -826,6 +906,37 @@ class RunnerProcessTests(unittest.TestCase):
                 self.assertIn(expected_error, result.stderr)
                 self.assertNotIn("could not read prompt", result.stderr)
                 self.assertFalse(events.exists())
+
+    def test_role_without_repo_fails_before_prompt_or_event_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            events = root / "events.jsonl"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "run",
+                    "--role",
+                    "implementation",
+                    "--events",
+                    str(events),
+                    "--prompt",
+                    str(root / "missing.md"),
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "pass",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+                cwd=ROOT,
+            )
+
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--role requires --repo", result.stderr)
+        self.assertNotIn("could not read prompt", result.stderr)
+        self.assertFalse(events.exists())
 
     def test_invalid_existing_role_config_fails_before_prompt_and_events(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1006,7 +1117,6 @@ class RunnerProcessTests(unittest.TestCase):
                     [sys.executable, "-c", code, str(pid_path)],
                     b"",
                     FailingEvents(),
-                    "test-agent",
                     time.monotonic(),
                 )
             child_pid = int(pid_path.read_text(encoding="utf-8"))

@@ -58,7 +58,9 @@ configuration remains authoritative. Supplying an effort without the file is an 
 The runner creates `events.jsonl` exclusively, aborting before Codex starts if that file already
 exists, then captures raw Codex stdout there byte-for-byte. Its own stdout contains timestamped
 progress for the human `/tasks` view. Commands appear without a `command started:` prefix, followed
-on completion by their scrubbed output without a `command completed` line. Those lines are not a
+on completion by bounded, scrubbed output without a `command completed` line. Terminal redraws are
+collapsed to their latest state; long output keeps its first and last eight lines around an omission
+marker. Failed commands append `command failed` with `exit=N` when available. Those lines are not a
 Claude monitor stream: Claude keeps using `state` and `monitor` and receives only completion,
 failure, stale, missing-stream, or incompatible-format notifications. Codex stderr passes through
 for native diagnostics. After a clean capture, the runner exits with Codex's exit code. Capture,
