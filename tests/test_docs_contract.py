@@ -175,6 +175,9 @@ class DocumentationContractTests(unittest.TestCase):
         review = (ROOT / "skills/orchestrate/references/review.md").read_text(
             encoding="utf-8"
         )
+        planning = (ROOT / "skills/orchestrate/references/planning.md").read_text(
+            encoding="utf-8"
+        )
         runner_command = 'codex_orch_tools.py" run'
         launch = monitoring.split("Then launch Codex:", maxsplit=1)[1].split(
             "Never use `--ephemeral`", maxsplit=1
@@ -187,8 +190,17 @@ class DocumentationContractTests(unittest.TestCase):
 
         for block in (launch, resume, review_launch):
             self.assertIn(runner_command, block)
-        for reference in (monitoring, review):
+        self.assertEqual(planning.count(runner_command), 2)
+        for label, reference in (
+            ("codex-impl-01", monitoring),
+            ("codex-review-01", review),
+            ("codex-plan-01", planning),
+            ("codex-plan-review-01", planning),
+        ):
+            self.assertIn(f'codex_orch_tools.py" run \\\n  --label {label}', reference)
+        for reference in (monitoring, review, planning):
             self.assertNotIn('> "$EXECUTION_DIR/events.jsonl"', reference)
+            self.assertIn("title is the exact named agent", reference)
 
     def test_journal_uniqueness_and_successor_run_guidance_match_runtime(self) -> None:
         contract = " ".join(

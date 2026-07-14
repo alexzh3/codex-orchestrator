@@ -47,6 +47,7 @@ _SPACED_SECRET_RE = re.compile(
 _BEARER_SECRET_RE = re.compile(r"(?i)\bBearer\s+(?:\"[^\"]*\"|'[^']*'|\S+)")
 _WHITESPACE_RE = re.compile(r"\s+")
 _CONTROL_CHARS = dict.fromkeys([*range(32), 127], " ")
+_OUTPUT_CONTROL_CHARS = dict.fromkeys([*range(10), *range(11, 32), 127], " ")
 _TEXT_LIMIT = 160
 _TERMINATE_TIMEOUT = 5.0
 _DISPLAY_QUEUE_SIZE = 256
@@ -60,12 +61,7 @@ _PERFORMANCE_CONFIG_KEYS = {
 }
 
 
-def scrub_text(value: object) -> str:
-    """Strip ANSI, redact secrets, collapse whitespace, and coerce to ASCII."""
-
-    text = value if isinstance(value, str) else str(value)
-    text = _ANSI_RE.sub("", text)
-    text = text.translate(_CONTROL_CHARS)
+def _redact_secrets(text: str) -> str:
     text = _ASSIGNMENT_SECRET_RE.sub(
         lambda match: f"{match.group('quoted_key')}{match.group('separator')}[redacted]",
         text,
@@ -75,6 +71,16 @@ def scrub_text(value: object) -> str:
         text,
     )
     text = _BEARER_SECRET_RE.sub("Bearer [redacted]", text)
+    return text
+
+
+def scrub_text(value: object) -> str:
+    """Strip ANSI, redact secrets, collapse whitespace, and coerce to ASCII."""
+
+    text = value if isinstance(value, str) else str(value)
+    text = _ANSI_RE.sub("", text)
+    text = text.translate(_CONTROL_CHARS)
+    text = _redact_secrets(text)
     text = _WHITESPACE_RE.sub(" ", text).strip()
     return text.encode("ascii", errors="backslashreplace").decode("ascii")
 
@@ -86,6 +92,18 @@ def sanitize_text(value: object) -> str:
     if len(text) > _TEXT_LIMIT:
         return text[: _TEXT_LIMIT - 3] + "..."
     return text
+
+
+def _sanitize_output_lines(value: object) -> list[str]:
+    """Safely preserve physical command-output lines for the progress display."""
+
+    if not isinstance(value, str) or not value:
+        return []
+    text = value.replace("\r\n", "\n").replace("\r", "\n")
+    text = _ANSI_RE.sub("", text)
+    text = text.translate(_OUTPUT_CONTROL_CHARS)
+    text = _redact_secrets(text)
+    return [sanitize_text(line) for line in text.splitlines()]
 
 
 def _value_text(value: object) -> str:
@@ -178,15 +196,9 @@ class EventRenderer:
         if item_type == "command_execution":
             if event_kind == "item.started":
                 command = sanitize_text(_value_text(item.get("command")))
-                return [f"command started: {command}"]
+                return [command]
             if event_kind == "item.completed":
-                exit_code = item.get("exit_code")
-                if exit_code is not None:
-                    return [f"command completed exit={sanitize_text(_value_text(exit_code))}"]
-                return [
-                    "command completed "
-                    f"status={sanitize_text(_value_text(item.get('status')))}"
-                ]
+                return _sanitize_output_lines(item.get("aggregated_output"))
             return []
         if item_type == "file_change":
             return self._file_change(event_kind, item)
@@ -329,7 +341,7 @@ class _Display:
         minutes, seconds = divmod(remainder, 60)
         # Scrubbing is idempotent; rescrubbing here guarantees structurally
         # that no renderer path can leak ANSI or secrets to the display.
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d} {self._label} {scrub_text(message)}\n"
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d} {scrub_text(message)}\n"
 
     def _write_lines(self) -> None:
         backlog_warned = False
@@ -672,7 +684,11 @@ def command_run(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog=f"{Path(sys.argv[0]).name} run")
     parser.add_argument("--events", required=True, help="Raw child stdout capture path.")
     parser.add_argument("--prompt", required=True, help="Prompt bytes sent to child stdin.")
-    parser.add_argument("--label", default="codex", help="Progress-line label.")
+    parser.add_argument(
+        "--label",
+        default="codex",
+        help="Launch label retained in the starting command; omitted from progress lines.",
+    )
     parser.add_argument("--repo", help="Repository root containing the opt-in role policy.")
     parser.add_argument("--role", choices=ROLES, help="Orchestration role for this execution.")
     parser.add_argument(

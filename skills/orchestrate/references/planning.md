@@ -22,15 +22,19 @@ This configured example uses `max` for one coherent planning question:
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-plan-01/execution-01"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
+  --label codex-plan-01 \
   --repo <repo> \
   --role planning \
   --reasoning-effort max \
-  --label codex-plan-01 \
   --events "$EXECUTION_DIR/events.jsonl" \
   --prompt "$EXECUTION_DIR/prompt.md" \
   -- codex exec -C <worktree> -s read-only -c approval_policy=never --json \
      --output-last-message "$EXECUTION_DIR/handoff.md" -
 ```
+
+Launch it as a Claude Code background Bash task whose title is the exact named agent, such as
+`codex-plan-01`. Keep `--label` in the starting command for compatibility and launch-command
+visibility; the runner does not repeat it on every progress line.
 
 ## Plan Review
 
@@ -52,15 +56,18 @@ This configured example uses a different persistent agent and role:
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-plan-review-01/execution-01"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
+  --label codex-plan-review-01 \
   --repo <repo> \
   --role planning_review \
   --reasoning-effort max \
-  --label codex-plan-review-01 \
   --events "$EXECUTION_DIR/events.jsonl" \
   --prompt "$EXECUTION_DIR/prompt.md" \
   -- codex exec -C <worktree> -s read-only -c approval_policy=never --json \
      --output-last-message "$EXECUTION_DIR/handoff.md" -
 ```
+
+Launch it as a separate background Bash task titled `codex-plan-review-01`; as with planning, keep
+the matching `--label` in the starting command without repeating it in progress output.
 
 For either role, use `ultra` instead of `max` only for broad, multi-domain, context-heavy, or
 parallelizable analysis. Nested subagents created during an Ultra execution inherit the parent

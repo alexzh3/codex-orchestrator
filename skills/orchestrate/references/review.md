@@ -34,24 +34,26 @@ For the first independent review:
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-review-01/execution-01"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
+  --label codex-review-01 \
   --repo <repo> \
   --role review \
   --reasoning-effort max \
-  --label codex-review-01 \
   --events "$EXECUTION_DIR/events.jsonl" \
   --prompt "$EXECUTION_DIR/prompt.md" \
   -- codex exec -C <worktree> -s workspace-write -c approval_policy=never --json \
      --output-last-message "$EXECUTION_DIR/handoff.md" -
 ```
 
-Launch this as a Claude Code background Bash task. The runner creates `events.jsonl` exclusively
-and aborts on a pre-existing file, captures raw Codex stdout there byte-for-byte, and prints only
-compact one-line progress to its own stdout for the human `/tasks` view. Codex stderr passes
-through for native diagnostics. After a clean capture, the runner exits with Codex's exit code.
-Capture, prompt, configuration, or launch failures exit nonzero; cancellation exits with 128 plus
-the signal number. The example assumes active role configuration. If it is absent, retain `--repo`
-and `--role`, omit `--reasoning-effort`, and the runner passes the review command to Codex
-byte-for-byte.
+Launch this as a Claude Code background Bash task whose title is the exact named agent, such as
+`codex-review-01`. Keep `--label` in the starting command for compatibility and launch-command
+visibility; it is not repeated on every progress line. The runner creates `events.jsonl`
+exclusively and aborts on a pre-existing file, captures raw Codex stdout there byte-for-byte, and
+prints timestamped progress plus scrubbed command output to its own stdout for the human `/tasks`
+view. Codex stderr passes through for native diagnostics. After a clean capture, the runner exits
+with Codex's exit code. Capture, prompt, configuration, or launch failures exit nonzero;
+cancellation exits with 128 plus the signal number. The example assumes active role configuration.
+If it is absent, retain `--repo` and `--role`, omit `--reasoning-effort`, and the runner passes the
+review command to Codex byte-for-byte.
 
 Write the exact commit SHA into `prompt.md` and instruct Codex to review that snapshot. Use plain
 `codex exec`: the Codex CLI does not accept a stdin review prompt together with the `review`

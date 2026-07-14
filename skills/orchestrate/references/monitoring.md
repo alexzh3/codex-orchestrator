@@ -33,18 +33,20 @@ resolved `implementation` policy:
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-impl-01/execution-01"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
+  --label codex-impl-01 \
   --repo <repo> \
   --role implementation \
   --reasoning-effort xhigh \
-  --label codex-impl-01 \
   --events "$EXECUTION_DIR/events.jsonl" \
   --prompt "$EXECUTION_DIR/prompt.md" \
   -- codex exec --json --output-last-message "$EXECUTION_DIR/handoff.md" \
      -s workspace-write -c approval_policy=never -C <worktree> -
 ```
 
-Launch the runner as a Claude Code background Bash task. It validates configured execution inputs
-before reading the prompt, creating `events.jsonl`, or starting Codex. For an active policy it
+Launch the runner as a Claude Code background Bash task whose title is the exact named agent, such
+as `codex-impl-01`. Keep `--label` in the starting command for compatibility and launch-command
+visibility; the runner does not repeat it on every progress line. It validates configured execution
+inputs before reading the prompt, creating `events.jsonl`, or starting Codex. For an active policy it
 injects `--model <configured-model>` when present and the selected `model_reasoning_effort`;
 configured `speed = fast` also injects `service_tier="fast"` and the Fast-mode feature flag. It
 rejects conflicting child performance flags, so do not add those flags manually. If
@@ -53,13 +55,15 @@ rejects conflicting child performance flags, so do not add those flags manually.
 configuration remains authoritative. Supplying an effort without the file is an error.
 
 The runner creates `events.jsonl` exclusively, aborting before Codex starts if that file already
-exists, then captures raw Codex stdout there byte-for-byte. Its own stdout contains compact
-one-line progress for the human `/tasks` view. Those lines are not a Claude monitor stream: Claude
-keeps using `state` and `monitor` and receives only completion, failure, stale, missing-stream, or
-incompatible-format notifications. Codex stderr passes through for native diagnostics. After a
-clean capture, the runner exits with Codex's exit code. Capture, prompt, configuration, or launch
-failures exit nonzero; cancellation exits with 128 plus the signal number. Do not retry a rejected
-configured model or Fast tier at a lower setting without changing the policy explicitly.
+exists, then captures raw Codex stdout there byte-for-byte. Its own stdout contains timestamped
+progress for the human `/tasks` view. Commands appear without a `command started:` prefix, followed
+on completion by their scrubbed output without a `command completed` line. Those lines are not a
+Claude monitor stream: Claude keeps using `state` and `monitor` and receives only completion,
+failure, stale, missing-stream, or incompatible-format notifications. Codex stderr passes through
+for native diagnostics. After a clean capture, the runner exits with Codex's exit code. Capture,
+prompt, configuration, or launch failures exit nonzero; cancellation exits with 128 plus the signal
+number. Do not retry a rejected configured model or Fast tier at a lower setting without changing
+the policy explicitly.
 
 Never use `--ephemeral`. Use broad access only with explicit authorization and isolation.
 
@@ -86,10 +90,10 @@ Resume a relevant idle session as the next execution under the same agent:
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-impl-01/execution-02"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
+  --label codex-impl-01 \
   --repo <repo> \
   --role implementation \
   --reasoning-effort max \
-  --label codex-impl-01 \
   --events "$EXECUTION_DIR/events.jsonl" \
   --prompt "$EXECUTION_DIR/prompt.md" \
   -- codex exec -C <worktree> -s workspace-write -c approval_policy=never \

@@ -118,27 +118,47 @@ class EventRendererTests(unittest.TestCase):
             "id": "cmd-1",
             "type": "command_execution",
             "command": "python -m unittest",
-            "aggregated_output": "MUST_NOT_RENDER",
+            "aggregated_output": "in-progress output MUST_NOT_RENDER",
             "status": "in_progress",
             "exit_code": None,
         }
         self.assertEqual(
             render(renderer, {"type": "item.started", "item": command}),
-            ["command started: python -m unittest"],
+            ["python -m unittest"],
         )
         self.assertEqual(render(renderer, {"type": "item.updated", "item": command}), [])
         command["status"] = "completed"
         command["exit_code"] = 0
+        command["aggregated_output"] = "Ran 12 tests\n\nOK\n"
         self.assertEqual(
             render(renderer, {"type": "item.completed", "item": command}),
-            ["command completed exit=0"],
+            ["Ran 12 tests", "", "OK"],
         )
         command["status"] = "failed"
         command["exit_code"] = None
+        command["aggregated_output"] = ""
         self.assertEqual(
             render(renderer, {"type": "item.completed", "item": command}),
-            ["command completed status=failed"],
+            [],
         )
+        del command["aggregated_output"]
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            [],
+        )
+        command["aggregated_output"] = {"unexpected": "shape"}
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            [],
+        )
+
+        command["aggregated_output"] = (
+            "\x1b[31mfailed\x1b[0m\n--token\nSENSITIVE\n" + "x" * 200
+        )
+        output = render(renderer, {"type": "item.completed", "item": command})
+        self.assertEqual(output[:2], ["failed", "--token [redacted]"])
+        self.assertEqual(len(output[2]), 160)
+        self.assertTrue(output[2].endswith("..."))
 
         changes = [
             {"kind": "update", "path": f"path-{index}.py"} for index in range(1, 8)
@@ -340,9 +360,76 @@ class RunnerProcessTests(unittest.TestCase):
         self.assertEqual(captured, raw)
         self.assertEqual(result.stdout.count("warning: unparseable event line"), 1)
         self.assertRegex(
-            result.stdout.splitlines()[-1], r"^\d\d:\d\d:\d\d test-agent exited code=0$"
+            result.stdout.splitlines()[-1], r"^\d\d:\d\d:\d\d exited code=0$"
         )
+        self.assertNotIn("test-agent", result.stdout)
         self.assertNotIn("hidden", result.stdout)
+
+    def test_command_display_has_command_and_final_output_without_synthetic_labels(
+        self,
+    ) -> None:
+        records = [
+            {"type": "thread.started", "thread_id": "abc123"},
+            {"type": "turn.started"},
+            {
+                "type": "item.started",
+                "item": {
+                    "id": "cmd-1",
+                    "type": "command_execution",
+                    "command": "python -m unittest",
+                    "aggregated_output": "",
+                    "status": "in_progress",
+                },
+            },
+            {
+                "type": "item.updated",
+                "item": {
+                    "id": "cmd-1",
+                    "type": "command_execution",
+                    "command": "python -m unittest",
+                    "aggregated_output": "partial output MUST_NOT_RENDER",
+                    "status": "in_progress",
+                },
+            },
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "cmd-1",
+                    "type": "command_execution",
+                    "command": "python -m unittest",
+                    "aggregated_output": "Ran 12 tests\nOK\n",
+                    "status": "completed",
+                    "exit_code": 0,
+                },
+            },
+            {"type": "turn.completed", "usage": {"output_tokens": 4}},
+        ]
+        raw = "".join(json.dumps(record) + "\n" for record in records).encode()
+        code = f"import sys; sys.stdout.buffer.write({raw!r}); sys.stdout.buffer.flush()"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, events = run_child(Path(tmp), code)
+            captured = events.read_bytes()
+
+        messages = [line[9:] for line in result.stdout.splitlines()]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(captured, raw)
+        self.assertEqual(
+            messages,
+            [
+                "thread started abc123",
+                "turn started",
+                "python -m unittest",
+                "Ran 12 tests",
+                "OK",
+                "turn completed output=4",
+                "exited code=0",
+            ],
+        )
+        self.assertNotIn("test-agent", result.stdout)
+        self.assertNotIn("command started", result.stdout)
+        self.assertNotIn("command completed", result.stdout)
+        self.assertNotIn("MUST_NOT_RENDER", result.stdout)
 
     def test_hostile_integer_line_does_not_interrupt_capture(self) -> None:
         hostile = b'{"type":"turn.started","n":' + (b"9" * 5_000) + b"}\n"

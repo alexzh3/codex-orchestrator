@@ -133,6 +133,8 @@ class PromptFirstWorkflowTests(unittest.TestCase):
             self.assertIn("turn completed", launch.stdout)
             self.assertIn("exited code=0", launch.stdout)
             self.assertNotIn('"type"', launch.stdout)
+            self.assertNotIn("codex-impl-01", launch.stdout)
+            self.assertNotIn("codex-review-01", launch.stdout)
         for execution in executions:
             self.assertTrue(Path(str(execution["worktree"])).is_absolute())
             self.assertEqual(len(str(execution["head"])), 40)
