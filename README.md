@@ -157,8 +157,6 @@ directly. Every role and its effort list is required; efforts must be a nonempty
 subset of `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`. Model and speed may be omitted to
 inherit native Codex behavior or overridden per role. Extra keys and speeds other than `fast` are
 rejected. Claude selects one allowed effort per execution based on difficulty, breadth, and context.
-After editing, validate with `config check --repo <repo>` and inspect a role with
-`config show --repo <repo> --role implementation --json`.
 
 ## Historical v0.4.1 Benchmarks
 
