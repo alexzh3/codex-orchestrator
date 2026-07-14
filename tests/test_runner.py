@@ -15,10 +15,18 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.codex_orchestrator import runner
+from scripts.codex_orchestrator.role_config import RoleConfigError, RolePolicy
 from scripts.codex_orchestrator.runner import EventRenderer, sanitize_text
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
+VALID_ROLE_CONFIG = (
+    "[meta]\nversion=1\n[defaults]\nmodel=gpt-5.6-sol\nspeed=fast\n"
+    "[role.implementation]\nreasoning_efforts=xhigh,max,ultra\n"
+    "[role.review]\nreasoning_efforts=max,ultra\n"
+    "[role.planning]\nreasoning_efforts=max,ultra\n"
+    "[role.planning_review]\nreasoning_efforts=max,ultra\n"
+)
 
 
 def render(renderer: EventRenderer, event: object) -> list[str]:
@@ -33,6 +41,7 @@ def run_child(
     child_args: tuple[str, ...] = (),
     events: Path | None = None,
     timeout: float | None = None,
+    run_args: tuple[str, ...] = (),
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     prompt_path = root / "prompt.md"
     prompt_path.write_bytes(prompt)
@@ -48,6 +57,7 @@ def run_child(
             str(events_path),
             "--prompt",
             str(prompt_path),
+            *run_args,
             "--",
             sys.executable,
             "-c",
@@ -108,27 +118,48 @@ class EventRendererTests(unittest.TestCase):
             "id": "cmd-1",
             "type": "command_execution",
             "command": "python -m unittest",
-            "aggregated_output": "MUST_NOT_RENDER",
+            "aggregated_output": "in-progress output MUST_NOT_RENDER",
             "status": "in_progress",
             "exit_code": None,
         }
         self.assertEqual(
             render(renderer, {"type": "item.started", "item": command}),
-            ["command started: python -m unittest"],
+            ["python -m unittest"],
         )
         self.assertEqual(render(renderer, {"type": "item.updated", "item": command}), [])
         command["status"] = "completed"
         command["exit_code"] = 0
+        command["aggregated_output"] = "Ran 12 tests\n\nOK\n"
         self.assertEqual(
             render(renderer, {"type": "item.completed", "item": command}),
-            ["command completed exit=0"],
+            ["Ran 12 tests", "", "OK"],
         )
         command["status"] = "failed"
         command["exit_code"] = None
+        command["aggregated_output"] = ""
         self.assertEqual(
             render(renderer, {"type": "item.completed", "item": command}),
-            ["command completed status=failed"],
+            ["command failed"],
         )
+        del command["aggregated_output"]
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            ["command failed"],
+        )
+        command["aggregated_output"] = {"unexpected": "shape"}
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            ["command failed"],
+        )
+
+        command["aggregated_output"] = (
+            "\x1b[31mfailed\x1b[0m\n--token\x07\nSENSITIVE\n" + "x" * 200
+        )
+        output = render(renderer, {"type": "item.completed", "item": command})
+        self.assertEqual(output[:2], ["failed", "--token [redacted]"])
+        self.assertEqual(len(output[2]), 160)
+        self.assertTrue(output[2].endswith("..."))
+        self.assertEqual(output[-1], "command failed")
 
         changes = [
             {"kind": "update", "path": f"path-{index}.py"} for index in range(1, 8)
@@ -196,6 +227,84 @@ class EventRendererTests(unittest.TestCase):
             self.assertEqual(
                 render(renderer, {"type": "item.completed", "item": hidden}), []
             )
+
+    def test_command_output_collapses_redraws_and_preserves_normal_lines(self) -> None:
+        renderer = EventRenderer()
+        command = {
+            "type": "command_execution",
+            "status": "completed",
+            "exit_code": 0,
+        }
+
+        command["aggregated_output"] = "\r".join(
+            f"Downloading {percent}%" for percent in range(101)
+        )
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            ["Downloading 100%"],
+        )
+
+        command["aggregated_output"] = "phase 1\rphase 2\r\nstable\npending\r"
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            ["phase 2", "stable", "pending"],
+        )
+
+    def test_command_output_redacts_secrets_across_control_redraws(self) -> None:
+        renderer = EventRenderer()
+        cases = (
+            ("--token\x07\rSENSITIVE", "--token [redacted]"),
+            ("token=\x00\rSENSITIVE", "token=[redacted]"),
+            ("Bearer\x07\rSENSITIVE", "Bearer [redacted]"),
+        )
+
+        for aggregated_output, expected in cases:
+            with self.subTest(aggregated_output=aggregated_output):
+                command = {
+                    "type": "command_execution",
+                    "aggregated_output": aggregated_output,
+                    "status": "completed",
+                    "exit_code": 0,
+                }
+                self.assertEqual(
+                    render(renderer, {"type": "item.completed", "item": command}),
+                    [expected],
+                )
+
+    def test_command_output_is_bounded_and_keeps_failure_marker(self) -> None:
+        renderer = EventRenderer()
+        lines = [f"line {index}" for index in range(40)]
+        command = {
+            "type": "command_execution",
+            "aggregated_output": "\n".join(lines),
+            "status": "completed",
+            "exit_code": 7,
+        }
+
+        output = render(renderer, {"type": "item.completed", "item": command})
+
+        self.assertEqual(
+            output,
+            [
+                *lines[:8],
+                "... 24 lines omitted ...",
+                *lines[-8:],
+                "command failed exit=7",
+            ],
+        )
+
+        command["aggregated_output"] = ""
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            ["command failed exit=7"],
+        )
+
+        command["status"] = "failed"
+        command["exit_code"] = 0
+        self.assertEqual(
+            render(renderer, {"type": "item.completed", "item": command}),
+            ["command failed"],
+        )
 
     def test_todo_transitions_and_duplicate_completion_are_suppressed(self) -> None:
         renderer = EventRenderer()
@@ -330,9 +439,76 @@ class RunnerProcessTests(unittest.TestCase):
         self.assertEqual(captured, raw)
         self.assertEqual(result.stdout.count("warning: unparseable event line"), 1)
         self.assertRegex(
-            result.stdout.splitlines()[-1], r"^\d\d:\d\d:\d\d test-agent exited code=0$"
+            result.stdout.splitlines()[-1], r"^\d\d:\d\d:\d\d exited code=0$"
         )
+        self.assertNotIn("test-agent", result.stdout)
         self.assertNotIn("hidden", result.stdout)
+
+    def test_command_display_has_command_and_final_output_without_synthetic_labels(
+        self,
+    ) -> None:
+        records = [
+            {"type": "thread.started", "thread_id": "abc123"},
+            {"type": "turn.started"},
+            {
+                "type": "item.started",
+                "item": {
+                    "id": "cmd-1",
+                    "type": "command_execution",
+                    "command": "python -m unittest",
+                    "aggregated_output": "",
+                    "status": "in_progress",
+                },
+            },
+            {
+                "type": "item.updated",
+                "item": {
+                    "id": "cmd-1",
+                    "type": "command_execution",
+                    "command": "python -m unittest",
+                    "aggregated_output": "partial output MUST_NOT_RENDER",
+                    "status": "in_progress",
+                },
+            },
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "cmd-1",
+                    "type": "command_execution",
+                    "command": "python -m unittest",
+                    "aggregated_output": "Ran 12 tests\nOK\n",
+                    "status": "completed",
+                    "exit_code": 0,
+                },
+            },
+            {"type": "turn.completed", "usage": {"output_tokens": 4}},
+        ]
+        raw = "".join(json.dumps(record) + "\n" for record in records).encode()
+        code = f"import sys; sys.stdout.buffer.write({raw!r}); sys.stdout.buffer.flush()"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, events = run_child(Path(tmp), code)
+            captured = events.read_bytes()
+
+        messages = [line[9:] for line in result.stdout.splitlines()]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(captured, raw)
+        self.assertEqual(
+            messages,
+            [
+                "thread started abc123",
+                "turn started",
+                "python -m unittest",
+                "Ran 12 tests",
+                "OK",
+                "turn completed output=4",
+                "exited code=0",
+            ],
+        )
+        self.assertNotIn("test-agent", result.stdout)
+        self.assertNotIn("command started", result.stdout)
+        self.assertNotIn("command completed", result.stdout)
+        self.assertNotIn("MUST_NOT_RENDER", result.stdout)
 
     def test_hostile_integer_line_does_not_interrupt_capture(self) -> None:
         hostile = b'{"type":"turn.started","n":' + (b"9" * 5_000) + b"}\n"
@@ -366,7 +542,7 @@ class RunnerProcessTests(unittest.TestCase):
             ) as render_bytes,
         ):
             result = runner._run_child(
-                [sys.executable, "-c", code], b"", events, "test-agent", time.monotonic()
+                [sys.executable, "-c", code], b"", events, time.monotonic()
             )
 
         warnings = [line for line in stdout.getvalue().splitlines() if " warning:" in line]
@@ -446,6 +622,406 @@ class RunnerProcessTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(received, list(forwarded))
+
+    def test_missing_role_config_preserves_child_arguments_and_creates_nothing(self) -> None:
+        forwarded = ("--json", "-", "resume", "--", "literal", "--more")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            argv_path = root / "argv.json"
+            code = (
+                "import json,pathlib,sys; "
+                "pathlib.Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:]))"
+            )
+            result, _ = run_child(
+                root,
+                code,
+                child_args=(str(argv_path), *forwarded),
+                run_args=("--repo", str(root), "--role", "implementation"),
+            )
+            received = json.loads(argv_path.read_text(encoding="utf-8"))
+
+            self.assertFalse((root / ".codex-orchestrator").exists())
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(received, list(forwarded))
+
+    def test_configured_command_injects_exact_fresh_and_resume_arguments(self) -> None:
+        policy = RolePolicy(
+            model="gpt-5.6-sol",
+            speed="fast",
+            reasoning_efforts=("xhigh", "max", "ultra"),
+        )
+        injected = [
+            "--model",
+            "gpt-5.6-sol",
+            "-c",
+            'model_reasoning_effort="max"',
+            "-c",
+            'service_tier="fast"',
+            "--enable",
+            "fast_mode",
+        ]
+
+        fresh = runner._configured_command(
+            ["codex", "exec", "-C", "/work", "--json", "-"], policy, "max"
+        )
+        resumed = runner._configured_command(
+            ["/usr/bin/codex", "exec", "-C", "/work", "resume", "--json", "id", "-"],
+            policy,
+            "max",
+        )
+
+        self.assertEqual(
+            fresh, ["codex", "exec", *injected, "-C", "/work", "--json", "-"]
+        )
+        self.assertEqual(
+            resumed,
+            [
+                "/usr/bin/codex",
+                "exec",
+                *injected,
+                "-C",
+                "/work",
+                "resume",
+                "--json",
+                "id",
+                "-",
+            ],
+        )
+
+    def test_active_config_injects_once_and_propagates_child_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            config = root / ".codex-orchestrator" / "config.ini"
+            config.parent.mkdir()
+            config.write_text(VALID_ROLE_CONFIG, encoding="utf-8")
+            prompt = root / "prompt.md"
+            events = root / "events.jsonl"
+            invocations = root / "invocations.json"
+            fake_codex = root / "codex"
+            prompt.write_text("review this", encoding="utf-8")
+            fake_codex.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!{sys.executable}
+                    import json
+                    import pathlib
+                    import sys
+
+                    path = pathlib.Path({str(invocations)!r})
+                    previous = json.loads(path.read_text()) if path.exists() else []
+                    path.write_text(json.dumps([*previous, sys.argv[1:]]))
+                    sys.stdin.buffer.read()
+                    sys.stderr.write("Fast tier entitlement denied\\n")
+                    raise SystemExit(7)
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_codex.chmod(0o755)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "run",
+                    "--repo",
+                    str(root),
+                    "--role",
+                    "review",
+                    "--reasoning-effort",
+                    "ultra",
+                    "--events",
+                    str(events),
+                    "--prompt",
+                    str(prompt),
+                    "--",
+                    str(fake_codex),
+                    "exec",
+                    "--json",
+                    "-",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+                cwd=ROOT,
+            )
+            received = json.loads(invocations.read_text(encoding="utf-8"))
+            captured_events = events.read_bytes()
+
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertEqual(result.stderr, "Fast tier entitlement denied\n")
+        self.assertEqual(
+            received,
+            [
+                [
+                    "exec",
+                    "--model",
+                    "gpt-5.6-sol",
+                    "-c",
+                    'model_reasoning_effort="ultra"',
+                    "-c",
+                    'service_tier="fast"',
+                    "--enable",
+                    "fast_mode",
+                    "--json",
+                    "-",
+                ]
+            ],
+        )
+        self.assertEqual(captured_events, b"")
+
+    def test_configured_default_speed_forces_default_service_tier(self) -> None:
+        policy = RolePolicy(model=None, speed="default", reasoning_efforts=("max",))
+
+        command = runner._configured_command(["codex", "exec", "--json", "-"], policy, "max")
+
+        self.assertEqual(
+            command,
+            [
+                "codex",
+                "exec",
+                "-c",
+                'model_reasoning_effort="max"',
+                "-c",
+                'service_tier="default"',
+                "--json",
+                "-",
+            ],
+        )
+        self.assertNotIn("fast_mode", command)
+
+    def test_configured_command_rejects_disallowed_effort_and_non_codex_child(self) -> None:
+        policy = RolePolicy(model=None, speed=None, reasoning_efforts=("max", "ultra"))
+
+        with self.assertRaisesRegex(RoleConfigError, "not allowed"):
+            runner._configured_command(["codex", "exec", "-"], policy, "xhigh")
+        with self.assertRaisesRegex(RoleConfigError, "codex exec"):
+            runner._configured_command([sys.executable, "-c", "pass"], policy, "max")
+
+    def test_configured_command_rejects_performance_conflicts(self) -> None:
+        policy = RolePolicy(model="model", speed="fast", reasoning_efforts=("max",))
+        conflicts = (
+            ("-m", "other"),
+            ("-m=other",),
+            ("-mother",),
+            ("--model", "other"),
+            ("--model=other",),
+            ("-c", 'model="other"'),
+            ("--config", 'model_reasoning_effort="ultra"'),
+            ("--config=service_tier=standard",),
+            ("-cfeatures.fast_mode=false",),
+            ("-c", "features={fast_mode=false}"),
+            ("--enable", "fast_mode"),
+            ("--disable", "fast_mode"),
+            ("--enable=fast_mode",),
+            ("--disable=fast_mode",),
+        )
+        for conflict in conflicts:
+            with self.subTest(conflict=conflict), self.assertRaises(RoleConfigError):
+                runner._configured_command(
+                    ["codex", "exec", *conflict, "--json", "-"], policy, "max"
+                )
+
+        allowed = runner._configured_command(
+            ["codex", "exec", "--enable", "other_feature", "--", "--model=literal"],
+            policy,
+            "max",
+        )
+        self.assertEqual(allowed[-2:], ["--", "--model=literal"])
+
+    def test_role_config_errors_happen_before_prompt_read_or_event_creation(self) -> None:
+        cases = (
+            (
+                "effort without config",
+                False,
+                ("--role", "implementation", "--reasoning-effort", "max"),
+                [sys.executable, "-c", "pass"],
+                "requires an active",
+            ),
+            (
+                "missing role",
+                True,
+                ("--reasoning-effort", "max"),
+                ["codex", "exec", "-"],
+                "--role is required",
+            ),
+            (
+                "missing effort",
+                True,
+                ("--role", "implementation"),
+                ["codex", "exec", "-"],
+                "--reasoning-effort is required",
+            ),
+            (
+                "non codex child",
+                True,
+                ("--role", "implementation", "--reasoning-effort", "max"),
+                [sys.executable, "-c", "pass"],
+                "codex exec",
+            ),
+            (
+                "child conflict",
+                True,
+                ("--role", "implementation", "--reasoning-effort", "max"),
+                ["codex", "exec", "--model", "other", "-"],
+                "conflicting",
+            ),
+        )
+        for name, active, options, child, expected_error in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                subprocess.run(["git", "init", "-q", str(root)], check=True)
+                if active:
+                    config = root / ".codex-orchestrator" / "config.ini"
+                    config.parent.mkdir()
+                    config.write_text(VALID_ROLE_CONFIG, encoding="utf-8")
+                prompt = root / "missing-prompt.md"
+                events = root / "events.jsonl"
+
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "run",
+                        "--repo",
+                        str(root),
+                        "--events",
+                        str(events),
+                        "--prompt",
+                        str(prompt),
+                        *options,
+                        "--",
+                        *child,
+                    ],
+                    check=False,
+                    text=True,
+                    capture_output=True,
+                    cwd=ROOT,
+                )
+
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn(expected_error, result.stderr)
+                self.assertNotIn("could not read prompt", result.stderr)
+                self.assertFalse(events.exists())
+
+    def test_role_without_repo_fails_before_prompt_or_event_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            events = root / "events.jsonl"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "run",
+                    "--role",
+                    "implementation",
+                    "--events",
+                    str(events),
+                    "--prompt",
+                    str(root / "missing.md"),
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "pass",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+                cwd=ROOT,
+            )
+
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--role requires --repo", result.stderr)
+        self.assertNotIn("could not read prompt", result.stderr)
+        self.assertFalse(events.exists())
+
+    def test_invalid_existing_role_config_fails_before_prompt_and_events(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            config = root / ".codex-orchestrator" / "config.ini"
+            config.parent.mkdir()
+            config.write_text(
+                VALID_ROLE_CONFIG.replace("version=1", "version=2"), encoding="utf-8"
+            )
+            events = root / "events.jsonl"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "run",
+                    "--repo",
+                    str(root),
+                    "--role",
+                    "implementation",
+                    "--reasoning-effort",
+                    "max",
+                    "--events",
+                    str(events),
+                    "--prompt",
+                    str(root / "missing.md"),
+                    "--",
+                    "codex",
+                    "exec",
+                    "-",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+                cwd=ROOT,
+            )
+
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("version must be 1", result.stderr)
+        self.assertNotIn("could not read prompt", result.stderr)
+        self.assertFalse(events.exists())
+
+    def test_configured_model_with_nul_fails_before_prompt_and_events(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            config = root / ".codex-orchestrator" / "config.ini"
+            config.parent.mkdir()
+            config.write_text(
+                VALID_ROLE_CONFIG.replace("gpt-5.6-sol", "gpt-5.6-sol\x00invalid"),
+                encoding="utf-8",
+            )
+            events = root / "events.jsonl"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "run",
+                    "--repo",
+                    str(root),
+                    "--role",
+                    "implementation",
+                    "--reasoning-effort",
+                    "max",
+                    "--events",
+                    str(events),
+                    "--prompt",
+                    str(root / "missing.md"),
+                    "--",
+                    "codex",
+                    "exec",
+                    "-",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+                cwd=ROOT,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("must not contain NUL bytes", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertFalse(events.exists())
 
     def test_child_exit_codes_are_propagated(self) -> None:
         for exit_code in (0, 7):
@@ -541,7 +1117,6 @@ class RunnerProcessTests(unittest.TestCase):
                     [sys.executable, "-c", code, str(pid_path)],
                     b"",
                     FailingEvents(),
-                    "test-agent",
                     time.monotonic(),
                 )
             child_pid = int(pid_path.read_text(encoding="utf-8"))

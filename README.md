@@ -2,8 +2,9 @@
 
 ![Claude–Codex Orchestrator overview](docs/assets/codex-orchestrator-overview.png)
 
-A Claude Code plugin for coordinating OpenAI Codex agents. Claude plans and verifies the work;
-Codex handles scoped implementation and review through its CLI.
+A Claude Code plugin for coordinating OpenAI Codex agents. Claude owns the plan and verifies the
+work; Codex provides optional planning input and handles scoped implementation and review through
+its CLI.
 
 ## What It Does
 
@@ -11,6 +12,7 @@ Use this plugin when you want Claude Code to supervise Codex rather than manuall
 between the two tools. It helps Claude:
 
 - assign or resume scoped Codex agents;
+- request independent Codex planning or plan review when it materially reduces risk;
 - monitor active Codex agents;
 - preserve exact prompts, event streams, and handoffs;
 - independently verify results and record consequential decisions.
@@ -122,9 +124,40 @@ handoff cycle gets the next numbered execution; resuming a native session create
 under the same agent. Each execution keeps the exact prompt, raw Codex events, and final handoff
 together so that each execution can be inspected later.
 
+Planning and plan-review agents are optional, fresh, read-only sessions. They advise Claude; they
+do not replace Claude's responsibility to finalize the plan, verify repository evidence, and make
+the closing judgment.
+
 `journal.jsonl` is the compact index for the run, `evidence/` holds optional supporting evidence,
 and `report.md` contains Claude's final summary. The detailed journal format, trust boundaries, and
 closure flow are documented in [`docs/orchestration-contract.md`](docs/orchestration-contract.md).
+
+## Optional Role Configuration
+
+Role configuration is opt-in; the plugin does not create a role configuration implicitly. Without
+it, Codex uses its native `config.toml` and built-in defaults unchanged. Generate a repository
+config explicitly with:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" config init --repo <repo>
+```
+
+This creates `.codex-orchestrator/config.ini` without overwriting an existing file and locally
+excludes `/.codex-orchestrator/` from Git. Its generated defaults are:
+
+| Role | Prefix | Default model | Default allowed efforts | Default speed | Purpose |
+| --- | --- | --- | --- | --- | --- |
+| `implementation` | `codex-impl-NN` | `gpt-5.6-sol` | `xhigh`, `max`, `ultra` | `fast` | Implement scoped work and focused fixes. |
+| `review` | `codex-review-NN` | `gpt-5.6-sol` | `max`, `ultra` | `fast` | Independently review an implementation. |
+| `planning` | `codex-plan-NN` | `gpt-5.6-sol` | `max`, `ultra` | `fast` | Propose an independent approach. |
+| `planning_review` | `codex-plan-review-NN` | `gpt-5.6-sol` | `max`, `ultra` | `fast` | Critique Claude's draft plan. |
+
+These values correspond to `model = gpt-5.6-sol` and `speed = fast`. Users may edit the file
+directly. Every role and its effort list is required; efforts must be a nonempty, ordered, unique
+subset of `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`. Model and speed may be omitted to
+inherit native Codex behavior or overridden per role. `speed = default` forces Codex's
+Standard/default tier, while `speed = fast` enables Fast mode. Extra keys and other speed values are
+rejected. Claude selects one allowed effort per execution based on difficulty, breadth, and context.
 
 ## Historical v0.4.1 Benchmarks
 
