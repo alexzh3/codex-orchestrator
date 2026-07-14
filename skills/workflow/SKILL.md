@@ -47,7 +47,7 @@ ownership boundaries and remain part of that named execution; do not assign them
 identities. Existing overlap, worktree, and compute rules still apply.
 
 Select again for every resumed execution rather than inheriting the prior effort automatically.
-The configured model, effort, and Fast service tier are execution inputs, not evidence of quality;
+The configured model, effort, and service tier are execution inputs, not evidence of quality;
 Claude still verifies the result.
 
 ## Run Initialization

@@ -634,8 +634,10 @@ def _configured_command(
     if policy.model is not None:
         overrides.extend(("--model", policy.model))
     overrides.extend(("-c", f'model_reasoning_effort="{reasoning_effort}"'))
-    if policy.speed == "fast":
-        overrides.extend(("-c", 'service_tier="fast"', "--enable", "fast_mode"))
+    if policy.speed is not None:
+        overrides.extend(("-c", f'service_tier="{policy.speed}"'))
+        if policy.speed == "fast":
+            overrides.extend(("--enable", "fast_mode"))
     return [*command[:2], *overrides, *command[2:]]
 
 

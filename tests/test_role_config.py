@@ -117,6 +117,21 @@ class RoleConfigTests(unittest.TestCase):
         self.assertEqual(config.policy_for("review").speed, "fast")
         self.assertEqual(config.policy_for("review").reasoning_efforts, ("max",))
 
+    def test_default_speed_overrides_fast_default(self) -> None:
+        content = VALID_CONFIG.replace(
+            "[role.review]\nreasoning_efforts = max, ultra",
+            "[role.review]\nspeed = default\nreasoning_efforts = max, ultra",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            write_config(repo, content)
+
+            config = load_role_config(repo)
+
+        assert config is not None
+        self.assertEqual(config.policy_for("implementation").speed, "fast")
+        self.assertEqual(config.policy_for("review").speed, "default")
+
     def test_strict_validation_rejects_invalid_schema_and_values(self) -> None:
         invalid_cases = {
             "default keys": "[DEFAULT]\nmodel = hidden\n\n" + VALID_CONFIG,

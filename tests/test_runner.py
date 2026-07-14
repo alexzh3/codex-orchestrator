@@ -694,6 +694,26 @@ class RunnerProcessTests(unittest.TestCase):
         )
         self.assertEqual(captured_events, b"")
 
+    def test_configured_default_speed_forces_default_service_tier(self) -> None:
+        policy = RolePolicy(model=None, speed="default", reasoning_efforts=("max",))
+
+        command = runner._configured_command(["codex", "exec", "--json", "-"], policy, "max")
+
+        self.assertEqual(
+            command,
+            [
+                "codex",
+                "exec",
+                "-c",
+                'model_reasoning_effort="max"',
+                "-c",
+                'service_tier="default"',
+                "--json",
+                "-",
+            ],
+        )
+        self.assertNotIn("fast_mode", command)
+
     def test_configured_command_rejects_disallowed_effort_and_non_codex_child(self) -> None:
         policy = RolePolicy(model=None, speed=None, reasoning_efforts=("max", "ultra"))
 

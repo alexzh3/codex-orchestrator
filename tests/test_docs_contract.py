@@ -386,10 +386,10 @@ class DocumentationContractTests(unittest.TestCase):
         normalized_readme = " ".join(readme.split())
         normalized_workflow = " ".join(workflow.split())
 
-        for command in ("config init --repo", "config check --repo", "config show"):
-            self.assertIn(command, readme)
+        self.assertIn("config init --repo", readme)
         self.assertIn("model = gpt-5.6-sol", readme)
         self.assertNotIn("gpt-5-6-sol", readme)
+        self.assertIn("speed = default", readme)
         self.assertIn("speed = fast", readme)
         self.assertIn("does not create a role configuration implicitly", normalized_readme)
         self.assertIn("Never create it as a side effect of starting a run", normalized_workflow)

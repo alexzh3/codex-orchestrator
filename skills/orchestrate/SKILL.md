@@ -55,7 +55,7 @@ breadth or context needs.
 
 When the file is absent, still pass repository and role metadata to the runner but omit
 `--reasoning-effort`; the runner must not create configuration or alter the child Codex command.
-Never silently downgrade a configured model, effort, or Fast service tier after a compatibility or
+Never silently change a configured model, effort, or service tier after a compatibility or
 entitlement failure.
 
 ## Focused Agent Cycle

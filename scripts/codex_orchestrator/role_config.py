@@ -11,6 +11,7 @@ from pathlib import Path
 CONFIG_RELATIVE_PATH = Path(".codex-orchestrator/config.ini")
 ROLES = ("implementation", "review", "planning", "planning_review")
 REASONING_EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
+SPEEDS = ("default", "fast")
 _ROOT_SECTIONS = ("meta", "defaults")
 _ROLE_PREFIX = "role."
 _EXCLUDE_PATTERN = "/.codex-orchestrator/"
@@ -232,8 +233,10 @@ def _optional_value(
 
 
 def _validate_speed(speed: str | None, location: str) -> None:
-    if speed is not None and speed != "fast":
-        raise RoleConfigError(f"{location} speed must be 'fast' when set")
+    if speed is not None and speed not in SPEEDS:
+        raise RoleConfigError(
+            f"{location} speed must be one of: {', '.join(SPEEDS)}"
+        )
 
 
 def _parse_efforts(value: str, section: str) -> tuple[str, ...]:

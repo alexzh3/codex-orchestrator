@@ -48,8 +48,9 @@ as `codex-impl-01`. Keep `--label` in the starting command for compatibility and
 visibility; the runner does not repeat it on every progress line. It validates configured execution
 inputs before reading the prompt, creating `events.jsonl`, or starting Codex. For an active policy it
 injects `--model <configured-model>` when present and the selected `model_reasoning_effort`;
-configured `speed = fast` also injects `service_tier="fast"` and the Fast-mode feature flag. It
-rejects conflicting child performance flags, so do not add those flags manually. If
+configured `speed = default` injects `service_tier="default"`, while `speed = fast` injects
+`service_tier="fast"` and the Fast-mode feature flag. It rejects conflicting child performance
+flags, so do not add those flags manually. If
 `.codex-orchestrator/config.ini` is absent, keep `--repo` and `--role`, omit
 `--reasoning-effort`, and everything after `--` passes to Codex byte-for-byte so native Codex
 configuration remains authoritative. Supplying an effort without the file is an error.

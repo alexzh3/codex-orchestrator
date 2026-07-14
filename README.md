@@ -155,7 +155,8 @@ excludes `/.codex-orchestrator/` from Git. Its generated defaults are:
 These values correspond to `model = gpt-5.6-sol` and `speed = fast`. Users may edit the file
 directly. Every role and its effort list is required; efforts must be a nonempty, ordered, unique
 subset of `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`. Model and speed may be omitted to
-inherit native Codex behavior or overridden per role. Extra keys and speeds other than `fast` are
+inherit native Codex behavior or overridden per role. `speed = default` forces Codex's
+Standard/default tier, while `speed = fast` enables Fast mode. Extra keys and other speed values are
 rejected. Claude selects one allowed effort per execution based on difficulty, breadth, and context.
 
 ## Historical v0.4.1 Benchmarks
