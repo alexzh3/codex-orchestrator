@@ -44,9 +44,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
      --output-last-message "$EXECUTION_DIR/handoff.md" -
 ```
 
-Launch this as a Claude Code background Bash task whose title is the exact named agent, such as
-`codex-review-01`. Keep `--label` in the starting command for compatibility and launch-command
-visibility; it is not repeated on every progress line. The runner creates `events.jsonl`
+Launch this under the SKILL's Background Launch Invariant. The runner creates `events.jsonl`
 exclusively and aborts on a pre-existing file, captures raw Codex stdout there byte-for-byte, and
 prints timestamped progress plus bounded, scrubbed command output to its own stdout for the human
 `/tasks` view. Codex stderr passes through for native diagnostics. After a clean capture, the runner

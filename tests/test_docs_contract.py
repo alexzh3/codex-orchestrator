@@ -200,7 +200,17 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn(f'codex_orch_tools.py" run \\\n  --label {label}', reference)
         for reference in (monitoring, review, planning):
             self.assertNotIn('> "$EXECUTION_DIR/events.jsonl"', reference)
-            self.assertIn("title is the exact named agent", reference)
+            self.assertIn("Background Launch Invariant", reference)
+
+        orchestrate = (ROOT / "skills/orchestrate/SKILL.md").read_text(encoding="utf-8")
+        normalized_orchestrate = " ".join(orchestrate.split())
+        self.assertIn("## Claude Code Background Launch Invariant", orchestrate)
+        self.assertIn("`run_in_background: true`", orchestrate)
+        self.assertIn("`description` set to the exact named agent", normalized_orchestrate)
+        self.assertIn("current orchestrating Claude Code session", normalized_orchestrate)
+        self.assertIn("task or shell ID", normalized_orchestrate)
+        for detached_launch in ("shell `&`", "`nohup`", "`setsid`", "`disown`"):
+            self.assertIn(detached_launch, orchestrate)
 
     def test_journal_uniqueness_and_successor_run_guidance_match_runtime(self) -> None:
         contract = " ".join(

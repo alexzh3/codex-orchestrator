@@ -43,11 +43,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
      -s workspace-write -c approval_policy=never -C <worktree> -
 ```
 
-Launch the runner as a Claude Code background Bash task whose title is the exact named agent, such
-as `codex-impl-01`. Keep `--label` in the starting command for compatibility and launch-command
-visibility; the runner does not repeat it on every progress line. It validates configured execution
-inputs before reading the prompt, creating `events.jsonl`, or starting Codex. For an active policy it
-injects `--model <configured-model>` when present and the selected `model_reasoning_effort`;
+Launch the runner under the SKILL's Background Launch Invariant. It validates configured execution
+inputs before reading the prompt, creating `events.jsonl`, or starting Codex. For an active policy
+it injects
+`--model <configured-model>` when present and the selected `model_reasoning_effort`;
 configured `speed = default` injects `service_tier="default"`, while `speed = fast` injects
 `service_tier="fast"` and the Fast-mode feature flag. It rejects conflicting child performance
 flags, so do not add those flags manually. If

@@ -58,6 +58,17 @@ When the file is absent, still pass repository and role metadata to the runner b
 Never silently change a configured model, effort, or service tier after a compatibility or
 entitlement failure.
 
+## Claude Code Background Launch Invariant
+
+Issue every Codex launch or resume directly from the current orchestrating Claude Code session
+through its Bash tool, with `run_in_background: true` and `description` set to the exact named agent
+(e.g. `codex-impl-01`). That Bash call registers the shell in `/tasks`, with `description` as its
+title. Keep the runner command in that background task's foreground. Do not wrap or detach the
+runner with shell `&`, `nohup`, `setsid`, `disown`, a fire-and-forget subprocess, a nested Claude
+agent, or an external terminal; those start Codex without registering this shell in the current
+session's `/tasks` view. `--label` also does not register a task. Proceed only after Bash returns a
+task or shell ID; otherwise stop and diagnose rather than launching a duplicate.
+
 ## Focused Agent Cycle
 
 1. Read the complete journal, current task, and relevant references before acting.
@@ -70,6 +81,7 @@ entitlement failure.
 5. Resolve the execution's role policy, absolute worktree, full HEAD, and attached branch when
    present and include them in its record.
    Save the exact prompt and append `execution` before launch.
+   Start it under the Claude Code Background Launch Invariant above.
 6. Monitor with the bundled tools without editing files owned by the active agent.
 7. Save the exact handoff, inspect it and the repository, then append terminal
    `execution_result`.

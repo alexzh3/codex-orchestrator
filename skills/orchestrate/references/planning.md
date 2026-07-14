@@ -32,9 +32,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
      --output-last-message "$EXECUTION_DIR/handoff.md" -
 ```
 
-Launch it as a Claude Code background Bash task whose title is the exact named agent, such as
-`codex-plan-01`. Keep `--label` in the starting command for compatibility and launch-command
-visibility; the runner does not repeat it on every progress line.
+Launch it under the SKILL's Background Launch Invariant.
 
 ## Plan Review
 
@@ -66,8 +64,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
      --output-last-message "$EXECUTION_DIR/handoff.md" -
 ```
 
-Launch it as a separate background Bash task titled `codex-plan-review-01`; as with planning, keep
-the matching `--label` in the starting command without repeating it in progress output.
+Launch it as its own separate background task under the Background Launch Invariant.
 
 For either role, use `ultra` instead of `max` only for broad, multi-domain, context-heavy, or
 parallelizable analysis. Nested subagents created during an Ultra execution inherit the parent
