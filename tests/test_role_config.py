@@ -205,7 +205,9 @@ class RoleConfigTests(unittest.TestCase):
 
     def test_config_commands_report_disabled_and_resolved_settings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
+            # resolve(): on macOS the temp dir sits under /var, a symlink to
+            # /private/var, while repository_root() reports the resolved path.
+            repo = Path(tmp).resolve()
             init_repo(repo)
             disabled = run_cli(
                 "config", "show", "--repo", str(repo), "--role", "review", "--json"
@@ -252,7 +254,9 @@ class RoleConfigTests(unittest.TestCase):
 
     def test_repository_paths_resolve_from_subdirectories_and_linked_worktrees(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            # resolve(): on macOS the temp dir sits under /var, a symlink to
+            # /private/var, while repository_root() reports the resolved path.
+            root = Path(tmp).resolve()
             repo = root / "main"
             linked = root / "linked"
             init_repo(repo)
