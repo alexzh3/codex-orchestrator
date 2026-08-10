@@ -27,6 +27,11 @@ git -C <worktree> rev-parse HEAD
 git -C <worktree> branch --show-current
 ```
 
+Prepare each execution in this exact order: create the `execution-NN` directory, write `prompt.md`,
+append the journal `execution` entry, then launch. The runner owns `events.jsonl` and refuses to
+start if it already exists, so do not pre-create it. An execution that dies at launch therefore
+still leaves a well-formed record.
+
 Then launch Codex: this example uses an active role configuration; select the effort from the
 resolved `implementation` policy:
 
@@ -98,18 +103,24 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
   --reasoning-effort max \
   --events "$EXECUTION_DIR/events.jsonl" \
   --prompt "$EXECUTION_DIR/prompt.md" \
-  -- codex exec -C <worktree> -s workspace-write -c approval_policy=never \
+  -- codex exec -s workspace-write -c approval_policy=never \
      resume --json --output-last-message "$EXECUTION_DIR/handoff.md" \
      <session-id> -
 ```
 
-Read the absolute `worktree` from the preceding execution and use it with `-C` and the same
-`session_id`. Inspect its current HEAD and branch and record them in the new execution; the prior
-`head` is a snapshot, so do not check out or reset to it merely because the worktree advanced. Use
-an absolute `EXECUTION_DIR` when the shell runs elsewhere. Reselect effort for this execution from
-its current difficulty, breadth, and context instead of copying the previous value. When role
-configuration is absent, omit the example's `--reasoning-effort max`. A fresh native session
-requires a new named agent.
+Do not pass `-C` together with `resume`: the resumed session inherits its working directory from
+the original launch, and current Codex CLI releases reject the combination. Everything after `--`
+reaches Codex byte-for-byte, so the runner does not shield a `-C` added here.
+Read the absolute `worktree` from the preceding execution record instead, and verify it still
+exists before resuming. Inspect its current HEAD and branch and record them in the new execution;
+the prior `head` is a snapshot, so do not check out or reset to it merely because the worktree
+advanced. Use an absolute `EXECUTION_DIR` when the shell runs elsewhere. Reselect effort for this
+execution from its current difficulty, breadth, and context instead of copying the previous value.
+When role configuration is absent, omit the example's `--reasoning-effort max`.
+
+Resume degrades when the original session state has been pruned or the CLI version changed since
+the launch — treat a resume that starts but recognizes nothing as a failed resume and fall back to
+a fresh session rather than re-prompting it. A fresh native session requires a new named agent.
 
 ## Agent State And Monitor
 
@@ -134,5 +145,24 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" monitor \
 Always select the target with `--run-id` plus its repository or with `--log`.
 
 The monitor is read-only and emits completion, failure, incompatible-format, missing-stream, or
-stale notifications. Treat silence and staleness as ambiguous; inspect the handoff and repository
-before appending `execution_result`.
+stale notifications. A stale or incompatible-format target is terminal to that monitor invocation:
+the monitor has stopped watching it even though the underlying execution may still be running.
+While any execution remains in flight, re-arm the monitor no later than 60 minutes after its last
+arm or exit so a long-running agent is never unwatched indefinitely.
+
+Treat silence and staleness as ambiguous. On `codex_agent_stale`, before appending any
+`execution_result`:
+
+1. Check the `events.jsonl` mtime for progress after the notification.
+2. Check the agent's registered background task in `/tasks` — the launch invariant names it for
+   the exact agent — rather than guessing from process names.
+3. Inspect the handoff and the assigned worktree for completed or partial work.
+
+Never conclude failure from staleness alone. If the task is still running, append no result and
+re-arm the monitor. After a machine-sleep gap — a wall-clock jump beyond the stale threshold — run
+`state` for every in-flight target before trusting any stale notification emitted across the gap,
+because staleness computed over a sleep period reflects the clock, not the agent.
+
+On `codex_agent_unknown`, run `state --dump-event-types` for that target. Do not infer whether the
+agent is running, passed, or failed from a stream the parser does not recognize; surface the
+incompatibility and the observed event types to the user before deciding how to proceed.
