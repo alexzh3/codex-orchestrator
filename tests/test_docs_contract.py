@@ -159,14 +159,10 @@ class DocumentationContractTests(unittest.TestCase):
             maxsplit=1,
         )[1]
 
-        self.assertIn(
-            'EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/'
-            'codex-impl-01/execution-02"',
-            resume,
-        )
-        self.assertIn('$EXECUTION_DIR/handoff.md', resume)
-        self.assertIn('$EXECUTION_DIR/prompt.md', resume)
-        self.assertIn('$EXECUTION_DIR/events.jsonl', resume)
+        self.assertIn('/abs/run-dir/codex-impl-01/execution-02/handoff.md', resume)
+        self.assertIn('/abs/run-dir/codex-impl-01/execution-02/prompt.md', resume)
+        self.assertIn('/abs/run-dir/codex-impl-01/execution-02/events.jsonl', resume)
+        self.assertIn('Do not pass `-C` together with `resume`', resume)
 
     def test_journal_uniqueness_and_successor_run_guidance_match_runtime(self) -> None:
         contract = " ".join(

@@ -36,6 +36,19 @@ changes. If a unique identity is duplicated, retain the journal, stop appending,
 successor run that references the prior run instead of rewriting history. The journal contains seven
 entry types. The fields below are the prompted run protocol, not a complete runtime-enforced schema.
 
+Recording discipline for the fields that bite when typed casually:
+
+- Record every commit SHA from command output (`git rev-parse HEAD`) captured at recording time,
+  never from memory or an earlier message — a stale or hand-typed SHA silently corrupts resume
+  and integration targets.
+- Correct a wrong entry by appending a corrective entry that names it; never rewrite or delete a
+  journal line.
+- Execution IDs are strings of the form `execution-NN` under their agent directory; keep the
+  numbering dense and zero-padded so directory order matches journal order.
+- `acceptance`, `files`, `repo_status`, `basis`, `evidence`, `caveats`, `files_changed`, `risks`,
+  and `follow_ups` are arrays even when they hold one element or none — a bare string parses but
+  breaks consumers that iterate.
+
 ### `run_started`
 
 The first entry. It records the concise original goal, absolute target worktree, starting Git
