@@ -167,6 +167,8 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('$EXECUTION_DIR/handoff.md', resume)
         self.assertIn('$EXECUTION_DIR/prompt.md', resume)
         self.assertIn('$EXECUTION_DIR/events.jsonl', resume)
+        self.assertIn('Do not pass `-C` together with `resume`', resume)
+        self.assertNotIn('-C <worktree>', resume)
 
     def test_documented_codex_launches_use_the_runner(self) -> None:
         monitoring = (ROOT / "skills/orchestrate/references/monitoring.md").read_text(
