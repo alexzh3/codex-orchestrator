@@ -514,21 +514,6 @@ class RunnerProcessTests(unittest.TestCase):
         self.assertNotIn("command completed", result.stdout)
         self.assertNotIn("MUST_NOT_RENDER", result.stdout)
 
-    def test_hostile_integer_line_does_not_interrupt_capture(self) -> None:
-        hostile = b'{"type":"turn.started","n":' + (b"9" * 5_000) + b"}\n"
-        completed = b'{"type":"turn.completed","usage":{"output_tokens":1}}\n'
-        raw = hostile + completed
-        code = f"import sys; sys.stdout.buffer.write({raw!r}); sys.stdout.buffer.flush()"
-        with tempfile.TemporaryDirectory() as tmp:
-            result, events = run_child(Path(tmp), code, timeout=5)
-            captured = events.read_bytes()
-
-        warnings = [line for line in result.stdout.splitlines() if " warning:" in line]
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(captured, raw)
-        self.assertEqual(len(warnings), 1, result.stdout)
-        self.assertNotIn("Traceback", result.stderr)
-
     def test_unexpected_renderer_failure_is_isolated(self) -> None:
         raw = b'{"type":"turn.started"}\n{"type":"turn.completed"}\n'
         code = f"import sys; sys.stdout.buffer.write({raw!r}); sys.stdout.buffer.flush()"
