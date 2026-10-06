@@ -9,7 +9,7 @@
       "name": "codex-orchestrator",
       "source": "./",
       "description": "Coordinate reusable monitored OpenAI Codex agents from Claude Code.",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "author": {
         "name": "alexzh3"
       }
