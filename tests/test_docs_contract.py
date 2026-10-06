@@ -168,6 +168,50 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('$EXECUTION_DIR/prompt.md', resume)
         self.assertIn('$EXECUTION_DIR/events.jsonl', resume)
 
+    def test_documented_codex_launches_use_the_runner(self) -> None:
+        monitoring = (ROOT / "skills/orchestrate/references/monitoring.md").read_text(
+            encoding="utf-8"
+        )
+        review = (ROOT / "skills/orchestrate/references/review.md").read_text(
+            encoding="utf-8"
+        )
+        planning = (ROOT / "skills/orchestrate/references/planning.md").read_text(
+            encoding="utf-8"
+        )
+        runner_command = 'codex_orch_tools.py" run'
+        launch = monitoring.split("Then launch Codex:", maxsplit=1)[1].split(
+            "Never use `--ephemeral`", maxsplit=1
+        )[0]
+        resume = monitoring.split(
+            "Resume a relevant idle session as the next execution under the same agent:",
+            maxsplit=1,
+        )[1].split("Read the absolute `worktree`", maxsplit=1)[0]
+        review_launch = review.split("```bash", maxsplit=1)[1].split("```", maxsplit=1)[0]
+
+        for block in (launch, resume, review_launch):
+            self.assertIn(runner_command, block)
+        self.assertEqual(planning.count(runner_command), 2)
+        for label, reference in (
+            ("codex-impl-01", monitoring),
+            ("codex-review-01", review),
+            ("codex-plan-01", planning),
+            ("codex-plan-review-01", planning),
+        ):
+            self.assertIn(f'codex_orch_tools.py" run \\\n  --label {label}', reference)
+        for reference in (monitoring, review, planning):
+            self.assertNotIn('> "$EXECUTION_DIR/events.jsonl"', reference)
+            self.assertIn("Background Launch Invariant", reference)
+
+        orchestrate = (ROOT / "skills/orchestrate/SKILL.md").read_text(encoding="utf-8")
+        normalized_orchestrate = " ".join(orchestrate.split())
+        self.assertIn("## Claude Code Background Launch Invariant", orchestrate)
+        self.assertIn("`run_in_background: true`", orchestrate)
+        self.assertIn("`description` set to the exact named agent", normalized_orchestrate)
+        self.assertIn("current orchestrating Claude Code session", normalized_orchestrate)
+        self.assertIn("task or shell ID", normalized_orchestrate)
+        for detached_launch in ("shell `&`", "`nohup`", "`setsid`", "`disown`"):
+            self.assertIn(detached_launch, orchestrate)
+
     def test_journal_uniqueness_and_successor_run_guidance_match_runtime(self) -> None:
         contract = " ".join(
             (ROOT / "docs/orchestration-contract.md").read_text(encoding="utf-8").split()
@@ -298,14 +342,16 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("rerun the affected acceptance checks there", compute)
         self.assertIn("only after those target checks pass", compute)
 
-    def test_replay_directory_is_documented_as_a_generated_test_scaffold(self) -> None:
-        contract = " ".join(
-            (ROOT / "docs/orchestration-contract.md").read_text(encoding="utf-8").split()
+    def test_replay_directory_documents_generated_test_scaffold(self) -> None:
+        replay_readme = " ".join(
+            (ROOT / "tests/replay/README.md").read_text(encoding="utf-8").split()
         )
 
-        self.assertIn("checked-in input scaffold, not a standalone valid closed run", contract)
-        self.assertIn("test_prompt_first_workflow.py", contract)
-        self.assertIn("validates the completed copy", contract)
+        self.assertIn(
+            "checked-in input scaffold, not a standalone valid closed run", replay_readme
+        )
+        self.assertIn("test_prompt_first_workflow.py", replay_readme)
+        self.assertIn("validates the completed copy", replay_readme)
 
     def test_review_effort_is_risk_scaled(self) -> None:
         review = " ".join(
@@ -343,6 +389,95 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertNotIn("This skill owns the run protocol", orchestrate)
         self.assertNotIn("`run_started`", orchestrate)
         self.assertNotIn("`run_closed`", orchestrate)
+
+    def test_role_configuration_is_explicit_and_preserves_native_defaults_when_absent(
+        self,
+    ) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        workflow = (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8")
+        normalized_readme = " ".join(readme.split())
+        normalized_workflow = " ".join(workflow.split())
+
+        self.assertIn("config init --repo", readme)
+        self.assertIn("models = gpt-6.1-sol", readme)
+        self.assertIn("models = gpt-6.1-sol, gpt-6-astra", readme)
+        self.assertIn("models = gpt-6-astra", readme)
+        self.assertNotIn("gpt-6-1-sol", readme)
+        self.assertIn("speed = default", readme)
+        self.assertIn("speed = fast", readme)
+        self.assertIn("does not create a role configuration implicitly", normalized_readme)
+        self.assertIn("Never create it as a side effect of starting a run", normalized_workflow)
+        self.assertIn(
+            "native `config.toml` and built-in defaults unchanged",
+            normalized_workflow,
+        )
+
+    def test_canonical_roles_prefixes_and_resolved_execution_fields_are_documented(
+        self,
+    ) -> None:
+        orchestrate = (ROOT / "skills/orchestrate/SKILL.md").read_text(encoding="utf-8")
+        contract_path = ROOT / "docs/orchestration-contract.md"
+        contract = contract_path.read_text(encoding="utf-8")
+        roles = {
+            "implementation": "codex-impl-NN",
+            "review": "codex-review-NN",
+            "planning": "codex-plan-NN",
+            "planning_review": "codex-plan-review-NN",
+        }
+
+        for role, prefix in roles.items():
+            for text in (orchestrate, contract):
+                self.assertIn(f"`{role}`", text)
+                self.assertIn(f"`{prefix}`", text)
+        execution = next(
+            record for record in jsonl_records(contract) if record["type"] == "execution"
+        )
+        self.assertEqual(execution["model"], "gpt-6.1-sol")
+        self.assertEqual(execution["effort"], "xhigh")
+        self.assertEqual(execution["service_tier"], "default")
+        self.assertNotIn("gpt-6-1-sol", contract)
+
+    def test_planning_roles_are_fresh_separate_and_read_only(self) -> None:
+        planning = (
+            ROOT / "skills/orchestrate/references/planning.md"
+        ).read_text(encoding="utf-8")
+        normalized = " ".join(planning.split())
+
+        self.assertIn("fresh named `codex-plan-NN` agent", normalized)
+        self.assertIn("separate fresh named `codex-plan-review-NN` agent", normalized)
+        self.assertEqual(planning.count("-s read-only"), 2)
+        self.assertIn("--role planning", planning)
+        self.assertIn("--role planning_review", planning)
+        self.assertIn("Do not provide Claude's draft plan", normalized)
+        self.assertIn("Do not provide the independent planner's handoff", normalized)
+        self.assertIn("Claude owns the draft and final plan", normalized)
+        self.assertNotIn("-s workspace-write", planning)
+
+    def test_effort_selection_and_ultra_nested_agents_keep_claude_authority(self) -> None:
+        workflow = (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8")
+        monitoring = (
+            ROOT / "skills/orchestrate/references/monitoring.md"
+        ).read_text(encoding="utf-8")
+        normalized_workflow = " ".join(workflow.split())
+        normalized_monitoring = " ".join(monitoring.split())
+
+        self.assertIn("lowest allowed effort adequate", normalized_workflow)
+        for effort in ("`xhigh`", "`max`", "`ultra`"):
+            self.assertIn(effort, workflow)
+        self.assertIn("Select again for every resumed execution", normalized_workflow)
+        self.assertIn("inherit the parent execution's sandbox", normalized_workflow)
+        self.assertIn(
+            "do not assign them separate journal identities",
+            normalized_workflow,
+        )
+        self.assertIn("Claude still verifies the result", normalized_workflow)
+        self.assertIn("--repo <repo>", monitoring)
+        self.assertIn("--role implementation", monitoring)
+        self.assertIn("--reasoning-effort xhigh", monitoring)
+        self.assertIn(
+            "everything after `--` passes to Codex byte-for-byte",
+            normalized_monitoring,
+        )
 
     def test_docs_exclude_removed_ide_and_observe_workflows(self) -> None:
         operational_docs = "\n".join(

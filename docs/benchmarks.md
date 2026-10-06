@@ -3,9 +3,6 @@
 > **Historical results:** This document preserves measurements from the schema-driven v0.2.0 and
 > v0.4.1 plugin. The prompt-first runtime does not include a benchmark command or adapter.
 
-Benchmark tooling, intermediate versions, and raw run data are kept in the currently private
-[`codex-orchestrator-bench`](https://github.com/alexzh3/codex-orchestrator-bench) repository.
-
 The public head-to-head result is an OpenThoughts-TBLite benchmark in Terminal-Bench format, run
 through Harbor in per-task Docker containers and graded by each task's own verifier. The task set is
 the 10 hardest tasks out of 100 by published success rate. Each cell is one run per `(task, config)`,

@@ -18,6 +18,8 @@ EXEC_EVENT_TYPES = {
     "error",
 }
 
+PARSE_ERROR_TYPES = {"<invalid-json>", "<non-object>"}
+
 
 @dataclass(frozen=True)
 class EventRecord:
@@ -45,7 +47,7 @@ class StreamSummary:
     def consume(self, record: EventRecord) -> None:
         kind = record.event_type
         self.event_counts[kind] += 1
-        if kind in {"<invalid-json>", "<non-object>"}:
+        if kind in PARSE_ERROR_TYPES:
             self.parse_errors += 1
         if kind in EXEC_EVENT_TYPES or is_reconnect_notice(record):
             self.known_count += 1
@@ -121,7 +123,7 @@ def decode_event_line(line: str) -> EventRecord | None:
         return None
     try:
         event = json.loads(stripped)
-    except json.JSONDecodeError:
+    except ValueError:
         return EventRecord({"_parse_error": stripped[:200]}, "<invalid-json>")
     if not isinstance(event, dict):
         return EventRecord(

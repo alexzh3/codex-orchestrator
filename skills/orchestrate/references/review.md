@@ -26,17 +26,36 @@ For the first independent review:
 - Provide the goal, acceptance criteria, constraints, and exact review target.
 - Do not provide the implementer handoff, claimed test results, earlier review verdicts, or Claude's
   tentative conclusion.
-- Save the prompt and append the execution before launch. Capture the event stream and exact
-  handoff.
+- Save the prompt and append the execution before launch. With active role configuration, resolve
+  `review`, select `max` for one coherent target or `ultra` for broad/context-heavy analysis, select
+  a model with the workflow rubric when the role allows several, and record the selected effort
+  plus any model and service tier supplied by the policy. Let the runner capture the event stream
+  and Codex save the exact handoff.
 
 ```bash
 EXECUTION_DIR=".codex-orchestrator/runs/<run-id>/codex-review-01/execution-01"
-codex exec -C <worktree> -s workspace-write -c approval_policy=never --json \
-  --output-last-message "$EXECUTION_DIR/handoff.md" \
-  - \
-  < "$EXECUTION_DIR/prompt.md" \
-  > "$EXECUTION_DIR/events.jsonl"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
+  --label codex-review-01 \
+  --repo <repo> \
+  --role review \
+  --reasoning-effort max \
+  --model gpt-6.1-sol \
+  --events "$EXECUTION_DIR/events.jsonl" \
+  --prompt "$EXECUTION_DIR/prompt.md" \
+  -- codex exec -C <worktree> -s workspace-write -c approval_policy=never --json \
+     --output-last-message "$EXECUTION_DIR/handoff.md" -
 ```
+
+Launch this under the SKILL's Background Launch Invariant. The runner creates `events.jsonl`
+exclusively and aborts on a pre-existing file, captures raw Codex stdout there byte-for-byte, and
+prints timestamped progress plus bounded, scrubbed command output to its own stdout for the human
+`/tasks` view. Codex stderr passes through for native diagnostics. After a clean capture, the runner
+exits with Codex's exit code. Capture, prompt, configuration, or launch failures exit nonzero;
+cancellation exits with 128 plus the signal number. The example assumes the generated role
+configuration, whose `review` role allows two models; `--model` is required only when the resolved
+role allows more than one. If the configuration is absent, retain `--repo` and `--role`, omit
+`--reasoning-effort` and `--model`, and the runner passes the review command to Codex
+byte-for-byte.
 
 Write the exact commit SHA into `prompt.md` and instruct Codex to review that snapshot. Use plain
 `codex exec`: the Codex CLI does not accept a stdin review prompt together with the `review`
