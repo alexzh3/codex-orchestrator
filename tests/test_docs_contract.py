@@ -399,8 +399,10 @@ class DocumentationContractTests(unittest.TestCase):
         normalized_workflow = " ".join(workflow.split())
 
         self.assertIn("config init --repo", readme)
-        self.assertIn("model = gpt-5.6-sol", readme)
-        self.assertNotIn("gpt-5-6-sol", readme)
+        self.assertIn("models = gpt-6.1-sol", readme)
+        self.assertIn("models = gpt-6.1-sol, gpt-6-astra", readme)
+        self.assertIn("models = gpt-6-astra", readme)
+        self.assertNotIn("gpt-6-1-sol", readme)
         self.assertIn("speed = default", readme)
         self.assertIn("speed = fast", readme)
         self.assertIn("does not create a role configuration implicitly", normalized_readme)
@@ -430,10 +432,10 @@ class DocumentationContractTests(unittest.TestCase):
         execution = next(
             record for record in jsonl_records(contract) if record["type"] == "execution"
         )
-        self.assertEqual(execution["model"], "gpt-5.6-sol")
+        self.assertEqual(execution["model"], "gpt-6.1-sol")
         self.assertEqual(execution["effort"], "xhigh")
-        self.assertEqual(execution["service_tier"], "fast")
-        self.assertNotIn("gpt-5-6-sol", contract)
+        self.assertEqual(execution["service_tier"], "default")
+        self.assertNotIn("gpt-6-1-sol", contract)
 
     def test_planning_roles_are_fresh_separate_and_read_only(self) -> None:
         planning = (

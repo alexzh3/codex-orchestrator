@@ -48,11 +48,13 @@ inputs before reading the prompt, creating `events.jsonl`, or starting Codex. Fo
 it injects
 `--model <configured-model>` when present and the selected `model_reasoning_effort`;
 configured `speed = default` injects `service_tier="default"`, while `speed = fast` injects
-`service_tier="fast"` and the Fast-mode feature flag. It rejects conflicting child performance
-flags, so do not add those flags manually. If
-`.codex-orchestrator/config.ini` is absent, keep `--repo` and `--role`, omit
-`--reasoning-effort`, and everything after `--` passes to Codex byte-for-byte so native Codex
-configuration remains authoritative. Supplying an effort without the file is an error.
+`service_tier="fast"` and the Fast-mode feature flag. When the role allows several models, select
+one by adding the runner option `--model <allowed-model>` before `--`; the runner refuses to start
+without it. It rejects conflicting child performance flags, so do not add those flags after `--`.
+If `.codex-orchestrator/config.ini` is absent, keep `--repo` and `--role`, omit
+`--reasoning-effort` and `--model`, and everything after `--` passes to Codex byte-for-byte so
+native Codex configuration remains authoritative. Supplying an effort or model without the file is
+an error.
 
 The runner creates `events.jsonl` exclusively, aborting before Codex starts if that file already
 exists, then captures raw Codex stdout there byte-for-byte. Its own stdout contains timestamped
@@ -107,8 +109,9 @@ Read the absolute `worktree` from the preceding execution and use it with `-C` a
 `session_id`. Inspect its current HEAD and branch and record them in the new execution; the prior
 `head` is a snapshot, so do not check out or reset to it merely because the worktree advanced. Use
 an absolute `EXECUTION_DIR` when the shell runs elsewhere. Reselect effort for this execution from
-its current difficulty, breadth, and context instead of copying the previous value. When role
-configuration is absent, omit the example's `--reasoning-effort max`. A fresh native session
+its current difficulty, breadth, and context instead of copying the previous value. If the role
+allows several models, pass the model recorded for the preceding execution with `--model`. When
+role configuration is absent, omit the example's `--reasoning-effort max`. A fresh native session
 requires a new named agent.
 
 ## Agent State And Monitor

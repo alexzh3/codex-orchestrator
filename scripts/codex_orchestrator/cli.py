@@ -141,7 +141,7 @@ def command_config_show(args: argparse.Namespace) -> int:
         policy = config.policy_for(args.role)
         payload.update(
             {
-                "model": policy.model,
+                "models": list(policy.models),
                 "reasoning_efforts": list(policy.reasoning_efforts),
                 "service_tier": policy.speed,
                 "speed": policy.speed,

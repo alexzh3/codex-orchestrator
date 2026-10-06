@@ -49,14 +49,15 @@ Use only the canonical role and matching persistent-agent prefix for new Codex e
 
 When `.codex-orchestrator/config.ini` exists, inspect the role with `config show`, select one
 allowed reasoning effort using the workflow rubric, and pass that concrete selection to the
-runner. Record the selected `effort` and any policy-supplied `model` and `service_tier` in
-`execution` before launch. Reselect effort for a resume because the next prompt may have different
-breadth or context needs.
+runner. When the role allows more than one model, select one with the same rubric and pass it with
+the runner's `--model`. Record the selected `effort` and any policy-supplied `model` and
+`service_tier` in `execution` before launch. Reselect effort for a resume because the next prompt
+may have different breadth or context needs; a resumed session keeps its recorded model.
 
 When the file is absent, still pass repository and role metadata to the runner but omit
-`--reasoning-effort`; the runner must not create configuration or alter the child Codex command.
-Never silently change a configured model, effort, or service tier after a compatibility or
-entitlement failure.
+`--reasoning-effort` and `--model`; the runner must not create configuration or alter the child
+Codex command. Never silently change a configured model, effort, or service tier after a
+compatibility or entitlement failure.
 
 ## Claude Code Background Launch Invariant
 

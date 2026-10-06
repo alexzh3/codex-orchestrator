@@ -20,20 +20,23 @@ _GENERATED_CONFIG = """\
 version = 1
 
 [defaults]
-model = gpt-5.6-sol
-speed = fast
+models = gpt-6.1-sol
+speed = default
 
 [role.implementation]
-reasoning_efforts = xhigh, max, ultra
+reasoning_efforts = medium, high, xhigh, max, ultra
 
 [role.review]
-reasoning_efforts = max, ultra
+models = gpt-6.1-sol, gpt-6-astra
+reasoning_efforts = high, xhigh, max, ultra
 
 [role.planning]
-reasoning_efforts = max, ultra
+models = gpt-6-astra
+reasoning_efforts = xhigh, max, ultra
 
 [role.planning_review]
-reasoning_efforts = max, ultra
+models = gpt-6-astra
+reasoning_efforts = xhigh, max, ultra
 """
 
 
@@ -43,9 +46,12 @@ class RoleConfigError(ValueError):
 
 @dataclass(frozen=True)
 class RolePolicy:
-    """Resolved settings for one orchestration role."""
+    """Resolved settings for one orchestration role.
 
-    model: str | None
+    An empty ``models`` leaves the model to native Codex configuration.
+    """
+
+    models: tuple[str, ...]
     speed: str | None
     reasoning_efforts: tuple[str, ...]
 
@@ -138,8 +144,8 @@ def load_role_config(repo: Path) -> RoleConfiguration | None:
     if parser.get("meta", "version").strip() != "1":
         raise RoleConfigError("[meta] version must be 1")
 
-    _validate_keys(parser, "defaults", {"model", "speed"}, set())
-    default_model = _optional_value(parser, "defaults", "model")
+    _validate_keys(parser, "defaults", {"model", "models", "speed"}, set())
+    default_models = _optional_models(parser, "defaults")
     default_speed = _optional_value(parser, "defaults", "speed")
     _validate_speed(default_speed, "[defaults]")
 
@@ -149,14 +155,14 @@ def load_role_config(repo: Path) -> RoleConfiguration | None:
         _validate_keys(
             parser,
             section,
-            {"model", "speed", "reasoning_efforts"},
+            {"model", "models", "speed", "reasoning_efforts"},
             {"reasoning_efforts"},
         )
-        role_model = _optional_value(parser, section, "model")
+        role_models = _optional_models(parser, section)
         role_speed = _optional_value(parser, section, "speed")
         _validate_speed(role_speed, f"[{section}]")
         policies[role] = RolePolicy(
-            model=default_model if role_model is None else role_model,
+            models=(default_models or ()) if role_models is None else role_models,
             speed=default_speed if role_speed is None else role_speed,
             reasoning_efforts=_parse_efforts(parser.get(section, "reasoning_efforts"), section),
         )
@@ -230,6 +236,35 @@ def _optional_value(
     if "\x00" in value:
         raise RoleConfigError(f"[{section}] {option} must not contain NUL bytes")
     return value
+
+
+def _optional_models(
+    parser: configparser.ConfigParser, section: str
+) -> tuple[str, ...] | None:
+    """Return a section's allowed models, or ``None`` when it names none.
+
+    ``models`` is the allowed list; ``model`` is the single-model spelling kept
+    for configurations written before lists were supported.
+    """
+
+    model = _optional_value(parser, section, "model")
+    models = _optional_value(parser, section, "models")
+    if model is not None and models is not None:
+        raise RoleConfigError(f"[{section}] must set only one of model and models")
+    if model is not None:
+        if "," in model:
+            raise RoleConfigError(
+                f"[{section}] model must name one model; use models for a list"
+            )
+        return (model,)
+    if models is None:
+        return None
+    names = tuple(part.strip() for part in models.split(","))
+    if any(not name for name in names):
+        raise RoleConfigError(f"[{section}] models must not contain empty names")
+    if len(set(names)) != len(names):
+        raise RoleConfigError(f"[{section}] models must be unique")
+    return names
 
 
 def _validate_speed(speed: str | None, location: str) -> None:

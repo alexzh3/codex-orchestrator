@@ -15,13 +15,17 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.codex_orchestrator import runner
-from scripts.codex_orchestrator.role_config import RoleConfigError, RolePolicy
+from scripts.codex_orchestrator.role_config import (
+    RoleConfigError,
+    RolePolicy,
+    initialize_role_config,
+)
 from scripts.codex_orchestrator.runner import EventRenderer, sanitize_text
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "codex_orch_tools.py"
 VALID_ROLE_CONFIG = (
-    "[meta]\nversion=1\n[defaults]\nmodel=gpt-5.6-sol\nspeed=fast\n"
+    "[meta]\nversion=1\n[defaults]\nmodel=gpt-6.1-sol\nspeed=fast\n"
     "[role.implementation]\nreasoning_efforts=xhigh,max,ultra\n"
     "[role.review]\nreasoning_efforts=max,ultra\n"
     "[role.planning]\nreasoning_efforts=max,ultra\n"
@@ -648,13 +652,13 @@ class RunnerProcessTests(unittest.TestCase):
 
     def test_configured_command_injects_exact_fresh_and_resume_arguments(self) -> None:
         policy = RolePolicy(
-            model="gpt-5.6-sol",
+            models=("gpt-6.1-sol",),
             speed="fast",
             reasoning_efforts=("xhigh", "max", "ultra"),
         )
         injected = [
             "--model",
-            "gpt-5.6-sol",
+            "gpt-6.1-sol",
             "-c",
             'model_reasoning_effort="max"',
             "-c",
@@ -759,7 +763,7 @@ class RunnerProcessTests(unittest.TestCase):
                 [
                     "exec",
                     "--model",
-                    "gpt-5.6-sol",
+                    "gpt-6.1-sol",
                     "-c",
                     'model_reasoning_effort="ultra"',
                     "-c",
@@ -774,7 +778,7 @@ class RunnerProcessTests(unittest.TestCase):
         self.assertEqual(captured_events, b"")
 
     def test_configured_default_speed_forces_default_service_tier(self) -> None:
-        policy = RolePolicy(model=None, speed="default", reasoning_efforts=("max",))
+        policy = RolePolicy(models=(), speed="default", reasoning_efforts=("max",))
 
         command = runner._configured_command(["codex", "exec", "--json", "-"], policy, "max")
 
@@ -794,15 +798,129 @@ class RunnerProcessTests(unittest.TestCase):
         self.assertNotIn("fast_mode", command)
 
     def test_configured_command_rejects_disallowed_effort_and_non_codex_child(self) -> None:
-        policy = RolePolicy(model=None, speed=None, reasoning_efforts=("max", "ultra"))
+        policy = RolePolicy(models=(), speed=None, reasoning_efforts=("max", "ultra"))
 
         with self.assertRaisesRegex(RoleConfigError, "not allowed"):
             runner._configured_command(["codex", "exec", "-"], policy, "xhigh")
         with self.assertRaisesRegex(RoleConfigError, "codex exec"):
             runner._configured_command([sys.executable, "-c", "pass"], policy, "max")
 
+    def test_configured_command_selects_one_allowed_model(self) -> None:
+        command = ["codex", "exec", "--json", "-"]
+        several = RolePolicy(
+            models=("gpt-6-astra", "gpt-6.1-sol"), speed=None, reasoning_efforts=("max",)
+        )
+        single = RolePolicy(models=("gpt-6.1-sol",), speed=None, reasoning_efforts=("max",))
+        native = RolePolicy(models=(), speed=None, reasoning_efforts=("max",))
+
+        for model in several.models:
+            with self.subTest(model=model):
+                self.assertEqual(
+                    runner._configured_command(command, several, "max", model),
+                    [
+                        "codex",
+                        "exec",
+                        "--model",
+                        model,
+                        "-c",
+                        'model_reasoning_effort="max"',
+                        "--json",
+                        "-",
+                    ],
+                )
+        self.assertEqual(
+            runner._configured_command(command, single, "max"),
+            runner._configured_command(command, single, "max", "gpt-6.1-sol"),
+        )
+        with self.assertRaisesRegex(RoleConfigError, "--model is required"):
+            runner._configured_command(command, several, "max")
+        with self.assertRaisesRegex(RoleConfigError, "not allowed"):
+            runner._configured_command(command, several, "max", "gpt-5.5")
+        with self.assertRaisesRegex(RoleConfigError, "not allowed"):
+            runner._configured_command(command, single, "max", "gpt-6-astra")
+        with self.assertRaisesRegex(RoleConfigError, "inherits the native Codex model"):
+            runner._configured_command(command, native, "max", "gpt-6.1-sol")
+
+    def test_generated_policy_requires_and_injects_a_review_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            initialize_role_config(root)
+            prompt = root / "prompt.md"
+            invocations = root / "invocations.json"
+            fake_codex = root / "codex"
+            prompt.write_text("review this", encoding="utf-8")
+            fake_codex.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!{sys.executable}
+                    import json
+                    import pathlib
+                    import sys
+
+                    pathlib.Path({str(invocations)!r}).write_text(json.dumps(sys.argv[1:]))
+                    sys.stdin.buffer.read()
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_codex.chmod(0o755)
+
+            def run(*options: str) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "run",
+                        "--repo",
+                        str(root),
+                        "--role",
+                        "review",
+                        "--reasoning-effort",
+                        "high",
+                        *options,
+                        "--events",
+                        str(root / f"events-{len(options)}.jsonl"),
+                        "--prompt",
+                        str(prompt),
+                        "--",
+                        str(fake_codex),
+                        "exec",
+                        "--json",
+                        "-",
+                    ],
+                    check=False,
+                    text=True,
+                    capture_output=True,
+                    cwd=ROOT,
+                )
+
+            unselected = run()
+            launched_without_model = invocations.exists()
+            selected = run("--model", "gpt-6-astra")
+            received = json.loads(invocations.read_text(encoding="utf-8"))
+
+        self.assertEqual(unselected.returncode, 2, unselected.stderr)
+        self.assertIn("gpt-6.1-sol, gpt-6-astra", unselected.stderr)
+        self.assertFalse(launched_without_model)
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        self.assertEqual(
+            received,
+            [
+                "exec",
+                "--model",
+                "gpt-6-astra",
+                "-c",
+                'model_reasoning_effort="high"',
+                "-c",
+                'service_tier="default"',
+                "--json",
+                "-",
+            ],
+        )
+
     def test_configured_command_rejects_performance_conflicts(self) -> None:
-        policy = RolePolicy(model="model", speed="fast", reasoning_efforts=("max",))
+        policy = RolePolicy(models=("model",), speed="fast", reasoning_efforts=("max",))
         conflicts = (
             ("-m", "other"),
             ("-m=other",),
@@ -840,6 +958,20 @@ class RunnerProcessTests(unittest.TestCase):
                 ("--role", "implementation", "--reasoning-effort", "max"),
                 [sys.executable, "-c", "pass"],
                 "requires an active",
+            ),
+            (
+                "model without config",
+                False,
+                ("--role", "implementation", "--model", "gpt-6.1-sol"),
+                [sys.executable, "-c", "pass"],
+                "--model requires an active",
+            ),
+            (
+                "disallowed model",
+                True,
+                ("--role", "implementation", "--reasoning-effort", "max", "--model", "other"),
+                ["codex", "exec", "-"],
+                "not allowed",
             ),
             (
                 "missing role",
@@ -987,7 +1119,7 @@ class RunnerProcessTests(unittest.TestCase):
             config = root / ".codex-orchestrator" / "config.ini"
             config.parent.mkdir()
             config.write_text(
-                VALID_ROLE_CONFIG.replace("gpt-5.6-sol", "gpt-5.6-sol\x00invalid"),
+                VALID_ROLE_CONFIG.replace("gpt-6.1-sol", "gpt-6.1-sol\x00invalid"),
                 encoding="utf-8",
             )
             events = root / "events.jsonl"

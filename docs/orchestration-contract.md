@@ -71,12 +71,13 @@ its identity. Record the absolute `worktree`, full Git `head`, and attached `bra
 resume and integration use the same target after context loss. Record the provider, role, and mode.
 Use `event_source: "exec"` for a Codex CLI stream and `"claude"` for a Claude agent. `events` may be
 omitted for a Claude agent. For an active role configuration, record the selected concrete `effort`
-and any `model` or `service_tier` supplied by the resolved policy before launch. Do not invent
-values that the policy leaves to native Codex configuration. Without an active policy, record those
-fields only when known. Record `session_id` when known; an execution result may supply it later.
+and any `model` or `service_tier` supplied by the resolved policy before launch; when the role
+allows several models, record the one selected. Do not invent values that the policy leaves to
+native Codex configuration. Without an active policy, record those fields only when known. Record
+`session_id` when known; an execution result may supply it later.
 
 ```jsonl
-{"type":"execution","agent":"codex-impl-01","execution":"execution-01","task":"task-01","provider":"codex","role":"implementation","mode":"headless","event_source":"exec","model":"gpt-5.6-sol","effort":"xhigh","service_tier":"fast","worktree":"/work/project-codex-impl-01","head":"0123456789abcdef0123456789abcdef01234567","branch":"codex-impl-01","prompt":"codex-impl-01/execution-01/prompt.md","events":"codex-impl-01/execution-01/events.jsonl","handoff":"codex-impl-01/execution-01/handoff.md","recorded_at":"2026-07-10T12:02:00Z"}
+{"type":"execution","agent":"codex-impl-01","execution":"execution-01","task":"task-01","provider":"codex","role":"implementation","mode":"headless","event_source":"exec","model":"gpt-6.1-sol","effort":"xhigh","service_tier":"default","worktree":"/work/project-codex-impl-01","head":"0123456789abcdef0123456789abcdef01234567","branch":"codex-impl-01","prompt":"codex-impl-01/execution-01/prompt.md","events":"codex-impl-01/execution-01/events.jsonl","handoff":"codex-impl-01/execution-01/handoff.md","recorded_at":"2026-07-10T12:02:00Z"}
 ```
 
 Codex uses four canonical orchestration roles:

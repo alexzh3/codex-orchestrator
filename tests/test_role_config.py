@@ -23,21 +23,35 @@ VALID_CONFIG = """\
 version = 1
 
 [defaults]
-model = gpt-5.6-sol
-speed = fast
+models = gpt-6.1-sol
+speed = default
 
 [role.implementation]
-reasoning_efforts = xhigh, max, ultra
+reasoning_efforts = medium, high, xhigh, max, ultra
 
 [role.review]
-reasoning_efforts = max, ultra
+models = gpt-6.1-sol, gpt-6-astra
+reasoning_efforts = high, xhigh, max, ultra
 
 [role.planning]
-reasoning_efforts = max, ultra
+models = gpt-6-astra
+reasoning_efforts = xhigh, max, ultra
 
 [role.planning_review]
-reasoning_efforts = max, ultra
+models = gpt-6-astra
+reasoning_efforts = xhigh, max, ultra
 """
+IMPLEMENTATION_EFFORTS = "reasoning_efforts = medium, high, xhigh, max, ultra"
+REVIEW_SECTION = (
+    "[role.review]\nmodels = gpt-6.1-sol, gpt-6-astra\n"
+    "reasoning_efforts = high, xhigh, max, ultra"
+)
+GENERATED_POLICIES = {
+    "implementation": (("gpt-6.1-sol",), ("medium", "high", "xhigh", "max", "ultra")),
+    "review": (("gpt-6.1-sol", "gpt-6-astra"), ("high", "xhigh", "max", "ultra")),
+    "planning": (("gpt-6-astra",), ("xhigh", "max", "ultra")),
+    "planning_review": (("gpt-6-astra",), ("xhigh", "max", "ultra")),
+}
 
 
 def init_repo(repo: Path) -> None:
@@ -86,22 +100,22 @@ class RoleConfigTests(unittest.TestCase):
             self.assertIn("/.codex-orchestrator/", exclude.splitlines())
             config = load_role_config(repo)
             assert config is not None
-            self.assertEqual(config.policy_for("implementation").model, "gpt-5.6-sol")
-            self.assertEqual(config.policy_for("implementation").speed, "fast")
-            self.assertEqual(
-                config.policy_for("implementation").reasoning_efforts,
-                ("xhigh", "max", "ultra"),
-            )
+            for role, (models, efforts) in GENERATED_POLICIES.items():
+                with self.subTest(role=role):
+                    policy = config.policy_for(role)
+                    self.assertEqual(policy.models, models)
+                    self.assertEqual(policy.reasoning_efforts, efforts)
+                    self.assertEqual(policy.speed, "default")
             with self.assertRaisesRegex(RoleConfigError, "already exists"):
                 initialize_role_config(repo)
             self.assertEqual(path.read_text(encoding="utf-8"), original)
 
     def test_role_values_override_defaults_and_omissions_inherit_natively(self) -> None:
         content = VALID_CONFIG.replace(
-            "model = gpt-5.6-sol\nspeed = fast",
-            "# model and speed intentionally inherit from Codex",
+            "models = gpt-6.1-sol\nspeed = default",
+            "# models and speed intentionally inherit from Codex",
         ).replace(
-            "[role.review]\nreasoning_efforts = max, ultra",
+            REVIEW_SECTION,
             "[role.review]\nmodel = review-model\nspeed = fast\nreasoning_efforts = max",
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -111,16 +125,16 @@ class RoleConfigTests(unittest.TestCase):
             config = load_role_config(repo)
 
         assert config is not None
-        self.assertIsNone(config.policy_for("implementation").model)
+        self.assertEqual(config.policy_for("implementation").models, ())
         self.assertIsNone(config.policy_for("implementation").speed)
-        self.assertEqual(config.policy_for("review").model, "review-model")
+        self.assertEqual(config.policy_for("review").models, ("review-model",))
+        self.assertEqual(config.policy_for("planning").models, ("gpt-6-astra",))
         self.assertEqual(config.policy_for("review").speed, "fast")
         self.assertEqual(config.policy_for("review").reasoning_efforts, ("max",))
 
-    def test_default_speed_overrides_fast_default(self) -> None:
+    def test_role_speed_overrides_default_speed(self) -> None:
         content = VALID_CONFIG.replace(
-            "[role.review]\nreasoning_efforts = max, ultra",
-            "[role.review]\nspeed = default\nreasoning_efforts = max, ultra",
+            "[role.review]\n", "[role.review]\nspeed = fast\n"
         )
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -129,40 +143,52 @@ class RoleConfigTests(unittest.TestCase):
             config = load_role_config(repo)
 
         assert config is not None
-        self.assertEqual(config.policy_for("implementation").speed, "fast")
-        self.assertEqual(config.policy_for("review").speed, "default")
+        self.assertEqual(config.policy_for("implementation").speed, "default")
+        self.assertEqual(config.policy_for("review").speed, "fast")
 
     def test_strict_validation_rejects_invalid_schema_and_values(self) -> None:
         invalid_cases = {
             "default keys": "[DEFAULT]\nmodel = hidden\n\n" + VALID_CONFIG,
             "unknown section": VALID_CONFIG + "\n[role.future]\nreasoning_efforts = max\n",
             "missing role": VALID_CONFIG.replace(
-                "\n[role.planning_review]\nreasoning_efforts = max, ultra\n", "\n"
+                "\n[role.planning_review]\nmodels = gpt-6-astra\n"
+                "reasoning_efforts = xhigh, max, ultra\n",
+                "\n",
             ),
             "unknown key": VALID_CONFIG.replace(
-                "speed = fast", "speed = fast\npriority = fast", 1
+                "speed = default", "speed = default\npriority = fast", 1
             ),
             "bad version": VALID_CONFIG.replace("version = 1", "version = 2"),
-            "empty model": VALID_CONFIG.replace("model = gpt-5.6-sol", "model ="),
-            "NUL in model": VALID_CONFIG.replace(
-                "model = gpt-5.6-sol", "model = gpt-5.6-sol\x00invalid"
+            "empty models": VALID_CONFIG.replace("models = gpt-6.1-sol\nspeed", "models =\nspeed"),
+            "NUL in models": VALID_CONFIG.replace(
+                "models = gpt-6.1-sol\nspeed", "models = gpt-6.1-sol\x00invalid\nspeed"
             ),
-            "bad speed": VALID_CONFIG.replace("speed = fast", "speed = standard"),
-            "empty efforts": VALID_CONFIG.replace(
-                "reasoning_efforts = xhigh, max, ultra", "reasoning_efforts =", 1
+            "empty model name": VALID_CONFIG.replace(
+                "models = gpt-6.1-sol, gpt-6-astra", "models = gpt-6.1-sol,"
             ),
+            "duplicate models": VALID_CONFIG.replace(
+                "models = gpt-6.1-sol, gpt-6-astra", "models = gpt-6-astra, gpt-6-astra"
+            ),
+            "model and models": VALID_CONFIG.replace(
+                "models = gpt-6.1-sol\nspeed", "model = gpt-6.1-sol\nmodels = gpt-6.1-sol\nspeed"
+            ),
+            "list in model": VALID_CONFIG.replace(
+                "models = gpt-6.1-sol, gpt-6-astra", "model = gpt-6.1-sol, gpt-6-astra"
+            ),
+            "bad speed": VALID_CONFIG.replace("speed = default", "speed = standard"),
+            "empty efforts": VALID_CONFIG.replace(IMPLEMENTATION_EFFORTS, "reasoning_efforts ="),
             "duplicate efforts": VALID_CONFIG.replace(
-                "reasoning_efforts = max, ultra", "reasoning_efforts = max, max", 1
+                IMPLEMENTATION_EFFORTS, "reasoning_efforts = max, max"
             ),
             "unordered efforts": VALID_CONFIG.replace(
-                "reasoning_efforts = xhigh, max, ultra",
-                "reasoning_efforts = ultra, xhigh",
-                1,
+                IMPLEMENTATION_EFFORTS, "reasoning_efforts = ultra, xhigh"
             ),
             "unsupported effort": VALID_CONFIG.replace(
-                "reasoning_efforts = max, ultra", "reasoning_efforts = extreme", 1
+                IMPLEMENTATION_EFFORTS, "reasoning_efforts = extreme"
             ),
         }
+        for name, content in invalid_cases.items():
+            self.assertNotEqual(content, VALID_CONFIG, name)
         for name, content in invalid_cases.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 repo = Path(tmp)
@@ -185,11 +211,11 @@ class RoleConfigTests(unittest.TestCase):
                 with self.assertRaisesRegex(RoleConfigError, "could not inspect configuration"):
                     load_role_config(repo)
 
-    def test_manual_policy_accepts_all_sol_efforts_in_canonical_order(self) -> None:
+    def test_manual_policy_accepts_all_efforts_and_keeps_model_order(self) -> None:
         content = VALID_CONFIG.replace(
-            "reasoning_efforts = xhigh, max, ultra",
-            "reasoning_efforts = low, medium, high, xhigh, max, ultra",
-            1,
+            IMPLEMENTATION_EFFORTS, "reasoning_efforts = low, medium, high, xhigh, max, ultra"
+        ).replace(
+            "models = gpt-6.1-sol, gpt-6-astra", "models = gpt-6-astra, gpt-6.1-sol"
         )
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -201,6 +227,9 @@ class RoleConfigTests(unittest.TestCase):
         self.assertEqual(
             config.policy_for("implementation").reasoning_efforts,
             ("low", "medium", "high", "xhigh", "max", "ultra"),
+        )
+        self.assertEqual(
+            config.policy_for("review").models, ("gpt-6-astra", "gpt-6.1-sol")
         )
 
     def test_config_commands_report_disabled_and_resolved_settings(self) -> None:
@@ -217,6 +246,9 @@ class RoleConfigTests(unittest.TestCase):
             enabled = run_cli(
                 "config", "show", "--repo", str(repo), "--role", "review", "--json"
             )
+            planning = run_cli(
+                "config", "show", "--repo", str(repo), "--role", "planning", "--json"
+            )
 
         self.assertEqual(disabled.returncode, 0, disabled.stderr)
         self.assertFalse(json.loads(disabled.stdout)["enabled"])
@@ -228,14 +260,16 @@ class RoleConfigTests(unittest.TestCase):
             payload,
             {
                 "enabled": True,
-                "model": "gpt-5.6-sol",
+                "models": ["gpt-6.1-sol", "gpt-6-astra"],
                 "path": str(repo / CONFIG_RELATIVE_PATH),
-                "reasoning_efforts": ["max", "ultra"],
+                "reasoning_efforts": ["high", "xhigh", "max", "ultra"],
                 "role": "review",
-                "service_tier": "fast",
-                "speed": "fast",
+                "service_tier": "default",
+                "speed": "default",
             },
         )
+        self.assertEqual(planning.returncode, 0, planning.stderr)
+        self.assertEqual(json.loads(planning.stdout)["models"], ["gpt-6-astra"])
 
     def test_config_init_cli_requires_git_and_never_overwrites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

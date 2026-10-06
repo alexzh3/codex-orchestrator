@@ -145,19 +145,23 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" config init --repo <
 This creates `.codex-orchestrator/config.ini` without overwriting an existing file and locally
 excludes `/.codex-orchestrator/` from Git. Its generated defaults are:
 
-| Role | Prefix | Default model | Default allowed efforts | Default speed | Purpose |
+| Role | Prefix | Default allowed models | Default allowed efforts | Default speed | Purpose |
 | --- | --- | --- | --- | --- | --- |
-| `implementation` | `codex-impl-NN` | `gpt-5.6-sol` | `xhigh`, `max`, `ultra` | `fast` | Implement scoped work and focused fixes. |
-| `review` | `codex-review-NN` | `gpt-5.6-sol` | `max`, `ultra` | `fast` | Independently review an implementation. |
-| `planning` | `codex-plan-NN` | `gpt-5.6-sol` | `max`, `ultra` | `fast` | Propose an independent approach. |
-| `planning_review` | `codex-plan-review-NN` | `gpt-5.6-sol` | `max`, `ultra` | `fast` | Critique Claude's draft plan. |
+| `implementation` | `codex-impl-NN` | `gpt-6.1-sol` | `medium`, `high`, `xhigh`, `max`, `ultra` | `default` | Implement scoped work and focused fixes. |
+| `review` | `codex-review-NN` | `gpt-6.1-sol`, `gpt-6-astra` | `high`, `xhigh`, `max`, `ultra` | `default` | Independently review an implementation. |
+| `planning` | `codex-plan-NN` | `gpt-6-astra` | `xhigh`, `max`, `ultra` | `default` | Propose an independent approach. |
+| `planning_review` | `codex-plan-review-NN` | `gpt-6-astra` | `xhigh`, `max`, `ultra` | `default` | Critique Claude's draft plan. |
 
-These values correspond to `model = gpt-5.6-sol` and `speed = fast`. Users may edit the file
-directly. Every role and its effort list is required; efforts must be a nonempty, ordered, unique
-subset of `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`. Model and speed may be omitted to
-inherit native Codex behavior or overridden per role. `speed = default` forces Codex's
-Standard/default tier, while `speed = fast` enables Fast mode. Extra keys and other speed values are
-rejected. Claude selects one allowed effort per execution based on difficulty, breadth, and context.
+These values correspond to `models = gpt-6.1-sol` and `speed = default` in `[defaults]`, with
+`models = gpt-6.1-sol, gpt-6-astra` set on `review` and `models = gpt-6-astra` on the two planning
+roles. Users may edit the file directly. Every role and its effort list is required; efforts must
+be a nonempty, ordered, unique subset of `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`.
+`models` is a nonempty, unique, comma-separated list of allowed models; the single-model key
+`model` written by earlier releases is still accepted. Models and speed may be omitted to inherit
+native Codex behavior or overridden per role. `speed = default` forces Codex's Standard/default
+tier, while `speed = fast` enables Fast mode. Extra keys and other speed values are rejected.
+Claude selects one allowed effort per execution based on difficulty, breadth, and context, and one
+allowed model when a role lists more than one.
 
 ## Historical v0.4.1 Benchmarks
 

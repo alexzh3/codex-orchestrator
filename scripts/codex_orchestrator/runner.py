@@ -650,7 +650,10 @@ def _run_child(
 
 
 def _configured_command(
-    command: list[str], policy: RolePolicy, reasoning_effort: str
+    command: list[str],
+    policy: RolePolicy,
+    reasoning_effort: str,
+    model: str | None = None,
 ) -> list[str]:
     if (
         len(command) < 2
@@ -664,17 +667,39 @@ def _configured_command(
             f"reasoning effort {reasoning_effort!r} is not allowed for this role; "
             f"choose one of: {allowed}"
         )
+    model = _selected_model(policy, model)
     _reject_performance_conflicts(command)
 
     overrides: list[str] = []
-    if policy.model is not None:
-        overrides.extend(("--model", policy.model))
+    if model is not None:
+        overrides.extend(("--model", model))
     overrides.extend(("-c", f'model_reasoning_effort="{reasoning_effort}"'))
     if policy.speed is not None:
         overrides.extend(("-c", f'service_tier="{policy.speed}"'))
         if policy.speed == "fast":
             overrides.extend(("--enable", "fast_mode"))
     return [*command[:2], *overrides, *command[2:]]
+
+
+def _selected_model(policy: RolePolicy, model: str | None) -> str | None:
+    """Resolve the model to inject; ``None`` leaves it to native Codex configuration."""
+
+    allowed = ", ".join(policy.models)
+    if model is None:
+        if len(policy.models) > 1:
+            raise RoleConfigError(
+                f"--model is required when a role allows several models; choose one of: {allowed}"
+            )
+        return policy.models[0] if policy.models else None
+    if not policy.models:
+        raise RoleConfigError(
+            f"model {model!r} cannot be selected for a role that inherits the native Codex model"
+        )
+    if model not in policy.models:
+        raise RoleConfigError(
+            f"model {model!r} is not allowed for this role; choose one of: {allowed}"
+        )
+    return model
 
 
 def _reject_performance_conflicts(command: list[str]) -> None:
@@ -732,6 +757,11 @@ def command_run(argv: list[str]) -> int:
     parser.add_argument(
         "--reasoning-effort", help="Concrete effort selected from the role's allowed values."
     )
+    parser.add_argument(
+        "--model",
+        help="Concrete model selected from the role's allowed values; "
+        "required when the role allows several.",
+    )
 
     try:
         separator = argv.index("--")
@@ -751,6 +781,10 @@ def command_run(argv: list[str]) -> int:
                 raise RoleConfigError(
                     "--reasoning-effort requires an active repository role configuration"
                 )
+            if args.model is not None:
+                raise RoleConfigError(
+                    "--model requires an active repository role configuration"
+                )
         else:
             if args.role is None:
                 raise RoleConfigError("--role is required when role configuration is active")
@@ -759,7 +793,7 @@ def command_run(argv: list[str]) -> int:
                     "--reasoning-effort is required when role configuration is active"
                 )
             command = _configured_command(
-                command, config.policy_for(args.role), args.reasoning_effort
+                command, config.policy_for(args.role), args.reasoning_effort, args.model
             )
     except RoleConfigError as exc:
         print(f"run: {exc}", file=sys.stderr)

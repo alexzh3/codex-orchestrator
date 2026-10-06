@@ -29,24 +29,31 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" config show \
 ```
 
 An invalid existing policy stops the workflow until corrected. If the file is absent, do not
-create one, do not choose or pass a plugin reasoning effort, and let the Codex child command use
-its native `config.toml` and built-in defaults unchanged.
+create one, do not choose or pass a plugin reasoning effort or model, and let the Codex child
+command use its native `config.toml` and built-in defaults unchanged.
 
 With an active policy, Claude selects the lowest allowed effort adequate for each execution:
 
-- If a manually edited policy exposes `low`, `medium`, or `high`, reserve them respectively for
-  trivial mechanical work, small well-bounded work, or moderate contained reasoning.
+- When the policy allows `low`, `medium`, or `high`, reserve them respectively for trivial
+  mechanical work, small well-bounded work, or moderate contained reasoning.
 - For `implementation`, use `xhigh` for bounded work with clear requirements and limited context;
   use `max` for difficult, ambiguous, cross-cutting, or high-risk work; use `ultra` for very broad,
   context-heavy, or meaningfully decomposable work.
-- For `review`, `planning`, and `planning_review`, use `max` for one focused, coherent target and
-  `ultra` for broad, multi-domain, context-heavy, or parallelizable analysis.
+- For `review`, `planning`, and `planning_review`, use `xhigh` for a small, well-specified target,
+  `max` for one focused, coherent target, and `ultra` for broad, multi-domain, context-heavy, or
+  parallelizable analysis.
 
 Nested subagents created during an Ultra execution inherit the parent execution's sandbox and
 ownership boundaries and remain part of that named execution; do not assign them separate journal
 identities. Existing overlap, worktree, and compute rules still apply.
 
-Select again for every resumed execution rather than inheriting the prior effort automatically.
+When a role allows more than one model, Claude also selects one for each fresh session and passes
+it with the runner's `--model`. The generated policy allows `gpt-6.1-sol` and `gpt-6-astra` for
+`review`: use `gpt-6.1-sol` for a routine review of one bounded change and `gpt-6-astra` for a
+high-risk, cross-cutting, or subtle one. A role that allows one model needs no selection.
+
+Select again for every resumed execution rather than inheriting the prior effort automatically; a
+resumed session keeps its recorded model.
 The configured model, effort, and service tier are execution inputs, not evidence of quality;
 Claude still verifies the result.
 

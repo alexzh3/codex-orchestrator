@@ -66,12 +66,16 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_orch_tools.py" run \
 
 Launch it as its own separate background task under the Background Launch Invariant.
 
-For either role, use `ultra` instead of `max` only for broad, multi-domain, context-heavy, or
-parallelizable analysis. Nested subagents created during an Ultra execution inherit the parent
-execution's sandbox and ownership boundaries and remain part of that named execution; do not give
-them separate journal identities.
+For either role, use `xhigh` instead of `max` for a small, well-specified question when the policy
+allows it, and `ultra` only for broad, multi-domain, context-heavy, or parallelizable analysis.
+Nested subagents created during an Ultra execution inherit the parent execution's sandbox and
+ownership boundaries and remain part of that named execution; do not give them separate journal
+identities.
 
-The examples assume an active role configuration. If `.codex-orchestrator/config.ini` is absent,
-retain `--repo` and `--role`, omit `--reasoning-effort`, and let native Codex configuration apply
-without creating a policy. A targeted clarification may resume its own relevant idle session, but
-the initial planning and plan-review passes must always be separate fresh sessions.
+The examples assume an active role configuration whose planning roles allow one model, as the
+generated policy does. Add the runner option `--model <allowed-model>` only when the resolved role
+allows more than one, choosing it with the workflow rubric. If `.codex-orchestrator/config.ini` is
+absent, retain `--repo` and `--role`, omit `--reasoning-effort` and `--model`, and let native Codex
+configuration apply without creating a policy. A targeted clarification may resume its own relevant
+idle session, but the initial planning and plan-review passes must always be separate fresh
+sessions.
