@@ -612,6 +612,28 @@ class RunnerProcessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(received, list(forwarded))
 
+    def test_windows_launch_resolves_cmd_shims_and_keeps_arguments(self) -> None:
+        command = ["codex", "exec", "--json", "-"]
+        shim = r"C:\Users\me\AppData\Roaming\npm\codex.CMD"
+
+        with (
+            mock.patch.object(runner.os, "name", "nt"),
+            mock.patch.object(runner.shutil, "which", return_value=shim) as which,
+        ):
+            self.assertEqual(runner._launch_command(command), [shim, "exec", "--json", "-"])
+        which.assert_called_once_with("codex")
+        with (
+            mock.patch.object(runner.os, "name", "nt"),
+            mock.patch.object(runner.shutil, "which", return_value=None),
+        ):
+            self.assertEqual(runner._launch_command(command), command)
+        with (
+            mock.patch.object(runner.os, "name", "posix"),
+            mock.patch.object(runner.shutil, "which") as which,
+        ):
+            self.assertEqual(runner._launch_command(command), command)
+        which.assert_not_called()
+
     def test_missing_role_config_preserves_child_arguments_and_creates_nothing(self) -> None:
         forwarded = ("--json", "-", "resume", "--", "literal", "--more")
         with tempfile.TemporaryDirectory() as tmp:

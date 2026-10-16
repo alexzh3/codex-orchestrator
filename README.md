@@ -48,7 +48,7 @@ The plugin therefore lets Codex work through its native CLI while Claude remains
 - [Claude Code](https://code.claude.com/docs/en/overview) in an IDE or terminal.
 - [OpenAI Codex CLI](https://developers.openai.com/codex/cli/reference).
 - Python 3.10 or newer for the bundled tools.
-- A Git repository.
+- A Git repository (except for `duet`).
 - A meaningful verification path such as tests, typecheck, lint, build, benchmark, screenshot, or
   manual inspection.
 
@@ -64,13 +64,15 @@ From Claude Code:
 
 ## Usage
 
-Use `orchestrate` for one focused phase and `workflow` for the complete end-to-end process.
+Use `orchestrate` for one focused phase and `workflow` for the complete end-to-end process. Use
+`duet` to ask Claude and GPT the same question and get one combined answer.
 
 | Command | Purpose |
 | --------------------------------------- | ---------------------------------------------------------------------------------- |
 | `/codex-orchestrator:orchestrate` | Run a focused execution, review, monitoring, or verification phase within a run. |
 | `/codex-orchestrator:workflow` | Run planning through execution, verification, closure, and report. |
 | `/codex-orchestrator:report` | Author `report.md` from an already closed run. |
+| `/codex-orchestrator:duet <prompt>` | Ask Claude and GPT (through Codex) the same prompt and aggregate their answers. |
 
 For example, to review a change within an existing run:
 
@@ -81,9 +83,18 @@ In run <run-id>, have a fresh Codex agent review commit <sha> against its task r
 Do not modify the target. Independently verify every material finding.
 ```
 
+To ask both models the same question, without starting a run:
+
+```text
+/codex-orchestrator:duet Why does the monitor report a stalled agent while events are still arriving?
+```
+
+Claude answers before reading GPT's answer, then returns one aggregated answer.
+
 The operating instructions live in [`skills/orchestrate/SKILL.md`](skills/orchestrate/SKILL.md),
-[`skills/workflow/SKILL.md`](skills/workflow/SKILL.md), and
-[`skills/report/SKILL.md`](skills/report/SKILL.md).
+[`skills/workflow/SKILL.md`](skills/workflow/SKILL.md),
+[`skills/report/SKILL.md`](skills/report/SKILL.md), and
+[`skills/duet/SKILL.md`](skills/duet/SKILL.md).
 
 ## Workflow
 
