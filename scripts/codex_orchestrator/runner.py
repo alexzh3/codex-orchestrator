@@ -6,6 +6,7 @@ import argparse
 import os
 import queue
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -538,6 +539,18 @@ def _write_prompt(process: subprocess.Popen[bytes], prompt: bytes, errors: list[
             errors.append(exc)
 
 
+def _launch_command(command: list[str]) -> list[str]:
+    """Resolve the executable through PATHEXT on Windows.
+
+    npm installs ``codex`` as a ``.cmd`` shim, which ``CreateProcess`` cannot find by bare name.
+    """
+
+    if os.name == "posix":
+        return command
+    executable = shutil.which(command[0])
+    return command if executable is None else [executable, *command[1:]]
+
+
 def _run_child(
     command: list[str],
     prompt: bytes,
@@ -562,7 +575,7 @@ def _run_child(
     try:
         try:
             process = subprocess.Popen(
-                command,
+                _launch_command(command),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=None,
