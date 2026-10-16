@@ -495,6 +495,21 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertNotIn("mode: \"observe\"", operational_docs)
         self.assertNotIn("codex://threads/", operational_docs)
 
+    def test_duet_answers_independently_with_a_read_only_codex_session(self) -> None:
+        duet = (ROOT / "skills/duet/SKILL.md").read_text(encoding="utf-8")
+        normalized_duet = " ".join(duet.split())
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        launch = duet.split("```bash", maxsplit=1)[1].split("```", maxsplit=1)[0]
+
+        self.assertIn("name: codex-orchestrator-duet", duet)
+        self.assertIn("/codex-orchestrator:duet", readme)
+        self.assertIn('codex_orch_tools.py" run \\\n  --label codex-duet', launch)
+        self.assertIn("-s read-only", launch)
+        self.assertIn("--output-last-message", launch)
+        self.assertNotIn("--role", launch)
+        self.assertIn("`run_in_background: true`", duet)
+        self.assertIn("before opening `codex.md`", normalized_duet)
+
     def test_documented_codex_commands_need_no_undefined_override(self) -> None:
         review = (ROOT / "skills/orchestrate/references/review.md").read_text(
             encoding="utf-8"
